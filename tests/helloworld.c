@@ -1,10 +1,8 @@
-#include "config.h"
-
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "../include/leech.h"
+#include <improved.h>
 
 int main() {
   int a = 2, b = 2;
