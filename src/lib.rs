@@ -30,7 +30,7 @@ pub extern "C" fn commit() -> i32 {
     // Read parent from HEAD if it exists, otherwise use 40 zeros
     let parent = match fs::read_to_string(".improved/HEAD") {
         Ok(contents) => contents.trim().to_string(),
-        Err(_) => "0000000000000000000000000000000000000000".to_string(),
+        Err(_) => "0".repeat(40),
     };
 
     let block = Block {
