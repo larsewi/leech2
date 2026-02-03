@@ -1,4 +1,4 @@
-use std::ffi::{c_char, CStr};
+use std::ffi::{CStr, c_char};
 use std::fs;
 use std::io::Write;
 use std::sync::OnceLock;
@@ -21,12 +21,28 @@ fn get_work_dir() -> &'static str {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn init(work_dir: *const c_char) {
+pub extern "C" fn init(work_dir: *const c_char) -> i32 {
     env_logger::init();
 
-    if !work_dir.is_null() {
-        if let Ok(path) = unsafe { CStr::from_ptr(work_dir) }.to_str() {
-            let _ = WORK_DIR.set(path.to_string());
+    if work_dir.is_null() {
+        log::error!("init: bad argument: work directory cannot be NULL");
+        return -1;
+    }
+
+    match unsafe { CStr::from_ptr(work_dir) }.to_str() {
+        Ok(path) => match WORK_DIR.set(path.to_string()) {
+            Ok(_) => {
+                log::debug!("init: work directory: {}", path);
+                0
+            }
+            Err(e) => {
+                log::debug!("init: failed to set work directory {}: {}", path, e);
+                -1
+            }
+        },
+        Err(e) => {
+            log::error!("init: bad argument: {e}");
+            return -1;
         }
     }
 }

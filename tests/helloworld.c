@@ -4,7 +4,11 @@
 #include <improved.h>
 
 int main() {
-  init(".improved");
-  int ret = commit();
+  int ret = init(".improved");
+  if (ret != 0) {
+    return EXIT_FAILURE;
+  }
+
+  ret = commit();
   return (ret == 0) ? EXIT_SUCCESS : EXIT_FAILURE;
 }
