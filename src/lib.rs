@@ -67,6 +67,21 @@ pub extern "C" fn commit() -> i32 {
         return -1;
     }
 
+    // Update HEAD to point to the new block
+    let head_path = ".improved/HEAD";
+    let mut head_file = match fs::File::create(head_path) {
+        Ok(f) => f,
+        Err(e) => {
+            log::error!("commit: failed to create HEAD file: {}", e);
+            return -1;
+        }
+    };
+
+    if let Err(e) = head_file.write_all(hash_hex.as_bytes()) {
+        log::error!("commit: failed to write HEAD: {}", e);
+        return -1;
+    }
+
     log::info!(
         "commit: created block {} (version={}, timestamp={}, parent={})",
         hash_hex,
