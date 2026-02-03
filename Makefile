@@ -3,7 +3,7 @@ CPPFLAGS = -Iinclude
 LDFLAGS = -Ltarget/debug
 LDLIBS = -limproved_system -lpthread -ldl
 
-.PHONY: all check
+.PHONY: all check phony
 
 all:
 	cargo build
@@ -16,3 +16,7 @@ helloworld: tests/helloworld.o
 
 helloworld.o: tests/helloworld.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
+
+clean:
+	rm -f tests/helloworld.o
+	rm -f helloworld
