@@ -7,3 +7,8 @@ edition = "2024"
 crate-type = ["staticlib"]
 
 [dependencies]
+prost = "0.14"
+prost-types = "0.14"
+
+[build-dependencies]
+prost-build = "0.14"
