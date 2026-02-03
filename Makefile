@@ -10,6 +10,7 @@ all:
 
 check: helloworld
 	cargo test
+	./helloworld
 
 helloworld: tests/helloworld.o
 	$(CC) $^ -o $@ $(LDFLAGS) $(LDLIBS)
