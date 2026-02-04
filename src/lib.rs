@@ -1,4 +1,4 @@
-use std::ffi::{c_char, CStr};
+use std::ffi::{CStr, c_char};
 
 pub mod block;
 mod config;
@@ -12,14 +12,14 @@ pub mod table;
 #[unsafe(no_mangle)]
 pub extern "C" fn isys_init(work_dir: *const c_char) -> i32 {
     if work_dir.is_null() {
-        log::error!("init: bad argument: work directory cannot be NULL");
+        log::error!("isys_commit(): Bad argument: work directory cannot be NULL");
         return -1;
     }
 
     let path = match unsafe { CStr::from_ptr(work_dir) }.to_str() {
         Ok(path) => path,
         Err(e) => {
-            log::error!("init: bad argument: {e}");
+            log::error!("isys_commit(): Bad argument: {e}");
             return -1;
         }
     };
@@ -27,7 +27,7 @@ pub extern "C" fn isys_init(work_dir: *const c_char) -> i32 {
     match config::init(path) {
         Ok(_) => 0,
         Err(e) => {
-            log::error!("init: {}", e);
+            log::error!("isys_commit(): {}", e);
             -1
         }
     }
@@ -38,7 +38,7 @@ pub extern "C" fn isys_commit() -> i32 {
     match block::commit() {
         Ok(_) => 0,
         Err(e) => {
-            log::error!("commit: {}", e);
+            log::error!("isys_commit(): {}", e);
             -1
         }
     }

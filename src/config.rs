@@ -49,8 +49,8 @@ pub fn init(path: &str) -> Result<(), String> {
     env_logger::init();
 
     let config = load_config(Path::new(path))?;
-    log::debug!("init: work directory '{}'", config.work_dir.display());
-    log::info!("init: loaded config with {} tables", config.tables.len());
+    log::debug!("Work directory '{}'", config.work_dir.display());
+    log::info!("Loaded config with {} tables", config.tables.len());
     CONFIG
         .set(config)
         .map_err(|_| "config already initialized".to_string())?;
