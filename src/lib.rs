@@ -35,7 +35,7 @@ pub extern "C" fn init(work_dir: *const c_char) -> i32 {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn commit() -> i32 {
-    match block::commit_impl() {
+    match block::commit() {
         Ok(_) => 0,
         Err(e) => {
             log::error!("commit: {}", e);

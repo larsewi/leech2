@@ -28,7 +28,7 @@ fn compute_hash(data: &[u8]) -> String {
     format!("{:x}", hasher.finalize())
 }
 
-pub fn commit_impl() -> Result<String, Box<dyn std::error::Error>> {
+pub fn commit() -> Result<String, Box<dyn std::error::Error>> {
     let previous_state = state::load_previous_state()?;
     let current_state = state::load_current_state()?;
     let payload = delta::compute_delta(previous_state, &current_state);
