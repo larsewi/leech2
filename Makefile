@@ -9,7 +9,10 @@ all:
 	cargo build
 
 check: helloworld
-	RUST_LOG=info ./helloworld
+	mkdir -p .improved
+	cp tests/config.toml .improved/
+	cp tests/foo.csv .improved/
+	RUST_LOG=debug ./helloworld
 
 helloworld: tests/helloworld.o
 	$(CC) $^ -o $@ $(LDFLAGS) $(LDLIBS) -Wl,-rpath,'$$ORIGIN/target/debug'

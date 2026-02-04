@@ -1,0 +1,4 @@
+[tables.foo]
+source = "foo.csv"
+keys.primary = [ "foo" ]
+keys.subsidiary = [ "bar", "baz" ]

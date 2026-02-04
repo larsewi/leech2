@@ -27,7 +27,7 @@ fn compute_hash(data: &[u8]) -> String {
 
 pub fn commit_impl() -> Result<String, Box<dyn std::error::Error>> {
     let timestamp = get_timestamp()?;
-    let parent = storage::read_head();
+    let parent = storage::read_head()?;
 
     let block = Block {
         version: 1,
