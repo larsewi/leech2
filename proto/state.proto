@@ -4,6 +4,8 @@ package state;
 
 import "table.proto";
 
+// State represents a snapshot of all tables at a point in time.
 message State {
+  // Map from table name to table contents.
   map<string, table.Table> tables = 1;
 }
