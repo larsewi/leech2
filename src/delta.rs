@@ -112,3 +112,207 @@ pub fn compute_delta(
 
     deltas
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state::{Row, Table};
+
+    fn make_row(key: &[&str], value: &[&str]) -> Row {
+        Row {
+            primary_key: key.iter().map(|s| s.to_string()).collect(),
+            subsidiary_val: value.iter().map(|s| s.to_string()).collect(),
+        }
+    }
+
+    fn make_table(rows: Vec<Row>) -> Table {
+        Table {
+            field_names: vec![],
+            primary_key_names: vec![],
+            rows,
+        }
+    }
+
+    fn find_delta<'a>(deltas: &'a [Delta], name: &str) -> Option<&'a Delta> {
+        deltas.iter().find(|d| d.name == name)
+    }
+
+    fn has_entry(entries: &[DeltaEntry], key: &[&str]) -> bool {
+        let key_vec: Vec<String> = key.iter().map(|s| s.to_string()).collect();
+        entries.iter().any(|e| e.key == key_vec)
+    }
+
+    #[test]
+    fn test_no_previous_state_all_inserts() {
+        let mut tables = HashMap::new();
+        tables.insert(
+            "users".to_string(),
+            make_table(vec![
+                make_row(&["1"], &["alice"]),
+                make_row(&["2"], &["bob"]),
+            ]),
+        );
+        let current = State { tables };
+
+        let deltas = compute_delta(None, &current);
+
+        assert_eq!(deltas.len(), 1);
+        let delta = find_delta(&deltas, "users").unwrap();
+        assert_eq!(delta.inserts.len(), 2);
+        assert_eq!(delta.deletes.len(), 0);
+        assert_eq!(delta.updates.len(), 0);
+    }
+
+    #[test]
+    fn test_table_only_in_previous_all_deletes() {
+        let mut prev_tables = HashMap::new();
+        prev_tables.insert(
+            "old_table".to_string(),
+            make_table(vec![
+                make_row(&["1"], &["data1"]),
+                make_row(&["2"], &["data2"]),
+            ]),
+        );
+        let previous = State { tables: prev_tables };
+        let current = State { tables: HashMap::new() };
+
+        let deltas = compute_delta(Some(previous), &current);
+
+        assert_eq!(deltas.len(), 1);
+        let delta = find_delta(&deltas, "old_table").unwrap();
+        assert_eq!(delta.inserts.len(), 0);
+        assert_eq!(delta.deletes.len(), 2);
+        assert_eq!(delta.updates.len(), 0);
+    }
+
+    #[test]
+    fn test_table_in_both_states_mixed_changes() {
+        let mut prev_tables = HashMap::new();
+        prev_tables.insert(
+            "users".to_string(),
+            make_table(vec![
+                make_row(&["1"], &["alice"]),      // will be updated
+                make_row(&["2"], &["bob"]),        // will be deleted
+                make_row(&["3"], &["charlie"]),   // will be updated
+            ]),
+        );
+        let previous = State { tables: prev_tables };
+
+        let mut curr_tables = HashMap::new();
+        curr_tables.insert(
+            "users".to_string(),
+            make_table(vec![
+                make_row(&["1"], &["alice_updated"]),  // update
+                make_row(&["3"], &["charlie"]),        // update (same value)
+                make_row(&["4"], &["dave"]),           // insert
+            ]),
+        );
+        let current = State { tables: curr_tables };
+
+        let deltas = compute_delta(Some(previous), &current);
+
+        assert_eq!(deltas.len(), 1);
+        let delta = find_delta(&deltas, "users").unwrap();
+
+        // Key "4" is new -> insert
+        assert_eq!(delta.inserts.len(), 1);
+        assert!(has_entry(&delta.inserts, &["4"]));
+
+        // Key "2" removed -> delete
+        assert_eq!(delta.deletes.len(), 1);
+        assert!(has_entry(&delta.deletes, &["2"]));
+
+        // Keys "1" and "3" in both -> updates
+        assert_eq!(delta.updates.len(), 2);
+        assert!(has_entry(&delta.updates, &["1"]));
+        assert!(has_entry(&delta.updates, &["3"]));
+    }
+
+    #[test]
+    fn test_multiple_tables() {
+        let mut prev_tables = HashMap::new();
+        prev_tables.insert(
+            "table_a".to_string(),
+            make_table(vec![make_row(&["1"], &["a"])]),
+        );
+        prev_tables.insert(
+            "table_b".to_string(),
+            make_table(vec![make_row(&["1"], &["b"])]),
+        );
+        let previous = State { tables: prev_tables };
+
+        let mut curr_tables = HashMap::new();
+        curr_tables.insert(
+            "table_b".to_string(),
+            make_table(vec![make_row(&["2"], &["b2"])]),
+        );
+        curr_tables.insert(
+            "table_c".to_string(),
+            make_table(vec![make_row(&["1"], &["c"])]),
+        );
+        let current = State { tables: curr_tables };
+
+        let deltas = compute_delta(Some(previous), &current);
+
+        assert_eq!(deltas.len(), 3);
+
+        // table_a: only in previous -> all deletes
+        let delta_a = find_delta(&deltas, "table_a").unwrap();
+        assert_eq!(delta_a.deletes.len(), 1);
+        assert_eq!(delta_a.inserts.len(), 0);
+
+        // table_b: in both -> key "1" deleted, key "2" inserted
+        let delta_b = find_delta(&deltas, "table_b").unwrap();
+        assert_eq!(delta_b.deletes.len(), 1);
+        assert!(has_entry(&delta_b.deletes, &["1"]));
+        assert_eq!(delta_b.inserts.len(), 1);
+        assert!(has_entry(&delta_b.inserts, &["2"]));
+
+        // table_c: only in current -> all inserts
+        let delta_c = find_delta(&deltas, "table_c").unwrap();
+        assert_eq!(delta_c.inserts.len(), 1);
+        assert_eq!(delta_c.deletes.len(), 0);
+    }
+
+    #[test]
+    fn test_empty_states() {
+        let previous = State { tables: HashMap::new() };
+        let current = State { tables: HashMap::new() };
+
+        let deltas = compute_delta(Some(previous), &current);
+        assert_eq!(deltas.len(), 0);
+    }
+
+    #[test]
+    fn test_composite_key() {
+        let mut prev_tables = HashMap::new();
+        prev_tables.insert(
+            "orders".to_string(),
+            make_table(vec![
+                make_row(&["user1", "order1"], &["100"]),
+                make_row(&["user1", "order2"], &["200"]),
+            ]),
+        );
+        let previous = State { tables: prev_tables };
+
+        let mut curr_tables = HashMap::new();
+        curr_tables.insert(
+            "orders".to_string(),
+            make_table(vec![
+                make_row(&["user1", "order1"], &["150"]),  // update
+                make_row(&["user2", "order1"], &["300"]),  // insert (different user)
+            ]),
+        );
+        let current = State { tables: curr_tables };
+
+        let deltas = compute_delta(Some(previous), &current);
+
+        let delta = find_delta(&deltas, "orders").unwrap();
+        assert_eq!(delta.inserts.len(), 1);
+        assert!(has_entry(&delta.inserts, &["user2", "order1"]));
+        assert_eq!(delta.deletes.len(), 1);
+        assert!(has_entry(&delta.deletes, &["user1", "order2"]));
+        assert_eq!(delta.updates.len(), 1);
+        assert!(has_entry(&delta.updates, &["user1", "order1"]));
+    }
+}
