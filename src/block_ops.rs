@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fs::File;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -5,7 +6,7 @@ use prost::Message;
 use sha1::{Digest, Sha1};
 
 use crate::block::Block;
-use crate::config;
+use crate::config::{self, TableConfig};
 use crate::storage;
 
 fn get_timestamp() -> Result<i32, &'static str> {
@@ -27,21 +28,64 @@ fn compute_hash(data: &[u8]) -> String {
     format!("{:x}", hasher.finalize())
 }
 
+fn parse_table(
+    table: &TableConfig,
+    reader: csv::Reader<File>,
+) -> Result<HashMap<Vec<String>, Vec<String>>, Box<dyn std::error::Error>> {
+    // Find indices for primary key columns and subsidiary columns
+    let primary_indices: Vec<usize> = table
+        .primary_key
+        .iter()
+        .filter_map(|pk_col| table.columns.iter().position(|c| c == pk_col))
+        .collect();
+
+    let subsidiary_indices: Vec<usize> = table
+        .columns
+        .iter()
+        .enumerate()
+        .filter(|(_, col)| !table.primary_key.contains(col))
+        .map(|(i, _)| i)
+        .collect();
+
+    let mut result: HashMap<Vec<String>, Vec<String>> = HashMap::new();
+
+    for record in reader.into_records() {
+        let record = record?;
+
+        let primary_key: Vec<String> = primary_indices
+            .iter()
+            .filter_map(|&i| record.get(i).map(String::from))
+            .collect();
+
+        let subsidiary: Vec<String> = subsidiary_indices
+            .iter()
+            .filter_map(|&i| record.get(i).map(String::from))
+            .collect();
+
+        result.insert(primary_key, subsidiary);
+    }
+
+    Ok(result)
+}
+
 pub fn commit_impl() -> Result<String, Box<dyn std::error::Error>> {
     let cfg = config::get_config()?;
 
     for (name, table) in &cfg.tables {
         let source_path = cfg.work_dir.join(&table.source);
         let file = File::open(&source_path)?;
-        let mut reader = csv::Reader::from_reader(file);
+        let reader = csv::ReaderBuilder::new()
+            .has_headers(false)
+            .from_reader(file);
 
-        let record_count = reader.records().count();
+        let table_data = parse_table(table, reader)?;
         log::info!(
             "commit: loaded table '{}' from '{}' ({} records)",
             name,
             source_path.display(),
-            record_count
+            table_data.len()
         );
+        log::debug!("commit: table '{}' data: {:?}", name, table_data);
     }
 
     let timestamp = get_timestamp()?;
