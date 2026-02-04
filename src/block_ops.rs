@@ -28,7 +28,8 @@ fn compute_hash(data: &[u8]) -> String {
     format!("{:x}", hasher.finalize())
 }
 
-fn load_previous_state(cfg: &config::Config) -> Result<Option<State>, Box<dyn std::error::Error>> {
+fn load_previous_state() -> Result<Option<State>, Box<dyn std::error::Error>> {
+    let cfg = config::get_config()?;
     let state_path = cfg.work_dir.join("previous_state");
     if !state_path.exists() {
         log::info!("commit: no previous_state file found");
@@ -85,11 +86,8 @@ fn parse_table(
     Ok(result)
 }
 
-pub fn commit_impl() -> Result<String, Box<dyn std::error::Error>> {
+fn load_current_state() -> Result<State, Box<dyn std::error::Error>> {
     let cfg = config::get_config()?;
-
-    let previous_state = load_previous_state(cfg)?;
-
     let mut all_tables: HashMap<String, Table> = HashMap::new();
 
     for (name, table) in &cfg.tables {
@@ -125,9 +123,14 @@ pub fn commit_impl() -> Result<String, Box<dyn std::error::Error>> {
         );
     }
 
-    let current_state = State { tables: all_tables };
-    let mut current_state_buf = Vec::new();
-    current_state.encode(&mut current_state_buf)?;
+    Ok(State { tables: all_tables })
+}
+
+pub fn commit_impl() -> Result<String, Box<dyn std::error::Error>> {
+    let cfg = config::get_config()?;
+
+    let previous_state = load_previous_state()?;
+    let current_state = load_current_state()?;
 
     let timestamp = get_timestamp()?;
     let parent = storage::read_head()?;
@@ -153,6 +156,8 @@ pub fn commit_impl() -> Result<String, Box<dyn std::error::Error>> {
         block.parent
     );
 
+    let mut current_state_buf = Vec::new();
+    current_state.encode(&mut current_state_buf)?;
     let state_path = cfg.work_dir.join("previous_state");
     std::fs::write(&state_path, &current_state_buf)?;
     log::info!("commit: wrote previous_state to '{}'", state_path.display());

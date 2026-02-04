@@ -1,4 +1,4 @@
 [tables.foo]
-source = "foo.csv"
+source = "../tests/foo.csv"
 field-names = [ "foo", "bar", "baz", "qux" ]
 primary-key = [ "foo", "bar" ]
