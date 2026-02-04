@@ -2,14 +2,11 @@ syntax = "proto3";
 
 package delta;
 
+import "state.proto";
+
 message Delta {
   string name = 1;
-  repeated DeltaEntry inserts = 2;
-  repeated DeltaEntry deletes = 3;
-  repeated DeltaEntry updates = 4;
-}
-
-message DeltaEntry {
-  repeated string key = 1;
-  repeated string value = 2;
+  repeated state.Row inserts = 2;
+  repeated state.Row deletes = 3;
+  repeated state.Row updates = 4;
 }

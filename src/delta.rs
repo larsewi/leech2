@@ -5,8 +5,8 @@ use crate::state::{Row, State, Table};
 
 fn row_to_entry(row: &Row) -> DeltaEntry {
     DeltaEntry {
-        key: row.primary_key.clone(),
-        value: row.subsidiary_val.clone(),
+        primary_key: row.primary_key.clone(),
+        subsidiary_val: row.subsidiary_val.clone(),
     }
 }
 
@@ -39,8 +39,8 @@ fn compute_table_delta(
     for (key, value) in &prev_map {
         if !curr_map.contains_key(key) {
             deletes.push(DeltaEntry {
-                key: (*key).clone(),
-                value: (*value).clone(),
+                primary_key: (*key).clone(),
+                subsidiary_val: (*value).clone(),
             });
         }
     }
@@ -51,14 +51,14 @@ fn compute_table_delta(
         match prev_map.get(key) {
             None => {
                 inserts.push(DeltaEntry {
-                    key: (*key).clone(),
-                    value: (*value).clone(),
+                    primary_key: (*key).clone(),
+                    subsidiary_val: (*value).clone(),
                 });
             }
             Some(prev_value) if prev_value != value => {
                 updates.push(DeltaEntry {
-                    key: (*key).clone(),
-                    value: (*value).clone(),
+                    primary_key: (*key).clone(),
+                    subsidiary_val: (*value).clone(),
                 });
             }
             _ => {} // Same value, skip
@@ -131,7 +131,7 @@ mod tests {
 
     fn has_entry(entries: &[DeltaEntry], key: &[&str]) -> bool {
         let key_vec: Vec<String> = key.iter().map(|s| s.to_string()).collect();
-        entries.iter().any(|e| e.key == key_vec)
+        entries.iter().any(|e| e.primary_key == key_vec)
     }
 
     #[test]

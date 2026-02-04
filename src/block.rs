@@ -7,6 +7,9 @@ mod proto {
     pub mod block {
         include!(concat!(env!("OUT_DIR"), "/block.rs"));
     }
+    pub mod state {
+        include!(concat!(env!("OUT_DIR"), "/state.rs"));
+    }
     pub mod delta {
         include!(concat!(env!("OUT_DIR"), "/delta.rs"));
     }
@@ -16,7 +19,8 @@ use crate::delta;
 use crate::state;
 use crate::storage;
 pub use proto::block::Block;
-pub use proto::delta::{Delta, DeltaEntry};
+pub use proto::delta::Delta;
+pub use proto::state::Row as DeltaEntry;
 
 fn get_timestamp() -> Result<i32, &'static str> {
     SystemTime::now()
