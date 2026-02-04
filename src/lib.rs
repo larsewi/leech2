@@ -10,7 +10,7 @@ mod storage;
 pub mod table;
 
 #[unsafe(no_mangle)]
-pub extern "C" fn init(work_dir: *const c_char) -> i32 {
+pub extern "C" fn isys_init(work_dir: *const c_char) -> i32 {
     if work_dir.is_null() {
         log::error!("init: bad argument: work directory cannot be NULL");
         return -1;
@@ -34,7 +34,7 @@ pub extern "C" fn init(work_dir: *const c_char) -> i32 {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn commit() -> i32 {
+pub extern "C" fn isys_commit() -> i32 {
     match block::commit() {
         Ok(_) => 0,
         Err(e) => {
