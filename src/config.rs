@@ -32,6 +32,12 @@ pub fn get_work_dir() -> Result<&'static Path, String> {
         .ok_or_else(|| "config not initialized".to_string())
 }
 
+pub fn get_config() -> Result<&'static Config, String> {
+    CONFIG
+        .get()
+        .ok_or_else(|| "config not initialized".to_string())
+}
+
 fn load_config(work_dir: &Path) -> Result<Config, String> {
     let config_path = work_dir.join("config.toml");
     let content = fs::read_to_string(&config_path)
@@ -47,7 +53,7 @@ pub fn init_impl(path: &str) -> Result<(), String> {
 
     let config = load_config(Path::new(path))?;
     log::debug!("init: work directory '{}'", config.work_dir.display());
-    log::debug!("init: loaded config with {} tables", config.tables.len());
+    log::info!("init: loaded config with {} tables", config.tables.len());
     CONFIG
         .set(config)
         .map_err(|_| "config already initialized".to_string())?;

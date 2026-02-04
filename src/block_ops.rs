@@ -1,9 +1,11 @@
+use std::fs::File;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use prost::Message;
 use sha1::{Digest, Sha1};
 
 use crate::block::Block;
+use crate::config;
 use crate::storage;
 
 fn get_timestamp() -> Result<i32, &'static str> {
@@ -26,6 +28,22 @@ fn compute_hash(data: &[u8]) -> String {
 }
 
 pub fn commit_impl() -> Result<String, Box<dyn std::error::Error>> {
+    let cfg = config::get_config()?;
+
+    for (name, table) in &cfg.tables {
+        let source_path = cfg.work_dir.join(&table.source);
+        let file = File::open(&source_path)?;
+        let mut reader = csv::Reader::from_reader(file);
+
+        let record_count = reader.records().count();
+        log::info!(
+            "commit: loaded table '{}' from '{}' ({} records)",
+            name,
+            source_path.display(),
+            record_count
+        );
+    }
+
     let timestamp = get_timestamp()?;
     let parent = storage::read_head()?;
 
