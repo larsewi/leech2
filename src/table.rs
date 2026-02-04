@@ -55,25 +55,26 @@ fn parse_csv(
 }
 
 /// Loads a table from a CSV file.
-pub fn load_table(
-    name: &str,
-    config: &TableConfig,
-) -> Result<Table, Box<dyn std::error::Error>> {
-    let source_path = config::get_work_dir()?.join(&config.source);
-    let file = File::open(&source_path)
-        .map_err(|e| format!("failed to open '{}': {}", source_path.display(), e))?;
+pub fn load_table(name: &str, config: &TableConfig) -> Result<Table, Box<dyn std::error::Error>> {
+    let path = config::get_work_dir()?.join(&config.source);
+    let file =
+        File::open(&path).map_err(|e| format!("failed to open '{}': {}", path.display(), e))?;
     let reader = csv::ReaderBuilder::new()
         .has_headers(false)
         .from_reader(file);
 
+    log::debug!("Parsing csv file '{}'...", path.display());
     let table_data = parse_csv(config, reader)?;
 
     let rows: Vec<Entry> = table_data
         .into_iter()
-        .map(|(pk, sub)| Entry { key: pk, value: sub })
+        .map(|(pk, sub)| Entry {
+            key: pk,
+            value: sub,
+        })
         .collect();
 
-    log::info!("Loaded table '{}' ({} records)", name, rows.len());
+    log::info!("Loaded table '{}' with {} records", name, rows.len());
 
     Ok(Table {
         fields: config.field_names.clone(),

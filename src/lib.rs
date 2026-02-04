@@ -1,4 +1,5 @@
 use std::ffi::{CStr, c_char};
+use std::path::PathBuf;
 
 pub mod block;
 mod config;
@@ -24,7 +25,7 @@ pub extern "C" fn isys_init(work_dir: *const c_char) -> i32 {
         }
     };
 
-    match config::init(path) {
+    match config::init(&PathBuf::from(path)) {
         Ok(_) => 0,
         Err(e) => {
             log::error!("isys_commit(): {}", e);

@@ -41,17 +41,17 @@ pub fn commit() -> Result<String, Box<dyn std::error::Error>> {
         timestamp,
         payload,
     };
+    log::debug!("{:#?}", block);
 
     let buf = encode_block(&block)?;
     let hash = compute_hash(&buf);
-    log::debug!("Block created: {:#?}", block);
+
+    log::info!("Created block '{:.7}...'", hash);
 
     storage::ensure_work_dir()?;
     storage::write_block(&hash, &buf)?;
+
     storage::write_head(&hash)?;
-
-    log::info!("Created block '{}'", hash);
-
     state::save_state(&current_state)?;
 
     Ok(hash)
