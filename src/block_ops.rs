@@ -52,3 +52,16 @@ pub fn commit_impl() -> Result<String, Box<dyn std::error::Error>> {
 
     Ok(hash)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_timestamp() {
+        let result = get_timestamp();
+        assert!(result.is_ok());
+        let timestamp = result.unwrap();
+        assert!(timestamp > 1577836800, "timestamp should be after 2020");
+    }
+}
