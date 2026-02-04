@@ -26,6 +26,7 @@ pub fn load_previous_state() -> Result<Option<State>, Box<dyn std::error::Error>
         state_path.display(),
         state.tables.len()
     );
+    log::debug!("commit: previous state: {:#?}", state);
     Ok(Some(state))
 }
 
@@ -106,7 +107,9 @@ pub fn load_current_state() -> Result<State, Box<dyn std::error::Error>> {
         );
     }
 
-    Ok(State { tables: all_tables })
+    let state = State { tables: all_tables };
+    log::debug!("commit: current state: {:#?}", state);
+    Ok(state)
 }
 
 pub fn save_state(state: &State) -> Result<(), Box<dyn std::error::Error>> {

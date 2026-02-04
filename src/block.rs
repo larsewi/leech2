@@ -7,10 +7,10 @@ mod proto {
     include!(concat!(env!("OUT_DIR"), "/block.rs"));
 }
 
-pub use proto::{Block, Delta, DeltaEntry};
 use crate::delta;
 use crate::state;
 use crate::storage;
+pub use proto::{Block, Delta, DeltaEntry};
 
 fn get_timestamp() -> Result<i32, &'static str> {
     SystemTime::now()
@@ -58,6 +58,7 @@ pub fn commit_impl() -> Result<String, Box<dyn std::error::Error>> {
         block.parent,
         block.timestamp,
     );
+    log::debug!("Block created: {:#?}", block);
 
     state::save_state(&current_state)?;
 
