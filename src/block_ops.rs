@@ -138,9 +138,8 @@ pub fn commit_impl() -> Result<String, Box<dyn std::error::Error>> {
     let parent = storage::read_head()?;
 
     let block = Block {
-        version: 1,
-        timestamp,
         parent,
+        timestamp,
         payload,
     };
 
@@ -152,11 +151,10 @@ pub fn commit_impl() -> Result<String, Box<dyn std::error::Error>> {
     storage::write_head(&hash)?;
 
     log::info!(
-        "commit: created block {} (version={}, timestamp={}, parent={})",
+        "commit: created block {} (parent={}, timestamp={})",
         hash,
-        block.version,
+        block.parent,
         block.timestamp,
-        block.parent
     );
 
     let mut current_state_buf = Vec::new();
@@ -183,7 +181,6 @@ mod tests {
     #[test]
     fn test_encode_block() {
         let block = Block {
-            version: 1,
             timestamp: 1700000000,
             parent: "abc123".to_string(),
             payload: Vec::new(),
@@ -195,7 +192,6 @@ mod tests {
 
         // Verify roundtrip: decode should produce the same block
         let decoded = Block::decode(encoded.as_slice()).unwrap();
-        assert_eq!(decoded.version, block.version);
         assert_eq!(decoded.timestamp, block.timestamp);
         assert_eq!(decoded.parent, block.parent);
     }

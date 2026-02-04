@@ -3,10 +3,9 @@ syntax = "proto3";
 package block;
 
 message Block {
-  int32 version = 1;
+  string parent = 1;
   int32 timestamp = 2;
-  string parent = 3;
-  repeated Delta payload = 4;
+  repeated Delta payload = 3;
 }
 
 message Delta {
