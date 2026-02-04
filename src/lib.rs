@@ -24,7 +24,7 @@ pub extern "C" fn init(work_dir: *const c_char) -> i32 {
         }
     };
 
-    match config::init_impl(path) {
+    match config::init(path) {
         Ok(_) => 0,
         Err(e) => {
             log::error!("init: {}", e);

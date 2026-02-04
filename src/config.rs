@@ -45,7 +45,7 @@ fn load_config(work_dir: &Path) -> Result<Config, String> {
     Ok(config)
 }
 
-pub fn init_impl(path: &str) -> Result<(), String> {
+pub fn init(path: &str) -> Result<(), String> {
     env_logger::init();
 
     let config = load_config(Path::new(path))?;
