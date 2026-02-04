@@ -5,7 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use prost::Message;
 use sha1::{Digest, Sha1};
 
-use crate::block::{Block, State, Row, Table};
+use crate::block::{Block, Row, State, Table};
 use crate::config::{self, TableConfig};
 use crate::storage;
 
@@ -26,6 +26,23 @@ fn compute_hash(data: &[u8]) -> String {
     let mut hasher = Sha1::new();
     hasher.update(data);
     format!("{:x}", hasher.finalize())
+}
+
+fn load_previous_state(cfg: &config::Config) -> Result<Option<State>, Box<dyn std::error::Error>> {
+    let state_path = cfg.work_dir.join("previous_state");
+    if !state_path.exists() {
+        log::info!("commit: no previous_state file found");
+        return Ok(None);
+    }
+
+    let data = std::fs::read(&state_path)?;
+    let state = State::decode(data.as_slice())?;
+    log::info!(
+        "commit: loaded previous state from '{}' ({} tables)",
+        state_path.display(),
+        state.tables.len()
+    );
+    Ok(Some(state))
 }
 
 fn parse_table(
@@ -70,6 +87,8 @@ fn parse_table(
 
 pub fn commit_impl() -> Result<String, Box<dyn std::error::Error>> {
     let cfg = config::get_config()?;
+
+    let previous_state = load_previous_state(cfg)?;
 
     let mut all_tables: HashMap<String, Table> = HashMap::new();
 
