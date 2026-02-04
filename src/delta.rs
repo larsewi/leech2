@@ -32,5 +32,27 @@ pub fn compute_delta(
         }
     }
 
+    if let Some(ref previous) = previous_state {
+        for (table_name, table) in &previous.tables {
+            if !current_state.tables.contains_key(table_name) {
+                let deletes: Vec<DeltaEntry> = table
+                    .rows
+                    .iter()
+                    .map(|row| DeltaEntry {
+                        key: row.primary_key.clone(),
+                        value: row.subsidiary_val.clone(),
+                    })
+                    .collect();
+
+                deltas.push(Delta {
+                    name: table_name.clone(),
+                    inserts: Vec::new(),
+                    deletes,
+                    updates: Vec::new(),
+                });
+            }
+        }
+    }
+
     deltas
 }
