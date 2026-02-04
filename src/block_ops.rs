@@ -5,7 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use prost::Message;
 use sha1::{Digest, Sha1};
 
-use crate::block::Block;
+use crate::block::{Block, PreviousState, Row, Table};
 use crate::config::{self, TableConfig};
 use crate::storage;
 
@@ -71,6 +71,8 @@ fn parse_table(
 pub fn commit_impl() -> Result<String, Box<dyn std::error::Error>> {
     let cfg = config::get_config()?;
 
+    let mut all_tables: HashMap<String, Table> = HashMap::new();
+
     for (name, table) in &cfg.tables {
         let source_path = cfg.work_dir.join(&table.source);
         let file = File::open(&source_path)?;
@@ -85,8 +87,27 @@ pub fn commit_impl() -> Result<String, Box<dyn std::error::Error>> {
             source_path.display(),
             table_data.len()
         );
-        log::debug!("commit: table '{}' data: {:?}", name, table_data);
+
+        let rows: Vec<Row> = table_data
+            .into_iter()
+            .map(|(pk, sub)| Row {
+                primary_key: pk,
+                subsidiary: sub,
+            })
+            .collect();
+
+        all_tables.insert(name.clone(), Table { rows });
     }
+
+    let previous_state = PreviousState {
+        tables: all_tables,
+    };
+    let mut state_buf = Vec::new();
+    previous_state.encode(&mut state_buf)?;
+
+    let state_path = cfg.work_dir.join("previous_state");
+    std::fs::write(&state_path, &state_buf)?;
+    log::info!("commit: wrote previous_state to '{}'", state_path.display());
 
     let timestamp = get_timestamp()?;
     let parent = storage::read_head()?;
