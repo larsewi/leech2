@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package state;
+
+message Row {
+  repeated string primary_key = 1;
+  repeated string subsidiary_val = 2;
+}
+
+message Table {
+  repeated string field_names = 1;
+  repeated Row rows = 2;
+  repeated string primary_key_names = 3;
+}
+
+message State {
+  map<string, Table> tables = 1;
+}
