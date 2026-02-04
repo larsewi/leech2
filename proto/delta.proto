@@ -4,9 +4,14 @@ package delta;
 
 import "entry.proto";
 
+// Delta represents the changes to a single table between two states.
 message Delta {
+  // The name of the table this delta applies to.
   string name = 1;
+  // Entries that were added (new keys).
   repeated entry.Entry inserts = 2;
+  // Entries that were removed (keys no longer present).
   repeated entry.Entry deletes = 3;
+  // Entries that were modified (existing keys with changed values).
   repeated entry.Entry updates = 4;
 }
