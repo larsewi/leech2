@@ -2,7 +2,7 @@ pub use crate::proto::delta::Delta;
 
 use crate::entry::Entry;
 use crate::state::State;
-use crate::table::{table_to_map, Table};
+use crate::table::{Table, table_to_map};
 
 fn compute_table_delta(
     prev_table: Option<&Table>,
@@ -65,6 +65,11 @@ pub fn compute_delta(previous_state: Option<State>, current_state: &State) -> Ve
 
         let (inserts, deletes, updates) = compute_table_delta(prev_table, current_table);
 
+        // Skip tables with no changes
+        if inserts.is_empty() && deletes.is_empty() && updates.is_empty() {
+            continue;
+        }
+
         deltas.push(Delta {
             name: table_name.clone(),
             inserts,
@@ -76,16 +81,23 @@ pub fn compute_delta(previous_state: Option<State>, current_state: &State) -> Ve
     // Tables only in previous state: all rows are deletes
     if let Some(ref previous) = previous_state {
         for (table_name, table) in &previous.tables {
-            if !current_state.tables.contains_key(table_name) {
-                let deletes = table.rows.iter().cloned().collect();
-
-                deltas.push(Delta {
-                    name: table_name.clone(),
-                    inserts: Vec::new(),
-                    deletes,
-                    updates: Vec::new(),
-                });
+            // Skip empty tables
+            if table.rows.is_empty() {
+                continue;
             }
+
+            // Skip if table exists in current state (this is already handled above)
+            if current_state.tables.contains_key(table_name) {
+                continue;
+            }
+
+            let deletes = table.rows.iter().cloned().collect();
+            deltas.push(Delta {
+                name: table_name.clone(),
+                inserts: Vec::new(),
+                deletes: deletes,
+                updates: Vec::new(),
+            });
         }
     }
 
@@ -277,6 +289,48 @@ mod tests {
 
         let deltas = compute_delta(Some(previous), &current);
         assert_eq!(deltas.len(), 0);
+    }
+
+    #[test]
+    fn test_unchanged_table_skipped() {
+        let mut prev_tables = HashMap::new();
+        prev_tables.insert(
+            "unchanged".to_string(),
+            make_table(vec![
+                make_row(&["1"], &["alice"]),
+                make_row(&["2"], &["bob"]),
+            ]),
+        );
+        prev_tables.insert(
+            "changed".to_string(),
+            make_table(vec![make_row(&["1"], &["old_value"])]),
+        );
+        let previous = State {
+            tables: prev_tables,
+        };
+
+        let mut curr_tables = HashMap::new();
+        curr_tables.insert(
+            "unchanged".to_string(),
+            make_table(vec![
+                make_row(&["1"], &["alice"]),
+                make_row(&["2"], &["bob"]),
+            ]),
+        );
+        curr_tables.insert(
+            "changed".to_string(),
+            make_table(vec![make_row(&["1"], &["new_value"])]),
+        );
+        let current = State {
+            tables: curr_tables,
+        };
+
+        let deltas = compute_delta(Some(previous), &current);
+
+        // Only the changed table should have a delta
+        assert_eq!(deltas.len(), 1);
+        assert!(find_delta(&deltas, "changed").is_some());
+        assert!(find_delta(&deltas, "unchanged").is_none());
     }
 
     #[test]
