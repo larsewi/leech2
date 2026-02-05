@@ -8,12 +8,12 @@ LDLIBS = -limproved_system
 all:
 	cargo build
 
-check: tests/prog
+check: tests/isys
 	mkdir -p tests/.workdir
 	cp tests/config.toml tests/.workdir/
-	RUST_LOG=debug ./tests/prog tests/.workdir commit
+	RUST_LOG=debug ./tests/isys tests/.workdir commit
 
-tests/prog: tests/main.o
+tests/isys: tests/main.o
 	$(CC) $^ -o $@ $(LDFLAGS) $(LDLIBS) -Wl,-rpath,'$$ORIGIN/../target/debug'
 
 tests/main.o: tests/main.c
@@ -21,5 +21,5 @@ tests/main.o: tests/main.c
 
 clean:
 	rm -f tests/main.o
-	rm -f tests/prog
+	rm -f tests/isys
 	rm -rf tests/.workdir

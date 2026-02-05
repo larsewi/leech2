@@ -79,5 +79,5 @@ Module.symvers
 Mkfile.old
 dkms.conf
 
-prog
+isys
 tests/.workdir/*
