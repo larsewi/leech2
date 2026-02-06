@@ -9,8 +9,8 @@ use crate::config;
 pub fn read_block(hash: &str) -> Result<Block, Box<dyn std::error::Error>> {
     let path = config::get_work_dir()?.join(hash);
     log::debug!("Reading block from file '{}'", path.display());
-    let data = fs::read(&path)
-        .map_err(|e| format!("Failed to read block '{}': {}", path.display(), e))?;
+    let data =
+        fs::read(&path).map_err(|e| format!("Failed to read block '{}': {}", path.display(), e))?;
     let block = Block::decode(data.as_slice())
         .map_err(|e| format!("Failed to decode block '{:.7}...': {}", hash, e))?;
     log::info!("Loaded block '{:.7}...'", hash);
@@ -29,8 +29,13 @@ pub fn read_head() -> Result<String, String> {
 
 pub fn ensure_work_dir() -> Result<(), String> {
     let path = config::get_work_dir()?;
-    fs::create_dir_all(&path)
-        .map_err(|e| format!("Failed to create work directory '{}': {}", path.display(), e))
+    fs::create_dir_all(&path).map_err(|e| {
+        format!(
+            "Failed to create work directory '{}': {}",
+            path.display(),
+            e
+        )
+    })
 }
 
 pub fn write_block(hash: &str, data: &[u8]) -> Result<(), String> {
