@@ -46,13 +46,13 @@ pub extern "C" fn lch_commit() -> i32 {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn lch_diff(hash: *const c_char, squash: i32) -> i32 {
-    if hash.is_null() {
-        log::error!("lch_diff(): Bad argument: hash cannot be NULL");
+pub extern "C" fn lch_diff(block: *const c_char, flags: i32) -> i32 {
+    if block.is_null() {
+        log::error!("lch_diff(): Bad argument: block hash cannot be NULL");
         return -1;
     }
 
-    let _hash = match unsafe { CStr::from_ptr(hash) }.to_str() {
+    let _hash = match unsafe { CStr::from_ptr(block) }.to_str() {
         Ok(hash) => hash,
         Err(e) => {
             log::error!("lch_diff(): Bad argument: {e}");
@@ -60,7 +60,7 @@ pub extern "C" fn lch_diff(hash: *const c_char, squash: i32) -> i32 {
         }
     };
 
-    let _squash = squash != 0;
+    let _squash = flags & 1;
 
     // TODO: Implement diff logic
     0
