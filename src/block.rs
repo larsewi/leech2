@@ -28,6 +28,21 @@ fn compute_hash(data: &[u8]) -> String {
     format!("{:x}", hasher.finalize())
 }
 
+pub fn merge_blocks(mut parent: Block, current: Block) -> Result<Block, Box<dyn std::error::Error>> {
+    log::debug!("merge_blocks()");
+
+    for current_delta in &current.payload {
+        if let Some(parent_delta) = parent.payload.iter_mut().find(|d| d.name == current_delta.name)
+        {
+            delta::merge_deltas(parent_delta, current_delta);
+        } else {
+            parent.payload.push(current_delta.clone());
+        }
+    }
+
+    Ok(parent)
+}
+
 pub fn commit() -> Result<String, Box<dyn std::error::Error>> {
     log::debug!("commit()");
 

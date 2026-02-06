@@ -7,7 +7,6 @@ pub mod delta;
 mod diff;
 pub mod entry;
 mod proto;
-mod squash;
 pub mod state;
 mod storage;
 pub mod table;
