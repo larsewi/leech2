@@ -23,7 +23,7 @@ commit: tests/leech2 tests/.workdir/config.toml
 	./tests/leech2 tests/.workdir commit
 
 diff: tests/leech2 tests/.workdir/config.toml
-	./tests/leech2 tests/.workdir diff
+	./tests/leech2 tests/.workdir diff $ARGS
 
 clean:
 	rm -f tests/main.o
