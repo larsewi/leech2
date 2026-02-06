@@ -47,10 +47,11 @@ fn load_config(work_dir: &Path) -> Result<Config, String> {
     Ok(config)
 }
 
-pub fn init(path: &Path) -> Result<(), String> {
+pub fn init(work_dir: &Path) -> Result<(), String> {
     env_logger::init();
+    log::debug!("init(work_dir={})", work_dir.display());
 
-    let config = load_config(path)?;
+    let config = load_config(work_dir)?;
     log::info!("Initialized config with {} tables", config.tables.len());
     CONFIG
         .set(config)
