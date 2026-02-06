@@ -4,6 +4,7 @@ use std::path::PathBuf;
 pub mod block;
 mod config;
 pub mod delta;
+mod diff;
 pub mod entry;
 mod proto;
 pub mod state;
@@ -52,7 +53,7 @@ pub extern "C" fn lch_diff(block: *const c_char, flags: i32) -> i32 {
         return -1;
     }
 
-    let _hash = match unsafe { CStr::from_ptr(block) }.to_str() {
+    let hash = match unsafe { CStr::from_ptr(block) }.to_str() {
         Ok(hash) => hash,
         Err(e) => {
             log::error!("lch_diff(): Bad argument: {e}");
@@ -60,8 +61,13 @@ pub extern "C" fn lch_diff(block: *const c_char, flags: i32) -> i32 {
         }
     };
 
-    let _squash = flags & 1;
+    let squash = flags & 1 != 0;
 
-    // TODO: Implement diff logic
-    0
+    match diff::diff(hash, squash) {
+        Ok(_) => 0,
+        Err(e) => {
+            log::error!("lch_diff(): {}", e);
+            -1
+        }
+    }
 }
