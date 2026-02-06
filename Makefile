@@ -19,10 +19,13 @@ tests/leech2: tests/main.o
 tests/main.o: tests/main.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
 
-commit: tests/leech2 tests/.workdir/config.toml
+init: tests/.workdir/config.toml
+	cp tests/foo.csv tests/.workdir
+
+commit: tests/leech2
 	./tests/leech2 tests/.workdir commit
 
-diff: tests/leech2 tests/.workdir/config.toml
+diff: tests/leech2
 	./tests/leech2 tests/.workdir diff $(ARGS)
 
 clean:
