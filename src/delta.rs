@@ -79,97 +79,97 @@ impl Delta {
         // TODO: Implement merge logic
         log::debug!("Delta::merge()");
     }
-}
 
-type Inserts = HashMap<Vec<String>, Vec<String>>;
-type Deletes = HashMap<Vec<String>, Vec<String>>;
-type Updates = HashMap<Vec<String>, (Vec<String>, Vec<String>)>;
+    pub fn compute(previous_state: Option<State>, current_state: &State) -> Vec<Delta> {
+        let mut deltas = Vec::new();
 
-fn compute_table_delta(
-    prev_table: Option<&Table>,
-    curr_table: &Table,
-) -> (Inserts, Deletes, Updates) {
-    let mut inserts = HashMap::new();
-    let mut deletes = HashMap::new();
-    let mut updates = HashMap::new();
+        // Process tables in current state
+        for (table_name, current_table) in &current_state.tables {
+            let prev_table = previous_state
+                .as_ref()
+                .and_then(|ps| ps.tables.get(table_name));
 
-    let Some(prev_table) = prev_table else {
-        // No previous table: all records are inserts
-        let inserts = curr_table.records.clone();
-        return (inserts, deletes, updates);
-    };
+            let (inserts, deletes, updates) = Self::compute_table(prev_table, current_table);
 
-    // Keys in previous but not current -> deletes
-    for (k, v) in &prev_table.records {
-        if !curr_table.records.contains_key(k) {
-            deletes.insert(k.clone(), v.clone());
-        }
-    }
-
-    // Keys in current but not previous -> inserts
-    // Keys in both with different values -> updates
-    for (k, v) in &curr_table.records {
-        match prev_table.records.get(k) {
-            None => {
-                inserts.insert(k.clone(), v.clone());
-            }
-            Some(prev_value) if prev_value != v => {
-                updates.insert(k.clone(), (prev_value.clone(), v.clone()));
-            }
-            _ => {} // Same value, skip
-        }
-    }
-
-    (inserts, deletes, updates)
-}
-
-pub fn compute_delta(previous_state: Option<State>, current_state: &State) -> Vec<Delta> {
-    let mut deltas = Vec::new();
-
-    // Process tables in current state
-    for (table_name, current_table) in &current_state.tables {
-        let prev_table = previous_state
-            .as_ref()
-            .and_then(|ps| ps.tables.get(table_name));
-
-        let (inserts, deletes, updates) = compute_table_delta(prev_table, current_table);
-
-        // Skip tables with no changes
-        if inserts.is_empty() && deletes.is_empty() && updates.is_empty() {
-            continue;
-        }
-
-        deltas.push(Delta {
-            name: table_name.clone(),
-            inserts,
-            deletes,
-            updates,
-        });
-    }
-
-    // Tables only in previous state: all records are deletes
-    if let Some(ref previous) = previous_state {
-        for (table_name, table) in &previous.tables {
-            // Skip empty tables
-            if table.records.is_empty() {
-                continue;
-            }
-
-            // Skip if table exists in current state (this is already handled above)
-            if current_state.tables.contains_key(table_name) {
+            // Skip tables with no changes
+            if inserts.is_empty() && deletes.is_empty() && updates.is_empty() {
                 continue;
             }
 
             deltas.push(Delta {
                 name: table_name.clone(),
-                inserts: HashMap::new(),
-                deletes: table.records.clone(),
-                updates: HashMap::new(),
+                inserts,
+                deletes,
+                updates,
             });
         }
+
+        // Tables only in previous state: all records are deletes
+        if let Some(ref previous) = previous_state {
+            for (table_name, table) in &previous.tables {
+                // Skip empty tables
+                if table.records.is_empty() {
+                    continue;
+                }
+
+                // Skip if table exists in current state (this is already handled above)
+                if current_state.tables.contains_key(table_name) {
+                    continue;
+                }
+
+                deltas.push(Delta {
+                    name: table_name.clone(),
+                    inserts: HashMap::new(),
+                    deletes: table.records.clone(),
+                    updates: HashMap::new(),
+                });
+            }
+        }
+
+        deltas
     }
 
-    deltas
+    fn compute_table(
+        prev_table: Option<&Table>,
+        curr_table: &Table,
+    ) -> (
+        HashMap<Vec<String>, Vec<String>>,
+        HashMap<Vec<String>, Vec<String>>,
+        HashMap<Vec<String>, (Vec<String>, Vec<String>)>,
+    ) {
+        let mut inserts = HashMap::new();
+        let mut deletes = HashMap::new();
+        let mut updates = HashMap::new();
+
+        let Some(prev_table) = prev_table else {
+            // No previous table: all records are inserts
+            let inserts = curr_table.records.clone();
+            return (inserts, deletes, updates);
+        };
+
+        // Keys in previous but not current -> deletes
+        for (k, v) in &prev_table.records {
+            if !curr_table.records.contains_key(k) {
+                deletes.insert(k.clone(), v.clone());
+            }
+        }
+
+        // Keys in current but not previous -> inserts
+        // Keys in both with different values -> updates
+        for (k, v) in &curr_table.records {
+            match prev_table.records.get(k) {
+                None => {
+                    inserts.insert(k.clone(), v.clone());
+                }
+                Some(prev_value) if prev_value != v => {
+                    updates.insert(k.clone(), (prev_value.clone(), v.clone()));
+                }
+                _ => {} // Same value, skip
+            }
+        }
+
+        (inserts, deletes, updates)
+    }
 }
 
 #[cfg(test)]
@@ -210,7 +210,7 @@ mod tests {
         );
         let current = State { tables };
 
-        let deltas = compute_delta(None, &current);
+        let deltas = Delta::compute(None, &current);
 
         assert_eq!(deltas.len(), 1);
         let delta = find_delta(&deltas, "users").unwrap();
@@ -233,7 +233,7 @@ mod tests {
             tables: HashMap::new(),
         };
 
-        let deltas = compute_delta(Some(previous), &current);
+        let deltas = Delta::compute(Some(previous), &current);
 
         assert_eq!(deltas.len(), 1);
         let delta = find_delta(&deltas, "old_table").unwrap();
@@ -270,7 +270,7 @@ mod tests {
             tables: curr_tables,
         };
 
-        let deltas = compute_delta(Some(previous), &current);
+        let deltas = Delta::compute(Some(previous), &current);
 
         assert_eq!(deltas.len(), 1);
         let delta = find_delta(&deltas, "users").unwrap();
@@ -305,7 +305,7 @@ mod tests {
             tables: curr_tables,
         };
 
-        let deltas = compute_delta(Some(previous), &current);
+        let deltas = Delta::compute(Some(previous), &current);
 
         assert_eq!(deltas.len(), 3);
 
@@ -336,7 +336,7 @@ mod tests {
             tables: HashMap::new(),
         };
 
-        let deltas = compute_delta(Some(previous), &current);
+        let deltas = Delta::compute(Some(previous), &current);
         assert_eq!(deltas.len(), 0);
     }
 
@@ -368,7 +368,7 @@ mod tests {
             tables: curr_tables,
         };
 
-        let deltas = compute_delta(Some(previous), &current);
+        let deltas = Delta::compute(Some(previous), &current);
 
         // Only the changed table should have a delta
         assert_eq!(deltas.len(), 1);
@@ -402,7 +402,7 @@ mod tests {
             tables: curr_tables,
         };
 
-        let deltas = compute_delta(Some(previous), &current);
+        let deltas = Delta::compute(Some(previous), &current);
 
         let delta = find_delta(&deltas, "orders").unwrap();
         assert_eq!(delta.inserts.len(), 1);

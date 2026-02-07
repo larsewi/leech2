@@ -57,7 +57,7 @@ pub fn commit() -> Result<String, Box<dyn std::error::Error>> {
 
     let previous_state = state::load_previous_state()?;
     let current_state = state::load_current_state()?;
-    let deltas = delta::compute_delta(previous_state, &current_state);
+    let deltas = delta::Delta::compute(previous_state, &current_state);
     let payload = deltas
         .into_iter()
         .map(crate::proto::delta::Delta::from)
