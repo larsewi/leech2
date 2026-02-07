@@ -68,7 +68,7 @@ impl State {
         let proto_state = crate::proto::state::State::from(self.clone());
         let mut buf = Vec::new();
         proto_state.encode(&mut buf)?;
-        storage::store("previous_state", &buf)?;
+        storage::save("previous_state", &buf)?;
         log::info!(
             "Updated previous state to current state with {} tables",
             self.tables.len()
