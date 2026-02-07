@@ -30,9 +30,10 @@ impl Config {
             .ok_or_else(|| "config not initialized".to_string())
     }
 
-    pub fn get() -> Result<&'static Config, String> {
+    pub fn get_tables() -> Result<&'static HashMap<String, TableConfig>, String> {
         CONFIG
             .get()
+            .map(|c| &c.tables)
             .ok_or_else(|| "config not initialized".to_string())
     }
 }
