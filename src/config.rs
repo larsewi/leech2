@@ -22,17 +22,19 @@ pub struct TableConfig {
 
 static CONFIG: OnceLock<Config> = OnceLock::new();
 
-pub fn get_work_dir() -> Result<&'static Path, String> {
-    CONFIG
-        .get()
-        .map(|c| c.work_dir.as_path())
-        .ok_or_else(|| "config not initialized".to_string())
-}
+impl Config {
+    pub fn get_work_dir() -> Result<&'static Path, String> {
+        CONFIG
+            .get()
+            .map(|c| c.work_dir.as_path())
+            .ok_or_else(|| "config not initialized".to_string())
+    }
 
-pub fn get_config() -> Result<&'static Config, String> {
-    CONFIG
-        .get()
-        .ok_or_else(|| "config not initialized".to_string())
+    pub fn get() -> Result<&'static Config, String> {
+        CONFIG
+            .get()
+            .ok_or_else(|| "config not initialized".to_string())
+    }
 }
 
 fn load_config(work_dir: &Path) -> Result<Config, String> {

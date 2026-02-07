@@ -9,7 +9,7 @@ use crate::config;
 
 /// Saves data to a file in the work directory with an exclusive lock.
 pub fn save(name: &str, data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
-    let work_dir = config::get_work_dir()?;
+    let work_dir = config::Config::get_work_dir()?;
     fs::create_dir_all(&work_dir)
         .map_err(|e| format!("Failed to create work directory '{}': {}", work_dir.display(), e))?;
 
@@ -34,7 +34,7 @@ pub fn save(name: &str, data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
 
 /// Loads data from a file in the work directory with a shared lock.
 pub fn load(name: &str) -> Result<Option<Vec<u8>>, Box<dyn std::error::Error>> {
-    let path = config::get_work_dir()?.join(name);
+    let path = config::Config::get_work_dir()?.join(name);
     log::debug!("Loading data from file '{}'...", path.display());
 
     if !path.exists() {
@@ -60,7 +60,7 @@ pub fn load(name: &str) -> Result<Option<Vec<u8>>, Box<dyn std::error::Error>> {
 }
 
 pub fn read_block(hash: &str) -> Result<Block, Box<dyn std::error::Error>> {
-    let path = config::get_work_dir()?.join(hash);
+    let path = config::Config::get_work_dir()?.join(hash);
     log::debug!("Reading block from file '{}'", path.display());
     let data =
         fs::read(&path).map_err(|e| format!("Failed to read block '{}': {}", path.display(), e))?;
@@ -71,7 +71,7 @@ pub fn read_block(hash: &str) -> Result<Block, Box<dyn std::error::Error>> {
 }
 
 pub fn ensure_work_dir() -> Result<(), String> {
-    let path = config::get_work_dir()?;
+    let path = config::Config::get_work_dir()?;
     fs::create_dir_all(&path).map_err(|e| {
         format!(
             "Failed to create work directory '{}': {}",
@@ -82,7 +82,7 @@ pub fn ensure_work_dir() -> Result<(), String> {
 }
 
 pub fn write_block(hash: &str, data: &[u8]) -> Result<(), String> {
-    let path = config::get_work_dir()?.join(hash);
+    let path = config::Config::get_work_dir()?.join(hash);
     log::debug!("Writing block to file '{}'...", path.display());
     let mut file = fs::File::create(&path)
         .map_err(|e| format!("Failed to create block file '{}': {}", path.display(), e))?;

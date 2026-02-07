@@ -52,7 +52,7 @@ impl State {
     }
 
     pub fn compute() -> Result<Self, Box<dyn std::error::Error>> {
-        let config = config::get_config()?;
+        let config = config::Config::get()?;
         let mut tables: HashMap<String, Table> = HashMap::new();
 
         for (name, config) in &config.tables {
