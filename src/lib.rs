@@ -32,7 +32,7 @@ pub extern "C" fn lch_init(work_dir: *const c_char) -> i32 {
 
     log::debug!("lch_init(work_dir={})", path.display());
 
-    if let Err(e) = config::Config::load(&path) {
+    if let Err(e) = config::Config::init(&path) {
         log::error!("lch_init(): {}", e);
         return -1;
     }

@@ -29,7 +29,7 @@ impl Config {
             .ok_or_else(|| "config not initialized".to_string())
     }
 
-    pub fn load(work_dir: &Path) -> Result<(), String> {
+    pub fn init(work_dir: &Path) -> Result<(), String> {
         let path = work_dir.join("config.toml");
         log::debug!("Parsing config from file '{}'...", path.display());
         let content =
