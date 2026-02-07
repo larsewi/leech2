@@ -55,7 +55,7 @@ pub fn merge_blocks(
 pub fn commit() -> Result<String, Box<dyn std::error::Error>> {
     log::debug!("commit()");
 
-    let previous_state = state::load_previous_state()?;
+    let previous_state = state::State::load_previous()?;
     let current_state = state::load_current_state()?;
     let deltas = delta::Delta::compute(previous_state, &current_state);
     let payload = deltas

@@ -34,22 +34,24 @@ impl From<State> for crate::proto::state::State {
     }
 }
 
-pub fn load_previous_state() -> Result<Option<State>, Box<dyn std::error::Error>> {
-    let config = config::get_config()?;
-    let path = config.work_dir.join("previous_state");
-    if !path.exists() {
-        log::info!("No previous state found");
-        return Ok(None);
+impl State {
+    pub fn load_previous() -> Result<Option<Self>, Box<dyn std::error::Error>> {
+        let config = config::get_config()?;
+        let path = config.work_dir.join("previous_state");
+        if !path.exists() {
+            log::info!("No previous state found");
+            return Ok(None);
+        }
+
+        log::debug!("Parsing previous state from file '{}'...", path.display());
+
+        let data = std::fs::read(&path)?;
+        let proto_state = crate::proto::state::State::decode(data.as_slice())?;
+        let state = State::from(proto_state);
+        log::debug!("{:#?}", state);
+        log::info!("Loaded previous state with {} tables", state.tables.len());
+        Ok(Some(state))
     }
-
-    log::debug!("Parsing previous state from file '{}'...", path.display());
-
-    let data = std::fs::read(&path)?;
-    let proto_state = crate::proto::state::State::decode(data.as_slice())?;
-    let state = State::from(proto_state);
-    log::debug!("{:#?}", state);
-    log::info!("Loaded previous state with {} tables", state.tables.len());
-    Ok(Some(state))
 }
 
 pub fn load_current_state() -> Result<State, Box<dyn std::error::Error>> {
