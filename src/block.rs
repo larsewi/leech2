@@ -8,12 +8,6 @@ use crate::utils;
 
 pub use crate::proto::block::Block;
 
-fn encode_block(block: &Block) -> Result<Vec<u8>, prost::EncodeError> {
-    let mut buf = Vec::new();
-    block.encode(&mut buf)?;
-    Ok(buf)
-}
-
 pub fn merge_blocks(
     mut parent: Block,
     mut current: Block,
@@ -59,7 +53,8 @@ pub fn commit() -> Result<String, Box<dyn std::error::Error>> {
     };
     log::debug!("{:#?}", block);
 
-    let buf = encode_block(&block)?;
+    let mut buf = Vec::new();
+    block.encode(&mut buf)?;
     let hash = utils::compute_hash(&buf);
 
     log::info!("Created block '{:.7}...'", hash);
@@ -92,13 +87,12 @@ mod tests {
             parent: "abc123".to_string(),
             payload: Vec::new(),
         };
-        let result = encode_block(&block);
-        assert!(result.is_ok());
-        let encoded = result.unwrap();
-        assert!(!encoded.is_empty());
+        let mut buf = Vec::new();
+        block.encode(&mut buf).unwrap();
+        assert!(!buf.is_empty());
 
         // Verify roundtrip: decode should produce the same block
-        let decoded = Block::decode(encoded.as_slice()).unwrap();
+        let decoded = Block::decode(buf.as_slice()).unwrap();
         assert_eq!(decoded.timestamp, block.timestamp);
         assert_eq!(decoded.parent, block.parent);
     }
