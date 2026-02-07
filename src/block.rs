@@ -9,6 +9,15 @@ use crate::utils;
 pub use crate::proto::block::Block;
 
 impl Block {
+    pub fn load(hash: &str) -> Result<Block, Box<dyn std::error::Error>> {
+        let data = storage::load(hash)?
+            .ok_or_else(|| format!("Block '{:.7}...' not found", hash))?;
+        let block = Block::decode(data.as_slice())
+            .map_err(|e| format!("Failed to decode block '{:.7}...': {}", hash, e))?;
+        log::info!("Loaded block '{:.7}...'", hash);
+        Ok(block)
+    }
+
     pub fn create() -> Result<String, Box<dyn std::error::Error>> {
         let previous_state = state::State::load()?;
         let current_state = state::State::compute()?;

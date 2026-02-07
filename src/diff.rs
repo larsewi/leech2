@@ -1,6 +1,5 @@
 use crate::block::Block;
 use crate::head;
-use crate::storage;
 use crate::utils::GENESIS_HASH;
 
 pub fn diff(final_hash: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -10,7 +9,7 @@ pub fn diff(final_hash: &str) -> Result<(), Box<dyn std::error::Error>> {
     let mut current_block: Option<Block> = None;
 
     while current_hash != GENESIS_HASH && !current_hash.starts_with(final_hash) {
-        let block = storage::read_block(&current_hash)?;
+        let block = Block::load(&current_hash)?;
         let parent_hash = block.parent.clone();
 
         current_block = Some(match current_block {
