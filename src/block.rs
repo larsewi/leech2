@@ -42,7 +42,7 @@ pub fn merge_blocks(
         {
             let mut parent_domain: delta::Delta = std::mem::take(parent_delta).into();
             let current_domain: delta::Delta = current_delta.into();
-            delta::merge_deltas(&mut parent_domain, current_domain);
+            parent_domain.merge(current_domain);
             *parent_delta = parent_domain.into();
         } else {
             parent.payload.push(current_delta);

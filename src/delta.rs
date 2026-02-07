@@ -74,9 +74,11 @@ impl From<Delta> for crate::proto::delta::Delta {
     }
 }
 
-pub fn merge_deltas(_parent: &mut Delta, mut _current: Delta) {
-    // TODO: Implement merge logic
-    log::debug!("merge_deltas()");
+impl Delta {
+    pub fn merge(&mut self, _other: Delta) {
+        // TODO: Implement merge logic
+        log::debug!("Delta::merge()");
+    }
 }
 
 type Inserts = HashMap<Vec<String>, Vec<String>>;
