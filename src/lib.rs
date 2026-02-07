@@ -43,7 +43,7 @@ pub extern "C" fn lch_init(work_dir: *const c_char) -> i32 {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn lch_commit() -> i32 {
-    match block::commit() {
+    match block::Block::new() {
         Ok(_) => 0,
         Err(e) => {
             log::error!("lch_commit(): {}", e);

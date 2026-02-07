@@ -1,4 +1,4 @@
-use crate::block::{self, Block};
+use crate::block::Block;
 use crate::head;
 use crate::storage;
 use crate::utils::GENESIS_HASH;
@@ -14,7 +14,7 @@ pub fn diff(final_hash: &str) -> Result<(), Box<dyn std::error::Error>> {
         let parent_hash = block.parent.clone();
 
         current_block = Some(match current_block {
-            Some(prev) => block::merge_blocks(block, prev)?,
+            Some(prev) => block.merge(prev)?,
             None => block,
         });
 

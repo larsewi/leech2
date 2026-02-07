@@ -8,64 +8,66 @@ use crate::utils;
 
 pub use crate::proto::block::Block;
 
-pub fn merge_blocks(
-    mut parent: Block,
-    mut current: Block,
-) -> Result<Block, Box<dyn std::error::Error>> {
-    log::debug!("merge_blocks()");
+impl Block {
+    pub fn new() -> Result<String, Box<dyn std::error::Error>> {
+        log::debug!("Block::new()");
 
-    for current_delta in current.payload.drain(..) {
-        if let Some(parent_delta) = parent
-            .payload
-            .iter_mut()
-            .find(|d| d.name == current_delta.name)
-        {
-            let mut parent_domain: delta::Delta = std::mem::take(parent_delta).into();
-            let current_domain: delta::Delta = current_delta.into();
-            parent_domain.merge(current_domain);
-            *parent_delta = parent_domain.into();
-        } else {
-            parent.payload.push(current_delta);
-        }
+        let previous_state = state::State::load()?;
+        let current_state = state::State::compute()?;
+        let deltas = delta::Delta::compute(previous_state, &current_state);
+        let payload = deltas
+            .into_iter()
+            .map(crate::proto::delta::Delta::from)
+            .collect();
+
+        let timestamp = utils::get_timestamp()?;
+        let parent = head::load()?;
+
+        let block = Block {
+            parent,
+            timestamp,
+            payload,
+        };
+        log::debug!("{:#?}", block);
+
+        let mut buf = Vec::new();
+        block.encode(&mut buf)?;
+        let hash = utils::compute_hash(&buf);
+
+        log::info!("Created block '{:.7}...'", hash);
+
+        storage::ensure_work_dir()?;
+        storage::write_block(&hash, &buf)?;
+
+        head::save(&hash)?;
+        current_state.save()?;
+
+        Ok(hash)
     }
 
-    Ok(parent)
-}
+    pub fn merge(
+        mut self,
+        mut other: Block,
+    ) -> Result<Block, Box<dyn std::error::Error>> {
+        log::debug!("Block::merge()");
 
-pub fn commit() -> Result<String, Box<dyn std::error::Error>> {
-    log::debug!("commit()");
+        for current_delta in other.payload.drain(..) {
+            if let Some(parent_delta) = self
+                .payload
+                .iter_mut()
+                .find(|d| d.name == current_delta.name)
+            {
+                let mut parent_domain: delta::Delta = std::mem::take(parent_delta).into();
+                let current_domain: delta::Delta = current_delta.into();
+                parent_domain.merge(current_domain);
+                *parent_delta = parent_domain.into();
+            } else {
+                self.payload.push(current_delta);
+            }
+        }
 
-    let previous_state = state::State::load()?;
-    let current_state = state::State::compute()?;
-    let deltas = delta::Delta::compute(previous_state, &current_state);
-    let payload = deltas
-        .into_iter()
-        .map(crate::proto::delta::Delta::from)
-        .collect();
-
-    let timestamp = utils::get_timestamp()?;
-    let parent = head::load()?;
-
-    let block = Block {
-        parent,
-        timestamp,
-        payload,
-    };
-    log::debug!("{:#?}", block);
-
-    let mut buf = Vec::new();
-    block.encode(&mut buf)?;
-    let hash = utils::compute_hash(&buf);
-
-    log::info!("Created block '{:.7}...'", hash);
-
-    storage::ensure_work_dir()?;
-    storage::write_block(&hash, &buf)?;
-
-    head::save(&hash)?;
-    current_state.save()?;
-
-    Ok(hash)
+        Ok(self)
+    }
 }
 
 #[cfg(test)]
