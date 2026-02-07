@@ -52,21 +52,21 @@ impl State {
         log::info!("Loaded previous state with {} tables", state.tables.len());
         Ok(Some(state))
     }
-}
 
-pub fn load_current_state() -> Result<State, Box<dyn std::error::Error>> {
-    let config = config::get_config()?;
-    let mut tables: HashMap<String, Table> = HashMap::new();
+    pub fn load_current() -> Result<Self, Box<dyn std::error::Error>> {
+        let config = config::get_config()?;
+        let mut tables: HashMap<String, Table> = HashMap::new();
 
-    for (name, config) in &config.tables {
-        let table = Table::load(name, config)?;
-        tables.insert(name.clone(), table);
+        for (name, config) in &config.tables {
+            let table = Table::load(name, config)?;
+            tables.insert(name.clone(), table);
+        }
+
+        let state = State { tables };
+        log::info!("Computed current state from {} tables", state.tables.len());
+        log::debug!("{:#?}", state);
+        Ok(state)
     }
-
-    let state = State { tables };
-    log::info!("Computed current state from {} tables", state.tables.len());
-    log::debug!("{:#?}", state);
-    Ok(state)
 }
 
 pub fn save_state(state: &State) -> Result<(), Box<dyn std::error::Error>> {
