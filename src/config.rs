@@ -23,17 +23,9 @@ pub struct TableConfig {
 static CONFIG: OnceLock<Config> = OnceLock::new();
 
 impl Config {
-    pub fn get_work_dir() -> Result<&'static Path, String> {
+    pub fn get() -> Result<&'static Config, String> {
         CONFIG
             .get()
-            .map(|c| c.work_dir.as_path())
-            .ok_or_else(|| "config not initialized".to_string())
-    }
-
-    pub fn get_tables() -> Result<&'static HashMap<String, TableConfig>, String> {
-        CONFIG
-            .get()
-            .map(|c| &c.tables)
             .ok_or_else(|| "config not initialized".to_string())
     }
 

@@ -48,7 +48,7 @@ impl From<Table> for crate::proto::table::Table {
 impl Table {
     /// Loads a table from a CSV file.
     pub fn load(name: &str, config: &TableConfig) -> Result<Self, Box<dyn std::error::Error>> {
-        let path = config::Config::get_work_dir()?.join(&config.source);
+        let path = config::Config::get()?.work_dir.join(&config.source);
         let file =
             File::open(&path).map_err(|e| format!("failed to open '{}': {}", path.display(), e))?;
         let reader = csv::ReaderBuilder::new()

@@ -54,7 +54,7 @@ impl State {
     pub fn compute() -> Result<Self, Box<dyn std::error::Error>> {
         let mut tables: HashMap<String, Table> = HashMap::new();
 
-        for (name, table_config) in config::Config::get_tables()? {
+        for (name, table_config) in &config::Config::get()?.tables {
             let table = Table::load(name, table_config)?;
             tables.insert(name.clone(), table);
         }
