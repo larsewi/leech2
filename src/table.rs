@@ -46,6 +46,23 @@ impl From<Table> for crate::proto::table::Table {
 }
 
 impl Table {
+    /// Loads a table from a CSV file.
+    pub fn load(name: &str, config: &TableConfig) -> Result<Self, Box<dyn std::error::Error>> {
+        let path = config::get_work_dir()?.join(&config.source);
+        let file =
+            File::open(&path).map_err(|e| format!("failed to open '{}': {}", path.display(), e))?;
+        let reader = csv::ReaderBuilder::new()
+            .has_headers(false)
+            .from_reader(file);
+
+        log::debug!("Parsing csv file '{}'...", path.display());
+        let table = Self::parse_csv(config, reader)?;
+
+        log::info!("Loaded table '{}' with {} records", name, table.records.len());
+
+        Ok(table)
+    }
+
     fn parse_csv(
         config: &TableConfig,
         reader: csv::Reader<File>,
@@ -88,21 +105,4 @@ impl Table {
             records,
         })
     }
-}
-
-/// Loads a table from a CSV file.
-pub fn load_table(name: &str, config: &TableConfig) -> Result<Table, Box<dyn std::error::Error>> {
-    let path = config::get_work_dir()?.join(&config.source);
-    let file =
-        File::open(&path).map_err(|e| format!("failed to open '{}': {}", path.display(), e))?;
-    let reader = csv::ReaderBuilder::new()
-        .has_headers(false)
-        .from_reader(file);
-
-    log::debug!("Parsing csv file '{}'...", path.display());
-    let table = Table::parse_csv(config, reader)?;
-
-    log::info!("Loaded table '{}' with {} records", name, table.records.len());
-
-    Ok(table)
 }

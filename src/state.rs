@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use prost::Message;
 
 use crate::config;
-use crate::table::{load_table, Table};
+use crate::table::Table;
 
 /// State represents a snapshot of all tables at a point in time.
 #[derive(Debug, Clone, PartialEq)]
@@ -57,7 +57,7 @@ pub fn load_current_state() -> Result<State, Box<dyn std::error::Error>> {
     let mut tables: HashMap<String, Table> = HashMap::new();
 
     for (name, config) in &config.tables {
-        let table = load_table(name, config)?;
+        let table = Table::load(name, config)?;
         tables.insert(name.clone(), table);
     }
 
