@@ -15,26 +15,29 @@ pub mod update;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn lch_init(work_dir: *const c_char) -> i32 {
+    env_logger::init();
+
     if work_dir.is_null() {
-        log::error!("lch_commit(): Bad argument: work directory cannot be NULL");
+        log::error!("lch_init(): Bad argument: work directory cannot be NULL");
         return -1;
     }
 
     let path = match unsafe { CStr::from_ptr(work_dir) }.to_str() {
-        Ok(path) => path,
+        Ok(path) => PathBuf::from(path),
         Err(e) => {
-            log::error!("lch_commit(): Bad argument: {e}");
+            log::error!("lch_init(): Bad argument: {e}");
             return -1;
         }
     };
 
-    match config::init(&PathBuf::from(path)) {
-        Ok(_) => 0,
-        Err(e) => {
-            log::error!("lch_commit(): {}", e);
-            -1
-        }
+    log::debug!("lch_init(work_dir={})", path.display());
+
+    if let Err(e) = config::Config::load(&path) {
+        log::error!("lch_init(): {}", e);
+        return -1;
     }
+
+    0
 }
 
 #[unsafe(no_mangle)]

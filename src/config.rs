@@ -37,7 +37,7 @@ impl Config {
             .ok_or_else(|| "config not initialized".to_string())
     }
 
-    fn load(work_dir: &Path) -> Result<Config, String> {
+    pub fn load(work_dir: &Path) -> Result<(), String> {
         let path = work_dir.join("config.toml");
         log::debug!("Parsing config from file '{}'...", path.display());
         let content =
@@ -46,19 +46,9 @@ impl Config {
             toml::from_str(&content).map_err(|e| format!("failed to parse config: {}", e))?;
         config.work_dir = work_dir.to_path_buf();
         log::debug!("{:#?}", config);
-        Ok(config)
+        log::info!("Initialized config with {} tables", config.tables.len());
+        CONFIG
+            .set(config)
+            .map_err(|_| "config already initialized".to_string())
     }
-}
-
-pub fn init(work_dir: &Path) -> Result<(), String> {
-    env_logger::init();
-    log::debug!("init(work_dir={})", work_dir.display());
-
-    let config = Config::load(work_dir)?;
-    log::info!("Initialized config with {} tables", config.tables.len());
-    CONFIG
-        .set(config)
-        .map_err(|_| "config already initialized".to_string())?;
-
-    Ok(())
 }
