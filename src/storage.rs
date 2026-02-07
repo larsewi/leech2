@@ -9,7 +9,11 @@ use crate::config;
 
 /// Stores data to a file in the work directory with an exclusive lock.
 pub fn store(name: &str, data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
-    let path = config::get_work_dir()?.join(name);
+    let work_dir = config::get_work_dir()?;
+    fs::create_dir_all(&work_dir)
+        .map_err(|e| format!("Failed to create work directory '{}': {}", work_dir.display(), e))?;
+
+    let path = work_dir.join(name);
     log::debug!("Storing data to file '{}'...", path.display());
 
     let file = File::create(&path)
