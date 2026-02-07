@@ -9,11 +9,10 @@ use crate::utils;
 pub use crate::proto::block::Block;
 
 impl Block {
-    pub fn new() -> Result<String, Box<dyn std::error::Error>> {
-        log::debug!("Block::new()");
-
+    pub fn create() -> Result<String, Box<dyn std::error::Error>> {
         let previous_state = state::State::load()?;
         let current_state = state::State::compute()?;
+
         let deltas = delta::Delta::compute(previous_state, &current_state);
         let payload = deltas
             .into_iter()
@@ -49,8 +48,6 @@ impl Block {
         mut self,
         mut other: Block,
     ) -> Result<Block, Box<dyn std::error::Error>> {
-        log::debug!("Block::merge()");
-
         for other_delta in other.payload.drain(..) {
             if let Some(self_delta) = self
                 .payload
