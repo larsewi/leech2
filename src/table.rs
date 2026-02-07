@@ -45,43 +45,49 @@ impl From<Table> for crate::proto::table::Table {
     }
 }
 
-fn parse_csv(
-    config: &TableConfig,
-    reader: csv::Reader<File>,
-) -> Result<HashMap<Vec<String>, Vec<String>>, Box<dyn std::error::Error>> {
-    let primary_indices: Vec<usize> = config
-        .primary_key
-        .iter()
-        .filter_map(|pk_col| config.field_names.iter().position(|c| c == pk_col))
-        .collect();
-
-    let subsidiary_indices: Vec<usize> = config
-        .field_names
-        .iter()
-        .enumerate()
-        .filter(|(_, col)| !config.primary_key.contains(col))
-        .map(|(i, _)| i)
-        .collect();
-
-    let mut result: HashMap<Vec<String>, Vec<String>> = HashMap::new();
-
-    for record in reader.into_records() {
-        let record = record?;
-
-        let primary_key: Vec<String> = primary_indices
+impl Table {
+    fn parse_csv(
+        config: &TableConfig,
+        reader: csv::Reader<File>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let primary_indices: Vec<usize> = config
+            .primary_key
             .iter()
-            .filter_map(|&i| record.get(i).map(String::from))
+            .filter_map(|pk_col| config.field_names.iter().position(|c| c == pk_col))
             .collect();
 
-        let subsidiary: Vec<String> = subsidiary_indices
+        let subsidiary_indices: Vec<usize> = config
+            .field_names
             .iter()
-            .filter_map(|&i| record.get(i).map(String::from))
+            .enumerate()
+            .filter(|(_, col)| !config.primary_key.contains(col))
+            .map(|(i, _)| i)
             .collect();
 
-        result.insert(primary_key, subsidiary);
+        let mut records: HashMap<Vec<String>, Vec<String>> = HashMap::new();
+
+        for record in reader.into_records() {
+            let record = record?;
+
+            let primary_key: Vec<String> = primary_indices
+                .iter()
+                .filter_map(|&i| record.get(i).map(String::from))
+                .collect();
+
+            let subsidiary: Vec<String> = subsidiary_indices
+                .iter()
+                .filter_map(|&i| record.get(i).map(String::from))
+                .collect();
+
+            records.insert(primary_key, subsidiary);
+        }
+
+        Ok(Table {
+            fields: config.field_names.clone(),
+            primary_key: config.primary_key.clone(),
+            records,
+        })
     }
-
-    Ok(result)
 }
 
 /// Loads a table from a CSV file.
@@ -94,13 +100,9 @@ pub fn load_table(name: &str, config: &TableConfig) -> Result<Table, Box<dyn std
         .from_reader(file);
 
     log::debug!("Parsing csv file '{}'...", path.display());
-    let records = parse_csv(config, reader)?;
+    let table = Table::parse_csv(config, reader)?;
 
-    log::info!("Loaded table '{}' with {} records", name, records.len());
+    log::info!("Loaded table '{}' with {} records", name, table.records.len());
 
-    Ok(Table {
-        fields: config.field_names.clone(),
-        primary_key: config.primary_key.clone(),
-        records,
-    })
+    Ok(table)
 }
