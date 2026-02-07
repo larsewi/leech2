@@ -40,7 +40,10 @@ pub fn merge_blocks(
             .iter_mut()
             .find(|d| d.name == current_delta.name)
         {
-            delta::merge_deltas(parent_delta, current_delta);
+            let mut parent_domain: delta::Delta = std::mem::take(parent_delta).into();
+            let current_domain: delta::Delta = current_delta.into();
+            delta::merge_deltas(&mut parent_domain, current_domain);
+            *parent_delta = parent_domain.into();
         } else {
             parent.payload.push(current_delta);
         }
@@ -54,7 +57,11 @@ pub fn commit() -> Result<String, Box<dyn std::error::Error>> {
 
     let previous_state = state::load_previous_state()?;
     let current_state = state::load_current_state()?;
-    let payload = delta::compute_delta(previous_state, &current_state);
+    let deltas = delta::compute_delta(previous_state, &current_state);
+    let payload = deltas
+        .into_iter()
+        .map(crate::proto::delta::Delta::from)
+        .collect();
 
     let timestamp = get_timestamp()?;
     let parent = storage::read_head()?;
