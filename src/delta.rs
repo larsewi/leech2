@@ -75,9 +75,81 @@ impl From<Delta> for crate::proto::delta::Delta {
 }
 
 impl Delta {
-    pub fn merge(&mut self, _other: Delta) {
-        // TODO: Implement merge logic
-        log::debug!("Delta::merge()");
+    /// Merge another delta (Child) into this delta (Parent), producing a single
+    /// delta that represents the combined effect of both. See
+    /// DELTA_MERGING_RULES.md for the full specification of the 15 rules.
+
+    pub fn merge(&mut self, other: Delta) -> Result<(), Box<dyn std::error::Error>> {
+        // Process current inserts
+        for (key, other_insert_value) in other.inserts {
+            if self.inserts.contains_key(&key) {
+                // Rule 5: double insert → error
+                return Err(format!("Conflict: key {:?} inserted in both blocks", key).into());
+            } else if let Some(self_delete_value) = self.deletes.remove(&key) {
+                if self_delete_value == other_insert_value {
+                    // Rule 9a: delete then insert with same value → cancels out
+                } else {
+                    // Rule 9b: delete then insert with different value → update
+                    self.updates.insert(key, (self_delete_value, other_insert_value));
+                }
+            } else if self.updates.contains_key(&key) {
+                // Rule 13: insert after update → error
+                return Err(
+                    format!("Conflict: key {:?} updated in parent, inserted in current", key)
+                        .into(),
+                );
+            } else {
+                // Rule 1: pass through
+                self.inserts.insert(key, other_insert_value);
+            }
+        }
+
+        // Process current deletes
+        for (key, val) in other.deletes {
+            if self.inserts.remove(&key).is_some() {
+                // Rule 6: insert then delete → cancels out
+            } else if self.deletes.contains_key(&key) {
+                // Rule 10: double delete → error
+                return Err(format!("Conflict: key {:?} deleted in both blocks", key).into());
+            } else if let Some((old, new_val)) = self.updates.remove(&key) {
+                if val == new_val {
+                    // Rule 14a: update then delete, values match → delete(old)
+                    self.deletes.insert(key, old);
+                } else {
+                    // Rule 14b: update then delete, values mismatch → error
+                    return Err(format!(
+                        "Conflict: key {:?} updated to {:?} in parent, but deleted with {:?}",
+                        key, new_val, val
+                    )
+                    .into());
+                }
+            } else {
+                // Rule 2: pass through
+                self.deletes.insert(key, val);
+            }
+        }
+
+        // Process current updates
+        for (key, (other_old, other_new)) in other.updates {
+            if let Some(insert_val) = self.inserts.get_mut(&key) {
+                // Rule 7: insert then update → insert(new_val)
+                *insert_val = other_new;
+            } else if self.deletes.contains_key(&key) {
+                // Rule 11: update after delete → error
+                return Err(
+                    format!("Conflict: key {:?} deleted in parent, updated in current", key)
+                        .into(),
+                );
+            } else if let Some(update) = self.updates.get_mut(&key) {
+                // Rule 15: update then update → update(old1 → new2)
+                update.1 = other_new;
+            } else {
+                // Rule 3: pass through
+                self.updates.insert(key, (other_old, other_new));
+            }
+        }
+
+        Ok(())
     }
 
     pub fn compute(previous_state: Option<State>, current_state: &State) -> Vec<Delta> {
@@ -411,5 +483,406 @@ mod tests {
         assert!(delta.deletes.contains_key(&make_key(&["user1", "order2"])));
         assert_eq!(delta.updates.len(), 1);
         assert!(delta.updates.contains_key(&make_key(&["user1", "order1"])));
+    }
+
+    // ---- Merge tests ----
+
+    fn make_val(val: &[&str]) -> Vec<String> {
+        val.iter().map(|s| s.to_string()).collect()
+    }
+
+    fn empty_delta() -> Delta {
+        Delta {
+            name: "t".to_string(),
+            inserts: HashMap::new(),
+            deletes: HashMap::new(),
+            updates: HashMap::new(),
+        }
+    }
+
+    // Rule 1: current insert, no parent → insert passes through
+    #[test]
+    fn test_merge_rule1_current_insert_only() {
+        let mut parent = empty_delta();
+        let mut current = empty_delta();
+        current
+            .inserts
+            .insert(make_key(&["3"]), make_val(&["Charlie"]));
+
+        parent.merge(current).unwrap();
+
+        assert_eq!(parent.inserts.len(), 1);
+        assert_eq!(parent.inserts[&make_key(&["3"])], make_val(&["Charlie"]));
+        assert!(parent.deletes.is_empty());
+        assert!(parent.updates.is_empty());
+    }
+
+    // Rule 2: current delete, no parent → delete passes through
+    #[test]
+    fn test_merge_rule2_current_delete_only() {
+        let mut parent = empty_delta();
+        let mut current = empty_delta();
+        current
+            .deletes
+            .insert(make_key(&["2"]), make_val(&["Bob"]));
+
+        parent.merge(current).unwrap();
+
+        assert_eq!(parent.deletes.len(), 1);
+        assert_eq!(parent.deletes[&make_key(&["2"])], make_val(&["Bob"]));
+        assert!(parent.inserts.is_empty());
+        assert!(parent.updates.is_empty());
+    }
+
+    // Rule 3: current update, no parent → update passes through
+    #[test]
+    fn test_merge_rule3_current_update_only() {
+        let mut parent = empty_delta();
+        let mut current = empty_delta();
+        current.updates.insert(
+            make_key(&["1"]),
+            (make_val(&["Alice"]), make_val(&["Alicia"])),
+        );
+
+        parent.merge(current).unwrap();
+
+        assert_eq!(parent.updates.len(), 1);
+        let (old, new) = &parent.updates[&make_key(&["1"])];
+        assert_eq!(old, &make_val(&["Alice"]));
+        assert_eq!(new, &make_val(&["Alicia"]));
+        assert!(parent.inserts.is_empty());
+        assert!(parent.deletes.is_empty());
+    }
+
+    // Rule 4: parent insert, no current → insert stays
+    #[test]
+    fn test_merge_rule4_parent_insert_only() {
+        let mut parent = empty_delta();
+        parent
+            .inserts
+            .insert(make_key(&["3"]), make_val(&["Charlie"]));
+        let current = empty_delta();
+
+        parent.merge(current).unwrap();
+
+        assert_eq!(parent.inserts.len(), 1);
+        assert_eq!(parent.inserts[&make_key(&["3"])], make_val(&["Charlie"]));
+    }
+
+    // Rule 5: insert in both → error
+    #[test]
+    fn test_merge_rule5_double_insert_error() {
+        let mut parent = empty_delta();
+        parent
+            .inserts
+            .insert(make_key(&["3"]), make_val(&["Charlie"]));
+        let mut current = empty_delta();
+        current
+            .inserts
+            .insert(make_key(&["3"]), make_val(&["Charles"]));
+
+        let result = parent.merge(current);
+        assert!(result.is_err());
+    }
+
+    // Rule 6: insert then delete → cancels out
+    #[test]
+    fn test_merge_rule6_insert_then_delete_cancels() {
+        let mut parent = empty_delta();
+        parent
+            .inserts
+            .insert(make_key(&["3"]), make_val(&["Charlie"]));
+        let mut current = empty_delta();
+        current
+            .deletes
+            .insert(make_key(&["3"]), make_val(&["Charles"]));
+
+        parent.merge(current).unwrap();
+
+        assert!(parent.inserts.is_empty());
+        assert!(parent.deletes.is_empty());
+        assert!(parent.updates.is_empty());
+    }
+
+    // Rule 7: insert then update → insert with new value
+    #[test]
+    fn test_merge_rule7_insert_then_update() {
+        let mut parent = empty_delta();
+        parent
+            .inserts
+            .insert(make_key(&["3"]), make_val(&["Charlie"]));
+        let mut current = empty_delta();
+        current.updates.insert(
+            make_key(&["3"]),
+            (make_val(&["Charlie"]), make_val(&["Charles"])),
+        );
+
+        parent.merge(current).unwrap();
+
+        assert_eq!(parent.inserts.len(), 1);
+        assert_eq!(parent.inserts[&make_key(&["3"])], make_val(&["Charles"]));
+        assert!(parent.deletes.is_empty());
+        assert!(parent.updates.is_empty());
+    }
+
+    // Rule 8: parent delete, no current → delete stays
+    #[test]
+    fn test_merge_rule8_parent_delete_only() {
+        let mut parent = empty_delta();
+        parent
+            .deletes
+            .insert(make_key(&["2"]), make_val(&["Bob"]));
+        let current = empty_delta();
+
+        parent.merge(current).unwrap();
+
+        assert_eq!(parent.deletes.len(), 1);
+        assert_eq!(parent.deletes[&make_key(&["2"])], make_val(&["Bob"]));
+    }
+
+    // Rule 9a: delete then insert with same value → cancels out
+    #[test]
+    fn test_merge_rule9a_delete_then_insert_same_cancels() {
+        let mut parent = empty_delta();
+        parent
+            .deletes
+            .insert(make_key(&["2"]), make_val(&["Bob"]));
+        let mut current = empty_delta();
+        current
+            .inserts
+            .insert(make_key(&["2"]), make_val(&["Bob"]));
+
+        parent.merge(current).unwrap();
+
+        assert!(parent.inserts.is_empty());
+        assert!(parent.deletes.is_empty());
+        assert!(parent.updates.is_empty());
+    }
+
+    // Rule 9b: delete then insert with different value → update
+    #[test]
+    fn test_merge_rule9b_delete_then_insert_different_becomes_update() {
+        let mut parent = empty_delta();
+        parent
+            .deletes
+            .insert(make_key(&["2"]), make_val(&["Bob"]));
+        let mut current = empty_delta();
+        current
+            .inserts
+            .insert(make_key(&["2"]), make_val(&["Robert"]));
+
+        parent.merge(current).unwrap();
+
+        assert!(parent.inserts.is_empty());
+        assert!(parent.deletes.is_empty());
+        assert_eq!(parent.updates.len(), 1);
+        let (old, new) = &parent.updates[&make_key(&["2"])];
+        assert_eq!(old, &make_val(&["Bob"]));
+        assert_eq!(new, &make_val(&["Robert"]));
+    }
+
+    // Rule 10: double delete → error
+    #[test]
+    fn test_merge_rule10_double_delete_error() {
+        let mut parent = empty_delta();
+        parent
+            .deletes
+            .insert(make_key(&["2"]), make_val(&["Bob"]));
+        let mut current = empty_delta();
+        current
+            .deletes
+            .insert(make_key(&["2"]), make_val(&["Bob"]));
+
+        let result = parent.merge(current);
+        assert!(result.is_err());
+    }
+
+    // Rule 11: delete then update → error
+    #[test]
+    fn test_merge_rule11_delete_then_update_error() {
+        let mut parent = empty_delta();
+        parent
+            .deletes
+            .insert(make_key(&["2"]), make_val(&["Bob"]));
+        let mut current = empty_delta();
+        current.updates.insert(
+            make_key(&["2"]),
+            (make_val(&["Bob"]), make_val(&["Robert"])),
+        );
+
+        let result = parent.merge(current);
+        assert!(result.is_err());
+    }
+
+    // Rule 12: parent update, no current → update stays
+    #[test]
+    fn test_merge_rule12_parent_update_only() {
+        let mut parent = empty_delta();
+        parent.updates.insert(
+            make_key(&["1"]),
+            (make_val(&["Alice"]), make_val(&["Alicia"])),
+        );
+        let current = empty_delta();
+
+        parent.merge(current).unwrap();
+
+        assert_eq!(parent.updates.len(), 1);
+        let (old, new) = &parent.updates[&make_key(&["1"])];
+        assert_eq!(old, &make_val(&["Alice"]));
+        assert_eq!(new, &make_val(&["Alicia"]));
+    }
+
+    // Rule 13: update then insert → error
+    #[test]
+    fn test_merge_rule13_update_then_insert_error() {
+        let mut parent = empty_delta();
+        parent.updates.insert(
+            make_key(&["1"]),
+            (make_val(&["Alice"]), make_val(&["Alicia"])),
+        );
+        let mut current = empty_delta();
+        current
+            .inserts
+            .insert(make_key(&["1"]), make_val(&["Alice"]));
+
+        let result = parent.merge(current);
+        assert!(result.is_err());
+    }
+
+    // Rule 14a: update then delete with matching value → delete(old)
+    #[test]
+    fn test_merge_rule14a_update_then_delete_matching() {
+        let mut parent = empty_delta();
+        parent.updates.insert(
+            make_key(&["1"]),
+            (make_val(&["Alice"]), make_val(&["Alicia"])),
+        );
+        let mut current = empty_delta();
+        current
+            .deletes
+            .insert(make_key(&["1"]), make_val(&["Alicia"]));
+
+        parent.merge(current).unwrap();
+
+        assert!(parent.inserts.is_empty());
+        assert!(parent.updates.is_empty());
+        assert_eq!(parent.deletes.len(), 1);
+        assert_eq!(parent.deletes[&make_key(&["1"])], make_val(&["Alice"]));
+    }
+
+    // Rule 14b: update then delete with mismatched value → error
+    #[test]
+    fn test_merge_rule14b_update_then_delete_mismatch_error() {
+        let mut parent = empty_delta();
+        parent.updates.insert(
+            make_key(&["1"]),
+            (make_val(&["Alice"]), make_val(&["Alicia"])),
+        );
+        let mut current = empty_delta();
+        current
+            .deletes
+            .insert(make_key(&["1"]), make_val(&["Alice"]));
+
+        let result = parent.merge(current);
+        assert!(result.is_err());
+    }
+
+    // Rule 15: update then update → update(old1 → new2)
+    #[test]
+    fn test_merge_rule15_update_then_update() {
+        let mut parent = empty_delta();
+        parent.updates.insert(
+            make_key(&["1"]),
+            (make_val(&["Alice"]), make_val(&["Alicia"])),
+        );
+        let mut current = empty_delta();
+        current.updates.insert(
+            make_key(&["1"]),
+            (make_val(&["Alicia"]), make_val(&["Ali"])),
+        );
+
+        parent.merge(current).unwrap();
+
+        assert_eq!(parent.updates.len(), 1);
+        let (old, new) = &parent.updates[&make_key(&["1"])];
+        assert_eq!(old, &make_val(&["Alice"]));
+        assert_eq!(new, &make_val(&["Ali"]));
+        assert!(parent.inserts.is_empty());
+        assert!(parent.deletes.is_empty());
+    }
+
+    // Test merging with multiple keys exercising different rules simultaneously
+    #[test]
+    fn test_merge_multiple_keys_mixed_rules() {
+        let mut parent = empty_delta();
+        parent
+            .inserts
+            .insert(make_key(&["3"]), make_val(&["Charlie"])); // will be updated (rule 7)
+        parent
+            .deletes
+            .insert(make_key(&["2"]), make_val(&["Bob"])); // will be re-inserted different (rule 9b)
+        parent.updates.insert(
+            make_key(&["1"]),
+            (make_val(&["Alice"]), make_val(&["Alicia"])),
+        ); // will be updated again (rule 15)
+
+        let mut current = empty_delta();
+        current.updates.insert(
+            make_key(&["3"]),
+            (make_val(&["Charlie"]), make_val(&["Charles"])),
+        ); // rule 7
+        current
+            .inserts
+            .insert(make_key(&["2"]), make_val(&["Robert"])); // rule 9b
+        current.updates.insert(
+            make_key(&["1"]),
+            (make_val(&["Alicia"]), make_val(&["Ali"])),
+        ); // rule 15
+        current
+            .inserts
+            .insert(make_key(&["4"]), make_val(&["Dave"])); // rule 1
+
+        parent.merge(current).unwrap();
+
+        // Rule 7: insert(3, Charlie) + update(3, Charlie→Charles) = insert(3, Charles)
+        assert_eq!(parent.inserts.len(), 2);
+        assert_eq!(parent.inserts[&make_key(&["3"])], make_val(&["Charles"]));
+        // Rule 1: insert(4, Dave) passes through
+        assert_eq!(parent.inserts[&make_key(&["4"])], make_val(&["Dave"]));
+
+        // Rule 9b: delete(2, Bob) + insert(2, Robert) = update(2, Bob→Robert)
+        // Rule 15: update(1, Alice→Alicia) + update(1, Alicia→Ali) = update(1, Alice→Ali)
+        assert_eq!(parent.updates.len(), 2);
+        let (old, new) = &parent.updates[&make_key(&["2"])];
+        assert_eq!(old, &make_val(&["Bob"]));
+        assert_eq!(new, &make_val(&["Robert"]));
+        let (old, new) = &parent.updates[&make_key(&["1"])];
+        assert_eq!(old, &make_val(&["Alice"]));
+        assert_eq!(new, &make_val(&["Ali"]));
+
+        assert!(parent.deletes.is_empty());
+    }
+
+    // Test merging with composite keys
+    #[test]
+    fn test_merge_composite_keys() {
+        let mut parent = empty_delta();
+        parent
+            .inserts
+            .insert(make_key(&["u1", "o1"]), make_val(&["100"]));
+        let mut current = empty_delta();
+        current.updates.insert(
+            make_key(&["u1", "o1"]),
+            (make_val(&["100"]), make_val(&["150"])),
+        );
+
+        parent.merge(current).unwrap();
+
+        assert_eq!(parent.inserts.len(), 1);
+        assert_eq!(
+            parent.inserts[&make_key(&["u1", "o1"])],
+            make_val(&["150"])
+        );
+        assert!(parent.updates.is_empty());
     }
 }

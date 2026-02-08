@@ -63,7 +63,7 @@ impl Block {
             {
                 let mut self_domain: delta::Delta = std::mem::take(self_delta).into();
                 let other_domain: delta::Delta = other_delta.into();
-                self_domain.merge(other_domain);
+                self_domain.merge(other_domain)?;
                 *self_delta = self_domain.into();
             } else {
                 self.payload.push(other_delta);
