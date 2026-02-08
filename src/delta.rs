@@ -10,6 +10,8 @@ use crate::update::Update;
 pub struct Delta {
     /// The name of the table this delta applies to.
     pub name: String,
+    /// The names of all columns, primary key columns first.
+    pub fields: Vec<String>,
     /// Entries that were added (key -> value).
     pub inserts: HashMap<Vec<String>, Vec<String>>,
     /// Entries that were removed (key -> value).
@@ -37,6 +39,7 @@ impl From<crate::proto::delta::Delta> for Delta {
             .collect();
         Delta {
             name: proto.name,
+            fields: proto.fields,
             inserts,
             deletes,
             updates,
@@ -67,6 +70,7 @@ impl From<Delta> for crate::proto::delta::Delta {
             .collect();
         crate::proto::delta::Delta {
             name: delta.name,
+            fields: delta.fields,
             inserts,
             deletes,
             updates,
@@ -207,6 +211,7 @@ impl Delta {
 
             deltas.push(Delta {
                 name: table_name.clone(),
+                fields: current_table.fields.clone(),
                 inserts,
                 deletes,
                 updates,
@@ -228,6 +233,7 @@ impl Delta {
 
                 deltas.push(Delta {
                     name: table_name.clone(),
+                    fields: table.fields.clone(),
                     inserts: HashMap::new(),
                     deletes: table.records.clone(),
                     updates: HashMap::new(),
@@ -301,7 +307,6 @@ mod tests {
             .collect();
         Table {
             fields: vec![],
-            primary_key: vec![],
             records,
         }
     }
@@ -531,6 +536,7 @@ mod tests {
     fn empty_delta() -> Delta {
         Delta {
             name: "t".to_string(),
+            fields: vec![],
             inserts: HashMap::new(),
             deletes: HashMap::new(),
             updates: HashMap::new(),

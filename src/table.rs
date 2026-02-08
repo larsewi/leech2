@@ -5,12 +5,11 @@ use crate::config::{self, TableConfig};
 use crate::entry::Entry;
 
 /// A table with records stored in a hash map for efficient lookup.
+/// Fields are ordered with primary key columns first, followed by subsidiary columns.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Table {
-    /// The names of all columns in the table.
+    /// The names of all columns in the table, primary key columns first.
     pub fields: Vec<String>,
-    /// The names of columns that form the primary key.
-    pub primary_key: Vec<String>,
     /// Map from primary key values to subsidiary values.
     pub records: HashMap<Vec<String>, Vec<String>>,
 }
@@ -24,7 +23,6 @@ impl From<crate::proto::table::Table> for Table {
             .collect();
         Table {
             fields: proto.fields,
-            primary_key: proto.primary_key,
             records,
         }
     }
@@ -39,7 +37,6 @@ impl From<Table> for crate::proto::table::Table {
             .collect();
         crate::proto::table::Table {
             fields: table.fields,
-            primary_key: table.primary_key,
             rows,
         }
     }
@@ -81,6 +78,13 @@ impl Table {
             .map(|(i, _)| i)
             .collect();
 
+        // Order fields with primary key columns first, then subsidiary columns.
+        let fields: Vec<String> = primary_indices
+            .iter()
+            .chain(subsidiary_indices.iter())
+            .map(|&i| config.field_names[i].clone())
+            .collect();
+
         let mut records: HashMap<Vec<String>, Vec<String>> = HashMap::new();
 
         for record in reader.into_records() {
@@ -100,8 +104,7 @@ impl Table {
         }
 
         Ok(Table {
-            fields: config.field_names.clone(),
-            primary_key: config.primary_key.clone(),
+            fields,
             records,
         })
     }

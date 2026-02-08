@@ -9,10 +9,12 @@ import "update.proto";
 message Delta {
   // The name of the table this delta applies to.
   string name = 1;
+  // The names of all columns, primary key columns first.
+  repeated string fields = 2;
   // Entries that were added (new keys).
-  repeated entry.Entry inserts = 2;
+  repeated entry.Entry inserts = 3;
   // Entries that were removed (keys no longer present).
-  repeated entry.Entry deletes = 3;
+  repeated entry.Entry deletes = 4;
   // Entries that were modified (existing keys with changed values).
-  repeated update.Update updates = 4;
+  repeated update.Update updates = 5;
 }

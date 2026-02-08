@@ -5,11 +5,11 @@ package table;
 import "entry.proto";
 
 // Table represents a collection of rows with a defined schema.
+// Fields are ordered with primary key columns first, followed by subsidiary columns.
+// The number of primary key columns can be inferred from the Entry key length.
 message Table {
-  // The names of all columns in the table.
+  // The names of all columns in the table, primary key columns first.
   repeated string fields = 1;
-  // The names of columns that form the primary key.
-  repeated string primary_key = 2;
   // The data rows in the table.
   repeated entry.Entry rows = 3;
 }
