@@ -130,8 +130,8 @@ impl Delta {
     }
 
     fn compute_table(
-        prev_table: Option<&Table>,
-        curr_table: &Table,
+        previous_table: Option<&Table>,
+        current_table: &Table,
     ) -> (
         HashMap<Vec<String>, Vec<String>>,
         HashMap<Vec<String>, Vec<String>>,
@@ -141,28 +141,28 @@ impl Delta {
         let mut deletes = HashMap::new();
         let mut updates = HashMap::new();
 
-        let Some(prev_table) = prev_table else {
+        let Some(previous_table) = previous_table else {
             // No previous table: all records are inserts
-            let inserts = curr_table.records.clone();
+            let inserts = current_table.records.clone();
             return (inserts, deletes, updates);
         };
 
         // Keys in previous but not current -> deletes
-        for (k, v) in &prev_table.records {
-            if !curr_table.records.contains_key(k) {
-                deletes.insert(k.clone(), v.clone());
+        for (key, value) in &previous_table.records {
+            if !current_table.records.contains_key(key) {
+                deletes.insert(key.clone(), value.clone());
             }
         }
 
         // Keys in current but not previous -> inserts
         // Keys in both with different values -> updates
-        for (k, v) in &curr_table.records {
-            match prev_table.records.get(k) {
+        for (key, value) in &current_table.records {
+            match previous_table.records.get(key) {
                 None => {
-                    inserts.insert(k.clone(), v.clone());
+                    inserts.insert(key.clone(), value.clone());
                 }
-                Some(prev_value) if prev_value != v => {
-                    updates.insert(k.clone(), (prev_value.clone(), v.clone()));
+                Some(prev_value) if prev_value != value => {
+                    updates.insert(key.clone(), (prev_value.clone(), value.clone()));
                 }
                 _ => {} // Same value, skip
             }
