@@ -20,9 +20,9 @@ int main(int argc, char *argv[]) {
   }
 
   if (strcmp(command, "commit") == 0) {
-    ret = lch_commit();
+    ret = lch_block_create();
     if (ret != 0) {
-      fprintf(stderr, "Failed to commit\n");
+      fprintf(stderr, "Failed to create block\n");
       return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;
@@ -37,7 +37,7 @@ int main(int argc, char *argv[]) {
 
     ret = lch_patch_create(block);
     if (ret != 0) {
-      fprintf(stderr, "Failed to commit\n");
+      fprintf(stderr, "Failed to create patch\n");
       return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;
