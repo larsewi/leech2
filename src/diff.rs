@@ -19,6 +19,9 @@ pub fn diff(final_hash: &str) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     log::info!("Reached final block '{:.7}...'", current_hash);
+    if let Some(ref block) = current_block {
+        log::debug!("Final merged block: {:#?}", block);
+    }
 
     if !current_hash.starts_with(final_hash) {
         return Err(format!("Block starting with '{}' not found in chain", final_hash).into());
