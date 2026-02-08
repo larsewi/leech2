@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package patch;
+
+import "delta.proto";
+import "google/protobuf/timestamp.proto";
+
+// Patch represents the merged diff between two blocks in the chain.
+message Patch {
+  // The hash of the most recent block in the chain (HEAD).
+  string head_hash = 1;
+  // Timestamp when the HEAD block was created.
+  google.protobuf.Timestamp head_created = 2;
+  // The hash of the oldest block included in the diff.
+  string final_hash = 3;
+  // Timestamp when the final block was created.
+  google.protobuf.Timestamp final_created = 4;
+  // The number of blocks that were merged to produce this patch.
+  uint32 num_blocks = 5;
+  // The merged deltas representing the combined changes between the two blocks.
+  repeated delta.Delta payload = 6;
+}

@@ -7,6 +7,7 @@ pub mod delta;
 mod diff;
 pub mod entry;
 mod head;
+pub mod patch;
 mod proto;
 pub mod state;
 mod storage;

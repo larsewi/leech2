@@ -7,6 +7,9 @@ pub mod table {
 pub mod delta {
     include!(concat!(env!("OUT_DIR"), "/delta.rs"));
 }
+pub mod patch {
+    include!(concat!(env!("OUT_DIR"), "/patch.rs"));
+}
 pub mod state {
     include!(concat!(env!("OUT_DIR"), "/state.rs"));
 }
