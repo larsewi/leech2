@@ -11,12 +11,8 @@ message Patch {
   string head_hash = 1;
   // Timestamp when the HEAD block was created.
   google.protobuf.Timestamp head_created = 2;
-  // The hash of the oldest block included in the diff.
-  string last_known = 3;
-  // Timestamp when the last known block was created.
-  google.protobuf.Timestamp last_known_created = 4;
   // The number of blocks that were merged to produce this patch.
-  uint32 num_blocks = 5;
+  uint32 num_blocks = 3;
   // The merged deltas representing the combined changes between the two blocks.
-  repeated delta.Delta payload = 6;
+  repeated delta.Delta payload = 4;
 }

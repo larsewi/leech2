@@ -29,11 +29,6 @@ impl Patch {
             current_hash = parent_hash;
         }
 
-        log::info!("Reached block '{:.7}...'", current_hash);
-        if let Some(ref block) = current_block {
-            log::debug!("Merged block: {:#?}", block);
-        }
-
         if !current_hash.starts_with(last_known_hash) {
             return Err(format!("Block starting with '{}' not found in chain", last_known_hash).into());
         }
@@ -41,8 +36,6 @@ impl Patch {
         let patch = Patch {
             head_hash,
             head_created,
-            last_known: current_hash,
-            last_known_created: None,
             num_blocks,
             payload: current_block.map(|b| b.payload).unwrap_or_default(),
         };

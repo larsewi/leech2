@@ -12,8 +12,6 @@ pub fn save(name: &str, data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
         .map_err(|e| format!("Failed to create work directory '{}': {}", work_dir.display(), e))?;
 
     let path = work_dir.join(name);
-    log::debug!("Storing data to file '{}'...", path.display());
-
     let file = File::create(&path)
         .map_err(|e| format!("Failed to create file '{}': {}", path.display(), e))?;
     file.lock_exclusive()
@@ -33,8 +31,6 @@ pub fn save(name: &str, data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
 /// Loads data from a file in the work directory with a shared lock.
 pub fn load(name: &str) -> Result<Option<Vec<u8>>, Box<dyn std::error::Error>> {
     let path = config::Config::get()?.work_dir.join(name);
-    log::debug!("Loading data from file '{}'...", path.display());
-
     if !path.exists() {
         log::debug!("File '{}' does not exist", path.display());
         return Ok(None);
