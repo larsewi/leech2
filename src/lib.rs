@@ -4,7 +4,6 @@ use std::path::PathBuf;
 pub mod block;
 mod config;
 pub mod delta;
-mod diff;
 pub mod entry;
 mod head;
 pub mod patch;
@@ -68,7 +67,7 @@ pub extern "C" fn lch_diff(block: *const c_char) -> i32 {
         }
     };
 
-    match diff::diff(hash) {
+    match patch::Patch::create(hash) {
         Ok(_) => 0,
         Err(e) => {
             log::error!("lch_diff(): {}", e);
