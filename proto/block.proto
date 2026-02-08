@@ -3,13 +3,14 @@ syntax = "proto3";
 package block;
 
 import "delta.proto";
+import "google/protobuf/timestamp.proto";
 
 // Block represents a committed set of changes, forming a chain via parent references.
 message Block {
   // The hash of the parent block, or zero for the genisis block.
   string parent = 1;
-  // Unix timestamp when the block was created.
-  int32 timestamp = 2;
+  // Timestamp when the block was created.
+  google.protobuf.Timestamp created = 2;
   // The set of table deltas contained in this block.
   repeated delta.Delta payload = 3;
 }

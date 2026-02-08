@@ -23,7 +23,7 @@ impl Block {
         let current_state = state::State::compute()?;
 
         let parent = head::load()?;
-        let timestamp = utils::get_timestamp()?;
+        let created = Some(std::time::SystemTime::now().try_into()?);
 
         let deltas = delta::Delta::compute(previous_state, &current_state);
         let payload = deltas
@@ -33,7 +33,7 @@ impl Block {
 
         let block = Block {
             parent,
-            timestamp,
+            created,
             payload,
         };
         log::debug!("{:#?}", block);
@@ -79,17 +79,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_get_timestamp() {
-        let result = utils::get_timestamp();
-        assert!(result.is_ok());
-        let timestamp = result.unwrap();
-        assert!(timestamp > 1577836800, "timestamp should be after 2020");
-    }
-
-    #[test]
     fn test_encode_block() {
         let block = Block {
-            timestamp: 1700000000,
+            created: Some(prost_types::Timestamp {
+                seconds: 1700000000,
+                nanos: 0,
+            }),
             parent: "abc123".to_string(),
             payload: Vec::new(),
         };
@@ -99,7 +94,7 @@ mod tests {
 
         // Verify roundtrip: decode should produce the same block
         let decoded = Block::decode(buf.as_slice()).unwrap();
-        assert_eq!(decoded.timestamp, block.timestamp);
+        assert_eq!(decoded.created, block.created);
         assert_eq!(decoded.parent, block.parent);
     }
 }
