@@ -35,7 +35,7 @@ int main(int argc, char *argv[]) {
     }
     const char *const block = argv[3];
 
-    ret = lch_diff(block);
+    ret = lch_patch_create(block);
     if (ret != 0) {
       fprintf(stderr, "Failed to commit\n");
       return EXIT_FAILURE;

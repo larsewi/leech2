@@ -53,16 +53,16 @@ pub extern "C" fn lch_commit() -> i32 {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn lch_diff(block: *const c_char) -> i32 {
+pub extern "C" fn lch_patch_create(block: *const c_char) -> i32 {
     if block.is_null() {
-        log::error!("lch_diff(): Bad argument: block hash cannot be NULL");
+        log::error!("lch_patch_create(): Bad argument: block hash cannot be NULL");
         return -1;
     }
 
     let hash = match unsafe { CStr::from_ptr(block) }.to_str() {
         Ok(hash) => hash,
         Err(e) => {
-            log::error!("lch_diff(): Bad argument: {e}");
+            log::error!("lch_patch_create(): Bad argument: {e}");
             return -1;
         }
     };
@@ -70,7 +70,7 @@ pub extern "C" fn lch_diff(block: *const c_char) -> i32 {
     match patch::Patch::create(hash) {
         Ok(_) => 0,
         Err(e) => {
-            log::error!("lch_diff(): {}", e);
+            log::error!("lch_patch_create(): {}", e);
             -1
         }
     }
