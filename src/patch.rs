@@ -5,8 +5,8 @@ use prost_types::Timestamp;
 
 use crate::block::Block;
 use crate::head;
-use crate::proto::patch::patch::Payload;
 use crate::proto::patch::Deltas;
+use crate::proto::patch::patch::Payload;
 use crate::state;
 use crate::utils::GENESIS_HASH;
 
@@ -38,8 +38,7 @@ fn consolidate(
 }
 
 fn load_state_payload() -> Result<Payload, Box<dyn std::error::Error>> {
-    let state = state::State::load()?
-        .ok_or("No STATE file found")?;
+    let state = state::State::load()?.ok_or("No STATE file found")?;
     Ok(Payload::State(crate::proto::state::State::from(state)))
 }
 
@@ -81,16 +80,14 @@ impl Patch {
             return Ok(patch);
         }
 
-        let (head_created, num_blocks, payload) =
-            match try_consolidate(&head_hash, last_known_hash) {
-                Ok((head_created, num_blocks, payload)) => {
-                    (head_created, num_blocks, Some(payload))
-                }
-                Err(e) => {
-                    log::warn!("Consolidation failed, falling back to full state: {}", e);
-                    (None, 0, Some(load_state_payload()?))
-                }
-            };
+        let (head_created, num_blocks, payload) = match try_consolidate(&head_hash, last_known_hash)
+        {
+            Ok((head_created, num_blocks, payload)) => (head_created, num_blocks, Some(payload)),
+            Err(e) => {
+                log::warn!("Consolidation failed, falling back to full state: {}", e);
+                (None, 0, Some(load_state_payload()?))
+            }
+        };
 
         let patch = Patch {
             head_hash,
