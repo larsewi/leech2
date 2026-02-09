@@ -1,6 +1,7 @@
 pub use crate::proto::patch::Patch;
 
 use prost::Message;
+use prost_types::Timestamp;
 
 use crate::block::Block;
 use crate::head;
@@ -36,6 +37,35 @@ fn consolidate(
     Ok((num_blocks, current_block.payload))
 }
 
+fn load_state_payload() -> Result<Payload, Box<dyn std::error::Error>> {
+    let state = state::State::load()?
+        .ok_or("No STATE file found")?;
+    Ok(Payload::State(crate::proto::state::State::from(state)))
+}
+
+fn try_consolidate(
+    head_hash: &str,
+    last_known_hash: &str,
+) -> Result<(Option<Timestamp>, u32, Payload), Box<dyn std::error::Error>> {
+    let block = Block::load(head_hash)?;
+    let head_created = block.created.clone();
+    let (num_blocks, deltas) = consolidate(block, last_known_hash)?;
+
+    let deltas_payload = Deltas { items: deltas };
+    let state = state::State::load()?;
+    let proto_state = state.map(crate::proto::state::State::from);
+
+    let payload = match proto_state {
+        Some(s) if s.encoded_len() < deltas_payload.encoded_len() => {
+            log::info!("Using full state (smaller than consolidated deltas)");
+            Payload::State(s)
+        }
+        _ => Payload::Deltas(deltas_payload),
+    };
+
+    Ok((head_created, num_blocks, payload))
+}
+
 impl Patch {
     pub fn create(last_known_hash: &str) -> Result<Patch, Box<dyn std::error::Error>> {
         let head_hash = head::load()?;
@@ -52,29 +82,13 @@ impl Patch {
         }
 
         let (head_created, num_blocks, payload) =
-            match Block::load(&head_hash).and_then(|block| {
-                let head_created = block.created.clone();
-                let (num_blocks, deltas) = consolidate(block, last_known_hash)?;
-                Ok((head_created, num_blocks, deltas))
-            }) {
-                Ok((head_created, num_blocks, deltas)) => {
-                    let deltas_payload = Deltas { items: deltas };
-                    let state = state::State::load()?;
-                    let proto_state = state.map(|s| crate::proto::state::State::from(s));
-
-                    match proto_state {
-                        Some(s) if s.encoded_len() < deltas_payload.encoded_len() => {
-                            log::info!("Using full state (smaller than consolidated deltas)");
-                            (head_created, num_blocks, Some(Payload::State(s)))
-                        }
-                        _ => (head_created, num_blocks, Some(Payload::Deltas(deltas_payload))),
-                    }
+            match try_consolidate(&head_hash, last_known_hash) {
+                Ok((head_created, num_blocks, payload)) => {
+                    (head_created, num_blocks, Some(payload))
                 }
                 Err(e) => {
                     log::warn!("Consolidation failed, falling back to full state: {}", e);
-                    let state = state::State::load()?
-                        .ok_or("Consolidation failed and no STATE file found for fallback")?;
-                    (None, 0, Some(Payload::State(crate::proto::state::State::from(state))))
+                    (None, 0, Some(load_state_payload()?))
                 }
             };
 
