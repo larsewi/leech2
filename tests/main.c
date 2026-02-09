@@ -1,3 +1,4 @@
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -42,8 +43,62 @@ int main(int argc, char *argv[]) {
       fprintf(stderr, "Failed to create patch\n");
       return EXIT_FAILURE;
     }
-    fwrite(patch, 1, patch_len, stdout);
-    lch_free(patch, patch_len);
+    char path[4096];
+    snprintf(path, sizeof(path), "%s/PATCH", work_dir);
+
+    FILE *f = fopen(path, "wb");
+    if (f == NULL) {
+      fprintf(stderr, "Failed to open '%s' for writing\n", path);
+      lch_free_patch(patch, patch_len);
+      return EXIT_FAILURE;
+    }
+    fwrite(patch, 1, patch_len, f);
+    fclose(f);
+
+    lch_free_patch(patch, patch_len);
+    return EXIT_SUCCESS;
+  }
+
+  if (strcmp(command, "patch") == 0) {
+    char path[4096];
+    snprintf(path, sizeof(path), "%s/PATCH", work_dir);
+
+    FILE *f = fopen(path, "rb");
+    if (f == NULL) {
+      fprintf(stderr, "Failed to open '%s' for reading\n", path);
+      return EXIT_FAILURE;
+    }
+
+    fseek(f, 0, SEEK_END);
+    long pos = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    if (pos < 0) {
+      fprintf(stderr, "Failed to determine size of file '%s'\n", path);
+      fclose(f);
+      return EXIT_FAILURE;
+    }
+    size_t len = (size_t)pos;
+
+    uint8_t *patch = malloc(len);
+    if (patch == NULL) {
+      fprintf(stderr, "Failed to allocate memory\n");
+      fclose(f);
+      return EXIT_FAILURE;
+    }
+
+    fread(patch, 1, len, f);
+    fclose(f);
+
+    char *sql = NULL;
+    ret = lch_patch_to_sql(patch, len, &sql);
+    free(patch);
+    if (ret != 0) {
+      fprintf(stderr, "Failed to convert patch to SQL\n");
+      return EXIT_FAILURE;
+    }
+
+    printf("%s", sql);
+    lch_free_str(sql);
     return EXIT_SUCCESS;
   }
 

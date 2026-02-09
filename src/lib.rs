@@ -1,4 +1,4 @@
-use std::ffi::{CStr, c_char};
+use std::ffi::{CStr, CString, c_char};
 use std::mem;
 use std::path::PathBuf;
 
@@ -57,21 +57,21 @@ pub extern "C" fn lch_block_create() -> i32 {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn lch_patch_create(
-    block: *const c_char,
+    last_known: *const c_char,
     out: *mut *mut u8,
-    out_len: *mut usize,
+    len: *mut usize,
 ) -> i32 {
-    if block.is_null() {
+    if last_known.is_null() {
         log::error!("lch_patch_create(): Bad argument: block hash cannot be NULL");
         return -1;
     }
 
-    if out.is_null() || out_len.is_null() {
+    if out.is_null() || len.is_null() {
         log::error!("lch_patch_create(): Bad argument: out and out_len cannot be NULL");
         return -1;
     }
 
-    let hash = match unsafe { CStr::from_ptr(block) }.to_str() {
+    let hash = match unsafe { CStr::from_ptr(last_known) }.to_str() {
         Ok(hash) => hash,
         Err(e) => {
             log::error!("lch_patch_create(): Bad argument: {e}");
@@ -93,23 +93,72 @@ pub extern "C" fn lch_patch_create(
         return -1;
     }
 
-    let len = buf.len();
+    let buf_len = buf.len();
     let ptr = buf.as_mut_ptr();
     mem::forget(buf);
 
     unsafe {
         *out = ptr;
-        *out_len = len;
+        *len = buf_len;
     }
 
     0
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn lch_free(ptr: *mut u8, len: usize) {
+pub extern "C" fn lch_patch_to_sql(buf: *const u8, len: usize, out: *mut *mut c_char) -> i32 {
+    if buf.is_null() {
+        log::error!("lch_patch_to_sql(): Bad argument: buf cannot be NULL");
+        return -1;
+    }
+
+    if out.is_null() {
+        log::error!("lch_patch_to_sql(): Bad argument: out cannot be NULL");
+        return -1;
+    }
+
+    let data = unsafe { std::slice::from_raw_parts(buf, len) };
+
+    let _patch = match patch::Patch::decode(data) {
+        Ok(p) => p,
+        Err(e) => {
+            log::error!("lch_patch_to_sql(): Failed to decode patch: {}", e);
+            return -1;
+        }
+    };
+
+    // TODO: Convert patch to SQL
+    let sql = String::new();
+
+    let cstr = match CString::new(sql) {
+        Ok(s) => s,
+        Err(e) => {
+            log::error!("lch_patch_to_sql(): Failed to create CString: {}", e);
+            return -1;
+        }
+    };
+
+    unsafe {
+        *out = cstr.into_raw();
+    }
+
+    0
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn lch_free_patch(ptr: *mut u8, len: usize) {
     if !ptr.is_null() {
         unsafe {
             drop(Vec::from_raw_parts(ptr, len, len));
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn lch_free_str(ptr: *mut c_char) {
+    if !ptr.is_null() {
+        unsafe {
+            drop(CString::from_raw(ptr));
         }
     }
 }

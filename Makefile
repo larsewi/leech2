@@ -28,6 +28,9 @@ commit: tests/leech2
 diff: tests/leech2
 	./tests/leech2 tests/.workdir diff $(ARGS)
 
+patch: tests/leech2
+	./tests/leech2 tests/.workdir patch
+
 clean:
 	rm -f tests/main.o
 	rm -f tests/leech2
