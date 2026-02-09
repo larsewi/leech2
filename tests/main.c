@@ -35,11 +35,15 @@ int main(int argc, char *argv[]) {
     }
     const char *const block = argv[3];
 
-    ret = lch_patch_create(block);
+    uint8_t *patch = NULL;
+    size_t patch_len = 0;
+    ret = lch_patch_create(block, &patch, &patch_len);
     if (ret != 0) {
       fprintf(stderr, "Failed to create patch\n");
       return EXIT_FAILURE;
     }
+    fwrite(patch, 1, patch_len, stdout);
+    lch_free(patch, patch_len);
     return EXIT_SUCCESS;
   }
 
