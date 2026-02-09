@@ -3,7 +3,13 @@ syntax = "proto3";
 package patch;
 
 import "delta.proto";
+import "state.proto";
 import "google/protobuf/timestamp.proto";
+
+// Wrapper for a list of deltas (oneof cannot contain repeated fields directly).
+message Deltas {
+  repeated delta.Delta items = 1;
+}
 
 // Patch represents the merged diff between two blocks in the chain.
 message Patch {
@@ -13,6 +19,11 @@ message Patch {
   google.protobuf.Timestamp head_created = 2;
   // The number of blocks that were merged to produce this patch.
   uint32 num_blocks = 3;
-  // The merged deltas representing the combined changes between the two blocks.
-  repeated delta.Delta payload = 4;
+  // The payload is either merged deltas or a full state snapshot (fallback).
+  oneof payload {
+    // Merged deltas representing the combined changes between the two blocks.
+    Deltas deltas = 4;
+    // Full state snapshot, used when delta merging fails due to conflicts.
+    state.State state = 5;
+  }
 }
