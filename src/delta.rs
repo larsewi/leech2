@@ -5,6 +5,7 @@ use crate::entry::Entry;
 use crate::state::State;
 use crate::table::Table;
 use crate::update::Update;
+use crate::utils::format_row;
 
 
 /// Delta represents the changes to a single table between two states.
@@ -130,31 +131,31 @@ impl Delta {
     ) -> Result<(), Box<dyn std::error::Error>> {
         if self.inserts.contains_key(&key) {
             // Rule 5: double insert → error
-            log::debug!("Rule 5: key {:?} inserted in both blocks", key);
-            return Err(format!("Conflict: key {:?} inserted in both blocks", key).into());
+            log::debug!("Rule 5: key {} inserted in both blocks", format_row(&key));
+            return Err(format!("Conflict: key {} inserted in both blocks", format_row(&key)).into());
         } else if let Some(del_val) = self.deletes.remove(&key) {
             if del_val == val {
                 // Rule 9a: delete then insert with same value → cancels out
-                log::debug!("Rule 9a: delete + insert cancel out for key {:?}", key);
+                log::debug!("Rule 9a: delete + insert cancel out for key {}", format_row(&key));
             } else {
                 // Rule 9b: delete then insert with different value → update
-                log::debug!("Rule 9b: delete + insert becomes update for key {:?}", key);
+                log::debug!("Rule 9b: delete + insert becomes update for key {}", format_row(&key));
                 self.updates.insert(key, (del_val, val));
             }
         } else if self.updates.contains_key(&key) {
             // Rule 13: insert after update → error
             log::debug!(
-                "Rule 13: key {:?} updated in parent, inserted in current",
-                key
+                "Rule 13: key {} updated in parent, inserted in current",
+                format_row(&key)
             );
             return Err(format!(
-                "Conflict: key {:?} updated in parent, inserted in current",
-                key
+                "Conflict: key {} updated in parent, inserted in current",
+                format_row(&key)
             )
             .into());
         } else {
             // Rule 1: pass through
-            log::debug!("Rule 1: insert passes through for key {:?}", key);
+            log::debug!("Rule 1: insert passes through for key {}", format_row(&key));
             self.inserts.insert(key, val);
         }
         Ok(())
@@ -167,33 +168,33 @@ impl Delta {
     ) -> Result<(), Box<dyn std::error::Error>> {
         if self.inserts.remove(&key).is_some() {
             // Rule 6: insert then delete → cancels out
-            log::debug!("Rule 6: insert + delete cancel out for key {:?}", key);
+            log::debug!("Rule 6: insert + delete cancel out for key {}", format_row(&key));
         } else if self.deletes.contains_key(&key) {
             // Rule 10: double delete → error
-            log::debug!("Rule 10: key {:?} deleted in both blocks", key);
-            return Err(format!("Conflict: key {:?} deleted in both blocks", key).into());
+            log::debug!("Rule 10: key {} deleted in both blocks", format_row(&key));
+            return Err(format!("Conflict: key {} deleted in both blocks", format_row(&key)).into());
         } else if let Some((old, new_val)) = self.updates.remove(&key) {
             if val == new_val {
                 // Rule 14a: update then delete, values match → delete(old)
-                log::debug!("Rule 14a: update + delete becomes delete for key {:?}", key);
+                log::debug!("Rule 14a: update + delete becomes delete for key {}", format_row(&key));
                 self.deletes.insert(key, old);
             } else {
                 // Rule 14b: update then delete, values mismatch → error
                 log::debug!(
-                    "Rule 14b: key {:?} updated to {:?} in parent, but deleted with {:?}",
-                    key,
-                    new_val,
-                    val
+                    "Rule 14b: key {} updated to {} in parent, but deleted with {}",
+                    format_row(&key),
+                    format_row(&new_val),
+                    format_row(&val)
                 );
                 return Err(format!(
-                    "Conflict: key {:?} updated to {:?} in parent, but deleted with {:?}",
-                    key, new_val, val
+                    "Conflict: key {} updated to {} in parent, but deleted with {}",
+                    format_row(&key), format_row(&new_val), format_row(&val)
                 )
                 .into());
             }
         } else {
             // Rule 2: pass through
-            log::debug!("Rule 2: delete passes through for key {:?}", key);
+            log::debug!("Rule 2: delete passes through for key {}", format_row(&key));
             self.deletes.insert(key, val);
         }
         Ok(())
@@ -207,26 +208,26 @@ impl Delta {
     ) -> Result<(), Box<dyn std::error::Error>> {
         if let Some(insert_val) = self.inserts.get_mut(&key) {
             // Rule 7: insert then update → insert(new_val)
-            log::debug!("Rule 7: insert + update becomes insert for key {:?}", key);
+            log::debug!("Rule 7: insert + update becomes insert for key {}", format_row(&key));
             *insert_val = other_new;
         } else if self.deletes.contains_key(&key) {
             // Rule 11: update after delete → error
             log::debug!(
-                "Rule 11: key {:?} deleted in parent, updated in current",
-                key
+                "Rule 11: key {} deleted in parent, updated in current",
+                format_row(&key)
             );
             return Err(format!(
-                "Conflict: key {:?} deleted in parent, updated in current",
-                key
+                "Conflict: key {} deleted in parent, updated in current",
+                format_row(&key)
             )
             .into());
         } else if let Some(update) = self.updates.get_mut(&key) {
             // Rule 15: update then update → update(old1 → new2)
-            log::debug!("Rule 15: update + update merged for key {:?}", key);
+            log::debug!("Rule 15: update + update merged for key {}", format_row(&key));
             update.1 = other_new;
         } else {
             // Rule 3: pass through
-            log::debug!("Rule 3: update passes through for key {:?}", key);
+            log::debug!("Rule 3: update passes through for key {}", format_row(&key));
             self.updates.insert(key, (other_old, other_new));
         }
         Ok(())
