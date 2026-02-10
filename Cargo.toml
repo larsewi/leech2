@@ -7,6 +7,7 @@ edition = "2024"
 crate-type = ["cdylib"]
 
 [dependencies]
+chrono = "0.4.43"
 csv = "1.3"
 env_logger = "0.11"
 fs2 = "0.4"

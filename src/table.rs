@@ -1,8 +1,10 @@
 use std::collections::HashMap;
+use std::fmt;
 use std::fs::File;
 
 use crate::config::{self, TableConfig};
 use crate::entry::Entry;
+
 
 /// A table with records stored in a hash map for efficient lookup.
 /// Fields are ordered with primary key columns first, followed by subsidiary columns.
@@ -39,6 +41,16 @@ impl From<Table> for crate::proto::table::Table {
             fields: table.fields,
             rows,
         }
+    }
+}
+
+impl fmt::Display for crate::proto::table::Table {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "[{}]", self.fields.join(", "))?;
+        for row in &self.rows {
+            write!(f, "\n  {}", row)?;
+        }
+        Ok(())
     }
 }
 

@@ -1,3 +1,5 @@
+use std::fmt;
+
 use prost::Message;
 
 use crate::delta;
@@ -7,6 +9,22 @@ use crate::storage;
 use crate::utils;
 
 pub use crate::proto::block::Block;
+
+impl fmt::Display for Block {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Block:")?;
+        write!(f, "\n  Parent: {:.7}...", self.parent)?;
+        match &self.created {
+            Some(ts) => write!(f, "\n  Created: {}", utils::format_timestamp(ts))?,
+            None => write!(f, "\n  Created: N/A")?,
+        }
+        write!(f, "\n  Payload ({} deltas):", self.payload.len())?;
+        for delta in &self.payload {
+            write!(f, "\n    {}", utils::indent(&delta.to_string(), "    "))?;
+        }
+        Ok(())
+    }
+}
 
 impl Block {
     pub fn load(hash: &str) -> Result<Block, Box<dyn std::error::Error>> {
@@ -36,7 +54,7 @@ impl Block {
             created,
             payload,
         };
-        log::debug!("{:#?}", block);
+        log::debug!("{}", block);
 
         let mut buf = Vec::new();
         block.encode(&mut buf)?;

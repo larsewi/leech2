@@ -1,5 +1,7 @@
 pub use crate::proto::patch::Patch;
 
+use std::fmt;
+
 use prost::Message;
 use prost_types::Timestamp;
 
@@ -8,7 +10,36 @@ use crate::head;
 use crate::proto::patch::Deltas;
 use crate::proto::patch::patch::Payload;
 use crate::state;
+use crate::utils;
 use crate::utils::GENESIS_HASH;
+
+impl fmt::Display for Patch {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Patch:")?;
+        write!(f, "\n  Head: {:.7}...", self.head_hash)?;
+        match &self.head_created {
+            Some(ts) => write!(f, "\n  Created: {}", utils::format_timestamp(ts))?,
+            None => write!(f, "\n  Created: N/A")?,
+        }
+        write!(f, "\n  Blocks: {}", self.num_blocks)?;
+        match &self.payload {
+            Some(Payload::Deltas(deltas)) => {
+                write!(f, "\n  Payload ({} deltas):", deltas.items.len())?;
+                for delta in &deltas.items {
+                    write!(f, "\n    {}", utils::indent(&delta.to_string(), "    "))?;
+                }
+            }
+            Some(Payload::State(state)) => {
+                write!(f, "\n  Payload (full state):")?;
+                write!(f, "\n    {}", utils::indent(&state.to_string(), "    "))?;
+            }
+            None => {
+                write!(f, "\n  Payload: None")?;
+            }
+        }
+        Ok(())
+    }
+}
 
 fn consolidate(
     head_block: Block,
@@ -76,7 +107,7 @@ impl Patch {
                 num_blocks: 0,
                 payload: None,
             };
-            log::debug!("Built patch: {:#?}", patch);
+            log::debug!("Built patch:\n{}", patch);
             return Ok(patch);
         }
 
@@ -102,7 +133,7 @@ impl Patch {
             payload,
         };
 
-        log::debug!("Built patch: {:#?}", patch);
+        log::debug!("Built patch:\n{}", patch);
         Ok(patch)
     }
 }

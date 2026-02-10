@@ -1,9 +1,11 @@
 use std::collections::HashMap;
+use std::fmt;
 
 use crate::entry::Entry;
 use crate::state::State;
 use crate::table::Table;
 use crate::update::Update;
+
 
 /// Delta represents the changes to a single table between two states.
 #[derive(Debug, Clone, PartialEq)]
@@ -75,6 +77,31 @@ impl From<Delta> for crate::proto::delta::Delta {
             deletes,
             updates,
         }
+    }
+}
+
+impl fmt::Display for crate::proto::delta::Delta {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "'{}' [{}]", self.name, self.fields.join(", "))?;
+        if !self.inserts.is_empty() {
+            write!(f, "\n  Inserts ({}):", self.inserts.len())?;
+            for entry in &self.inserts {
+                write!(f, "\n    {}", entry)?;
+            }
+        }
+        if !self.deletes.is_empty() {
+            write!(f, "\n  Deletes ({}):", self.deletes.len())?;
+            for entry in &self.deletes {
+                write!(f, "\n    {}", entry)?;
+            }
+        }
+        if !self.updates.is_empty() {
+            write!(f, "\n  Updates ({}):", self.updates.len())?;
+            for update in &self.updates {
+                write!(f, "\n    {}", update)?;
+            }
+        }
+        Ok(())
     }
 }
 

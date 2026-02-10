@@ -1,10 +1,12 @@
 use std::collections::HashMap;
+use std::fmt;
 
 use prost::Message;
 
 use crate::config;
 use crate::storage;
 use crate::table::Table;
+use crate::utils::indent;
 
 const STATE_FILE: &str = "STATE";
 
@@ -37,6 +39,19 @@ impl From<State> for crate::proto::state::State {
     }
 }
 
+impl fmt::Display for crate::proto::state::State {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "State ({} tables):", self.tables.len())?;
+        let mut names: Vec<_> = self.tables.keys().collect();
+        names.sort();
+        for name in names {
+            let table = &self.tables[name];
+            write!(f, "\n  {} {}", name, indent(&table.to_string(), "  "))?;
+        }
+        Ok(())
+    }
+}
+
 impl State {
     pub fn load() -> Result<Option<Self>, Box<dyn std::error::Error>> {
         let Some(data) = storage::load(STATE_FILE)? else {
@@ -45,9 +60,9 @@ impl State {
         };
 
         let proto_state = crate::proto::state::State::decode(data.as_slice())?;
+        log::info!("Loaded previous state with {} tables", proto_state.tables.len());
+        log::debug!("{}", proto_state);
         let state = State::from(proto_state);
-        log::info!("Loaded previous state with {} tables", state.tables.len());
-        log::debug!("{:#?}", state);
         Ok(Some(state))
     }
 
@@ -61,7 +76,7 @@ impl State {
 
         let state = State { tables };
         log::info!("Computed current state from {} tables", state.tables.len());
-        log::debug!("{:#?}", state);
+        log::debug!("{}", crate::proto::state::State::from(state.clone()));
         Ok(state)
     }
 
