@@ -49,13 +49,13 @@ int main(int argc, char *argv[]) {
     FILE *f = fopen(path, "wb");
     if (f == NULL) {
       fprintf(stderr, "Failed to open '%s' for writing\n", path);
-      lch_free_patch(patch, patch_len);
+      lch_free_buf(patch, patch_len);
       return EXIT_FAILURE;
     }
     fwrite(patch, 1, patch_len, f);
     fclose(f);
 
-    lch_free_patch(patch, patch_len);
+    lch_free_buf(patch, patch_len);
     return EXIT_SUCCESS;
   }
 

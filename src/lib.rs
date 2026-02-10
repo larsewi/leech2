@@ -144,7 +144,7 @@ pub extern "C" fn lch_patch_to_sql(buf: *const u8, len: usize, out: *mut *mut c_
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn lch_free_patch(ptr: *mut u8, len: usize) {
+pub extern "C" fn lch_free_buf(ptr: *mut u8, len: usize) {
     if !ptr.is_null() {
         unsafe {
             drop(Vec::from_raw_parts(ptr, len, len));
