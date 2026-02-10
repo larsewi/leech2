@@ -5,7 +5,7 @@ package entry;
 // Entry represents a row in a table, split into key and value components.
 message Entry {
   // The values that make up the composite primary key.
-  repeated string key = 1;
+  repeated bytes key = 1;
   // The subsidiary (non-key) values.
-  repeated string value = 2;
+  repeated bytes value = 2;
 }

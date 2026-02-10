@@ -13,11 +13,11 @@ pub struct Delta {
     /// The names of all columns, primary key columns first.
     pub fields: Vec<String>,
     /// Entries that were added (key -> value).
-    pub inserts: HashMap<Vec<String>, Vec<String>>,
+    pub inserts: HashMap<Vec<Vec<u8>>, Vec<Vec<u8>>>,
     /// Entries that were removed (key -> value).
-    pub deletes: HashMap<Vec<String>, Vec<String>>,
+    pub deletes: HashMap<Vec<Vec<u8>>, Vec<Vec<u8>>>,
     /// Entries that were modified (key -> (old_value, new_value)).
-    pub updates: HashMap<Vec<String>, (Vec<String>, Vec<String>)>,
+    pub updates: HashMap<Vec<Vec<u8>>, (Vec<Vec<u8>>, Vec<Vec<u8>>)>,
 }
 
 impl From<crate::proto::delta::Delta> for Delta {
@@ -98,8 +98,8 @@ impl Delta {
 
     fn merge_insert(
         &mut self,
-        key: Vec<String>,
-        val: Vec<String>,
+        key: Vec<Vec<u8>>,
+        val: Vec<Vec<u8>>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         if self.inserts.contains_key(&key) {
             // Rule 5: double insert → error
@@ -135,8 +135,8 @@ impl Delta {
 
     fn merge_delete(
         &mut self,
-        key: Vec<String>,
-        val: Vec<String>,
+        key: Vec<Vec<u8>>,
+        val: Vec<Vec<u8>>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         if self.inserts.remove(&key).is_some() {
             // Rule 6: insert then delete → cancels out
@@ -174,9 +174,9 @@ impl Delta {
 
     fn merge_update(
         &mut self,
-        key: Vec<String>,
-        other_old: Vec<String>,
-        other_new: Vec<String>,
+        key: Vec<Vec<u8>>,
+        other_old: Vec<Vec<u8>>,
+        other_new: Vec<Vec<u8>>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         if let Some(insert_val) = self.inserts.get_mut(&key) {
             // Rule 7: insert then update → insert(new_val)
@@ -260,9 +260,9 @@ impl Delta {
         previous_table: Option<&Table>,
         current_table: &Table,
     ) -> (
-        HashMap<Vec<String>, Vec<String>>,
-        HashMap<Vec<String>, Vec<String>>,
-        HashMap<Vec<String>, (Vec<String>, Vec<String>)>,
+        HashMap<Vec<Vec<u8>>, Vec<Vec<u8>>>,
+        HashMap<Vec<Vec<u8>>, Vec<Vec<u8>>>,
+        HashMap<Vec<Vec<u8>>, (Vec<Vec<u8>>, Vec<Vec<u8>>)>,
     ) {
         let mut inserts = HashMap::new();
         let mut deletes = HashMap::new();
@@ -303,8 +303,8 @@ impl Delta {
 mod tests {
     use super::*;
 
-    fn make_key(key: &[&str]) -> Vec<String> {
-        key.iter().map(|s| s.to_string()).collect()
+    fn make_key(key: &[&str]) -> Vec<Vec<u8>> {
+        key.iter().map(|s| s.as_bytes().to_vec()).collect()
     }
 
     fn make_table(rows: &[(&[&str], &[&str])]) -> Table {
@@ -312,8 +312,8 @@ mod tests {
             .iter()
             .map(|(k, v)| {
                 (
-                    k.iter().map(|s| s.to_string()).collect(),
-                    v.iter().map(|s| s.to_string()).collect(),
+                    k.iter().map(|s| s.as_bytes().to_vec()).collect(),
+                    v.iter().map(|s| s.as_bytes().to_vec()).collect(),
                 )
             })
             .collect();
@@ -541,8 +541,8 @@ mod tests {
 
     // ---- Merge tests ----
 
-    fn make_val(val: &[&str]) -> Vec<String> {
-        val.iter().map(|s| s.to_string()).collect()
+    fn make_val(val: &[&str]) -> Vec<Vec<u8>> {
+        val.iter().map(|s| s.as_bytes().to_vec()).collect()
     }
 
     fn empty_delta() -> Delta {

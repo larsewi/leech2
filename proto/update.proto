@@ -5,9 +5,9 @@ package update;
 // Update represents a row whose non-key values changed between two states.
 message Update {
   // The values that make up the composite primary key.
-  repeated string key = 1;
+  repeated bytes key = 1;
   // The subsidiary (non-key) values before the change.
-  repeated string old_value = 2;
+  repeated bytes old_value = 2;
   // The subsidiary (non-key) values after the change.
-  repeated string new_value = 3;
+  repeated bytes new_value = 3;
 }
