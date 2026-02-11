@@ -1,4 +1,4 @@
-use std::fs::{self, File};
+use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
 
 use fs2::FileExt;
@@ -17,8 +17,11 @@ pub fn save(name: &str, data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
     })?;
 
     let path = work_dir.join(name);
-    let file = File::create(&path)
-        .map_err(|e| format!("Failed to create file '{}': {}", path.display(), e))?;
+    let file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .open(&path)
+        .map_err(|e| format!("Failed to open file '{}': {}", path.display(), e))?;
     file.lock_exclusive().map_err(|e| {
         format!(
             "Failed to acquire exclusive lock on '{}': {}",
@@ -27,6 +30,8 @@ pub fn save(name: &str, data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
         )
     })?;
 
+    file.set_len(0)
+        .map_err(|e| format!("Failed to truncate '{}': {}", path.display(), e))?;
     (&file)
         .write_all(data)
         .map_err(|e| format!("Failed to write to '{}': {}", path.display(), e))?;
