@@ -94,6 +94,7 @@ pub extern "C" fn lch_patch_create(
         return -1;
     }
 
+    buf.shrink_to_fit();
     let buf_len = buf.len();
     let ptr = buf.as_mut_ptr();
     mem::forget(buf);
