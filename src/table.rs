@@ -19,7 +19,7 @@ pub struct Table {
 impl From<crate::proto::table::Table> for Table {
     fn from(proto: crate::proto::table::Table) -> Self {
         let records = proto
-            .rows
+            .entries
             .into_iter()
             .map(|entry| (entry.key, entry.value))
             .collect();
@@ -32,14 +32,14 @@ impl From<crate::proto::table::Table> for Table {
 
 impl From<Table> for crate::proto::table::Table {
     fn from(table: Table) -> Self {
-        let rows = table
+        let entries = table
             .records
             .into_iter()
             .map(|(key, value)| Entry { key, value })
             .collect();
         crate::proto::table::Table {
             fields: table.fields,
-            rows,
+            entries,
         }
     }
 }
@@ -47,8 +47,8 @@ impl From<Table> for crate::proto::table::Table {
 impl fmt::Display for crate::proto::table::Table {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "[{}]", self.fields.join(", "))?;
-        for row in &self.rows {
-            write!(f, "\n  {}", row)?;
+        for entry in &self.entries {
+            write!(f, "\n  {}", entry)?;
         }
         Ok(())
     }

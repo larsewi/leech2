@@ -241,7 +241,7 @@ fn state_to_sql(
 
         out.push_str(&format!("TRUNCATE {};\n", quoted_table));
 
-        if !table.rows.is_empty() {
+        if !table.entries.is_empty() {
             let columns: String = schema
                 .fields
                 .iter()
@@ -249,7 +249,7 @@ fn state_to_sql(
                 .collect::<Vec<_>>()
                 .join(", ");
 
-            for entry in &table.rows {
+            for entry in &table.entries {
                 let literals = format_row(&entry.key, &entry.value, &schema)?;
                 out.push_str(&format!(
                     "INSERT INTO {} ({}) VALUES ({});\n",

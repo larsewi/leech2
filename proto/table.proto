@@ -10,6 +10,6 @@ import "entry.proto";
 message Table {
   // The names of all columns in the table, primary key columns first.
   repeated string fields = 1;
-  // The data rows in the table.
-  repeated entry.Entry rows = 2;
+  // The data entries in the table.
+  repeated entry.Entry entries = 2;
 }
