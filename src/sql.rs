@@ -13,6 +13,7 @@ pub enum SqlType {
     Integer,
     Float,
     Boolean,
+    Binary,
 }
 
 impl SqlType {
@@ -21,6 +22,7 @@ impl SqlType {
             "INTEGER" | "INT" | "BIGINT" | "SMALLINT" => SqlType::Integer,
             "FLOAT" | "DOUBLE" | "REAL" | "NUMERIC" | "DECIMAL" => SqlType::Float,
             "BOOLEAN" | "BOOL" => SqlType::Boolean,
+            "BINARY" | "BYTEA" | "BLOB" => SqlType::Binary,
             _ => SqlType::Text,
         }
     }
@@ -104,6 +106,15 @@ pub fn quote_literal(raw: &[u8], sql_type: &SqlType) -> Result<String, Box<dyn s
             "false" | "0" | "f" | "no" => Ok("FALSE".to_string()),
             _ => Err(format!("invalid boolean value: '{}'", s).into()),
         },
+        SqlType::Binary => {
+            if s.len() % 2 != 0 {
+                return Err(format!("invalid hex: odd length ({})", s.len()).into());
+            }
+            if !s.bytes().all(|b| b.is_ascii_hexdigit()) {
+                return Err("invalid hex: contains non-hex characters".into());
+            }
+            Ok(format!("'\\x{}'", s))
+        }
     }
 }
 
@@ -318,9 +329,13 @@ mod tests {
         assert_eq!(SqlType::from_config("TEXT"), SqlType::Text);
         assert_eq!(SqlType::from_config("VARCHAR"), SqlType::Text);
         assert_eq!(SqlType::from_config("unknown"), SqlType::Text);
+        assert_eq!(SqlType::from_config("BINARY"), SqlType::Binary);
+        assert_eq!(SqlType::from_config("BYTEA"), SqlType::Binary);
+        assert_eq!(SqlType::from_config("BLOB"), SqlType::Binary);
         // Case insensitive
         assert_eq!(SqlType::from_config("integer"), SqlType::Integer);
         assert_eq!(SqlType::from_config("Boolean"), SqlType::Boolean);
+        assert_eq!(SqlType::from_config("bytea"), SqlType::Binary);
     }
 
     #[test]
@@ -381,6 +396,31 @@ mod tests {
         assert_eq!(quote_literal(b"f", &SqlType::Boolean).unwrap(), "FALSE");
         assert_eq!(quote_literal(b"no", &SqlType::Boolean).unwrap(), "FALSE");
         assert!(quote_literal(b"maybe", &SqlType::Boolean).is_err());
+    }
+
+    #[test]
+    fn test_quote_literal_binary() {
+        assert_eq!(
+            quote_literal(b"48656C6C6F", &SqlType::Binary).unwrap(),
+            "'\\x48656C6C6F'"
+        );
+        assert_eq!(
+            quote_literal(b"DEADBEEF", &SqlType::Binary).unwrap(),
+            "'\\xDEADBEEF'"
+        );
+        assert_eq!(
+            quote_literal(b"deadbeef", &SqlType::Binary).unwrap(),
+            "'\\xdeadbeef'"
+        );
+        // Empty is valid
+        assert_eq!(
+            quote_literal(b"", &SqlType::Binary).unwrap(),
+            "'\\x'"
+        );
+        // Odd length
+        assert!(quote_literal(b"ABC", &SqlType::Binary).is_err());
+        // Non-hex characters
+        assert!(quote_literal(b"GHIJ", &SqlType::Binary).is_err());
     }
 
     #[test]
