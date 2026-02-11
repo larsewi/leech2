@@ -107,8 +107,10 @@ int main(int argc, char *argv[]) {
       return EXIT_FAILURE;
     }
 
-    printf("%s", sql);
-    lch_free_str(sql);
+    if (sql) {
+      printf("%s", sql);
+      lch_free_str(sql);
+    }
     return EXIT_SUCCESS;
   }
 

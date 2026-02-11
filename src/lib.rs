@@ -125,7 +125,11 @@ pub extern "C" fn lch_patch_to_sql(buf: *const u8, len: usize, out: *mut *mut c_
     let data = unsafe { std::slice::from_raw_parts(buf, len) };
 
     let sql = match sql::patch_to_sql(data) {
-        Ok(s) => s,
+        Ok(Some(s)) => s,
+        Ok(None) => {
+            unsafe { *out = std::ptr::null_mut() };
+            return 0;
+        }
         Err(e) => {
             log::error!("lch_patch_to_sql(): {}", e);
             return -1;

@@ -267,33 +267,35 @@ fn state_to_sql(
 /// Decode a protobuf-encoded patch and convert it to SQL statements.
 ///
 /// Returns a SQL string wrapped in BEGIN/COMMIT.
-pub fn patch_to_sql(patch_data: &[u8]) -> Result<String, Box<dyn std::error::Error>> {
+pub fn patch_to_sql(patch_data: &[u8]) -> Result<Option<String>, Box<dyn std::error::Error>> {
     let patch = Patch::decode(patch_data)?;
     log::info!("Converting patch to SQL: {}", patch);
-
-    let mut sql = String::from("BEGIN;\n");
 
     match &patch.payload {
         Some(Payload::Deltas(deltas)) => {
             log::info!("Converting {} deltas to SQL", deltas.items.len());
+            let mut sql = String::from("BEGIN;\n");
             for delta in &deltas.items {
                 delta_to_sql(delta, &mut sql)?;
             }
+            sql.push_str("COMMIT;\n");
+            Ok(Some(sql))
         }
         Some(Payload::State(state)) => {
             log::info!(
                 "Converting full state ({} tables) to SQL",
                 state.tables.len()
             );
+            let mut sql = String::from("BEGIN;\n");
             state_to_sql(state, &mut sql)?;
+            sql.push_str("COMMIT;\n");
+            Ok(Some(sql))
         }
         None => {
             log::info!("Patch has no payload, nothing to convert");
+            Ok(None)
         }
     }
-
-    sql.push_str("COMMIT;\n");
-    Ok(sql)
 }
 
 #[cfg(test)]
