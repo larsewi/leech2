@@ -58,44 +58,9 @@ fn work_dir(cli: &Cli) -> PathBuf {
 fn resolve_ref(reference: Option<&str>, n: Option<u32>) -> Result<String, Box<dyn std::error::Error>> {
     match (reference, n) {
         (Some(_), Some(_)) => Err("cannot specify both a hash prefix and -n".into()),
-        (Some(r), None) => resolve_hash_prefix(r),
+        (Some(r), None) => leech2::patch::resolve_hash_prefix(r),
         (None, Some(n)) => walk_back(n),
         (None, None) => leech2::head::load(),
-    }
-}
-
-fn resolve_hash_prefix(prefix: &str) -> Result<String, Box<dyn std::error::Error>> {
-    let config = leech2::config::Config::get()?;
-    let work_dir = &config.work_dir;
-
-    let mut matches: Vec<String> = Vec::new();
-
-    if GENESIS_HASH.starts_with(prefix) {
-        matches.push(GENESIS_HASH.to_string());
-    }
-
-    for entry in std::fs::read_dir(work_dir)? {
-        let entry = entry?;
-        let name = entry.file_name();
-        let Some(name) = name.to_str() else {
-            continue;
-        };
-        if name.starts_with(prefix)
-            && name.len() == 40
-            && name.chars().all(|c| c.is_ascii_hexdigit())
-        {
-            matches.push(name.to_string());
-        }
-    }
-
-    match matches.len() {
-        0 => Err(format!("no block found matching prefix '{}'", prefix).into()),
-        1 => Ok(matches.into_iter().next().unwrap()),
-        _ => Err(format!(
-            "ambiguous hash prefix '{}': matches {} and {}",
-            prefix, matches[0], matches[1]
-        )
-        .into()),
     }
 }
 

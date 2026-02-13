@@ -41,7 +41,7 @@ impl fmt::Display for Patch {
     }
 }
 
-fn validate_hash_prefix(prefix: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub fn resolve_hash_prefix(prefix: &str) -> Result<String, Box<dyn std::error::Error>> {
     let config = crate::config::Config::get()?;
     let work_dir = &config.work_dir;
 
@@ -62,17 +62,18 @@ fn validate_hash_prefix(prefix: &str) -> Result<(), Box<dyn std::error::Error>> 
             && name.chars().all(|c| c.is_ascii_hexdigit())
         {
             matches.push(name.to_string());
-            if matches.len() > 1 {
-                return Err(format!(
-                    "ambiguous hash prefix '{}': matches {} and {}",
-                    prefix, matches[0], matches[1]
-                )
-                .into());
-            }
         }
     }
 
-    Ok(())
+    match matches.len() {
+        0 => Err(format!("no block found matching prefix '{}'", prefix).into()),
+        1 => Ok(matches.into_iter().next().unwrap()),
+        _ => Err(format!(
+            "ambiguous hash prefix '{}': matches {} and {}",
+            prefix, matches[0], matches[1]
+        )
+        .into()),
+    }
 }
 
 fn consolidate(
@@ -132,7 +133,7 @@ fn try_consolidate(
 
 impl Patch {
     pub fn create(last_known_hash: &str) -> Result<Patch, Box<dyn std::error::Error>> {
-        validate_hash_prefix(last_known_hash)?;
+        resolve_hash_prefix(last_known_hash)?;
 
         let head_hash = head::load()?;
 
