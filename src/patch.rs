@@ -116,11 +116,21 @@ fn try_consolidate(
 
     let (num_blocks, mut deltas) = consolidate(block, last_known_hash)?;
 
-    // Strip old_value from updates — patches are fully consolidated so the
-    // receiver only needs new_value to apply changes.
+    // Apply sparse encoding and strip old_value — patches are fully
+    // consolidated so the receiver only needs changed_indices + new_value.
     for delta in &mut deltas {
         for update in &mut delta.updates {
+            let mut changed_indices = Vec::new();
+            let mut sparse_new = Vec::new();
+            for (i, (o, n)) in update.old_value.iter().zip(update.new_value.iter()).enumerate() {
+                if o != n {
+                    changed_indices.push(i as u32);
+                    sparse_new.push(n.clone());
+                }
+            }
+            update.changed_indices = changed_indices;
             update.old_value.clear();
+            update.new_value = sparse_new;
         }
     }
 

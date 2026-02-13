@@ -90,23 +90,11 @@ impl From<Delta> for crate::proto::delta::Delta {
         let updates = delta
             .updates
             .into_iter()
-            .map(|(key, (old_value, new_value))| {
-                let mut changed_indices = Vec::new();
-                let mut sparse_old = Vec::new();
-                let mut sparse_new = Vec::new();
-                for (i, (o, n)) in old_value.iter().zip(new_value.iter()).enumerate() {
-                    if o != n {
-                        changed_indices.push(i as u32);
-                        sparse_old.push(o.clone());
-                        sparse_new.push(n.clone());
-                    }
-                }
-                Update {
-                    key,
-                    changed_indices,
-                    old_value: sparse_old,
-                    new_value: sparse_new,
-                }
+            .map(|(key, (old_value, new_value))| Update {
+                key,
+                changed_indices: Vec::new(),
+                old_value,
+                new_value,
             })
             .collect();
         crate::proto::delta::Delta {
@@ -163,29 +151,52 @@ impl fmt::Display for crate::proto::delta::Delta {
         if !self.updates.is_empty() {
             write!(f, "\n  Updates ({}):", self.updates.len())?;
             for update in &self.updates {
-                // Build positional columns with _ for unchanged fields.
-                let changed: std::collections::HashSet<u32> =
-                    update.changed_indices.iter().copied().collect();
+                let is_full =
+                    update.changed_indices.is_empty() && !update.new_value.is_empty();
                 let has_old = !update.old_value.is_empty();
 
-                let mut new_iter = update.new_value.iter();
-                let mut old_iter = update.old_value.iter();
-
-                let cols: Vec<String> = (0..num_sub as u32)
-                    .map(|i| {
-                        if changed.contains(&i) {
-                            let new = new_iter.next().map(|s| s.as_str()).unwrap_or("?");
+                let cols: Vec<String> = if is_full {
+                    // Full format (blocks): compare old and new positionally.
+                    (0..num_sub)
+                        .map(|i| {
+                            let new = update.new_value.get(i).map(|s| s.as_str()).unwrap_or("?");
                             if has_old {
-                                let old = old_iter.next().map(|s| s.as_str()).unwrap_or("?");
-                                format!("{} -> {}", old, new)
+                                let old =
+                                    update.old_value.get(i).map(|s| s.as_str()).unwrap_or("?");
+                                if old != new {
+                                    format!("{} -> {}", old, new)
+                                } else {
+                                    "_".to_string()
+                                }
                             } else {
                                 new.to_string()
                             }
-                        } else {
-                            "_".to_string()
-                        }
-                    })
-                    .collect();
+                        })
+                        .collect()
+                } else {
+                    // Sparse format (patches): use changed_indices.
+                    let changed: std::collections::HashSet<u32> =
+                        update.changed_indices.iter().copied().collect();
+                    let mut new_iter = update.new_value.iter();
+                    let mut old_iter = update.old_value.iter();
+                    (0..num_sub as u32)
+                        .map(|i| {
+                            if changed.contains(&i) {
+                                let new =
+                                    new_iter.next().map(|s| s.as_str()).unwrap_or("?");
+                                if has_old {
+                                    let old =
+                                        old_iter.next().map(|s| s.as_str()).unwrap_or("?");
+                                    format!("{} -> {}", old, new)
+                                } else {
+                                    new.to_string()
+                                }
+                            } else {
+                                "_".to_string()
+                            }
+                        })
+                        .collect()
+                };
 
                 write!(f, "\n    ({}) {}", update.key.join(", "), cols.join(", "))?;
             }
@@ -319,8 +330,19 @@ impl Delta {
             .into());
         } else if let Some(update) = self.updates.get_mut(&key) {
             // Rule 15: update then update → update(old1 → new2)
+            // Merge sparse-expanded updates: only touch positions that actually
+            // changed in the current update.
             log::debug!("Rule 15: update + update merged for key {:?}", key);
-            update.1 = other_new;
+            for i in 0..update.0.len() {
+                let parent_changed = update.0[i] != update.1[i];
+                let current_changed = other_old[i] != other_new[i];
+                if current_changed {
+                    update.1[i] = other_new[i].clone();
+                    if !parent_changed {
+                        update.0[i] = other_old[i].clone();
+                    }
+                }
+            }
         } else {
             // Rule 3: pass through
             log::debug!("Rule 3: update passes through for key {:?}", key);

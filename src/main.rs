@@ -112,22 +112,50 @@ fn cmd_init(work_dir: &std::path::Path) -> Result<(), Box<dyn std::error::Error>
 
     std::fs::write(
         work_dir.join("config.toml"),
-        r#"[tables.example]
-source = "example.csv"
+        r#"[tables.employees]
+source = "employees.csv"
 header = true
 
-[[tables.example.fields]]
-name = "id"
+[[tables.employees.fields]]
+name = "employee_id"
 type = "INTEGER"
 primary-key = true
 
-[[tables.example.fields]]
-name = "name"
+[[tables.employees.fields]]
+name = "first_name"
+type = "TEXT"
+
+[[tables.employees.fields]]
+name = "last_name"
+type = "TEXT"
+
+[[tables.employees.fields]]
+name = "email"
+type = "TEXT"
+
+[[tables.employees.fields]]
+name = "department"
+type = "TEXT"
+
+[[tables.employees.fields]]
+name = "salary"
+type = "INTEGER"
+
+[[tables.employees.fields]]
+name = "hire_date"
 type = "TEXT"
 "#,
     )?;
 
-    std::fs::write(work_dir.join("example.csv"), "id,name\n1,Alice\n2,Bob\n")?;
+    std::fs::write(
+        work_dir.join("employees.csv"),
+        "employee_id,first_name,last_name,email,department,salary,hire_date\n\
+         1,Alice,Johnson,alice.johnson@example.com,Engineering,92000,2021-03-15\n\
+         2,Bob,Smith,bob.smith@example.com,Sales,67000,2019-07-01\n\
+         3,Carol,Williams,carol.williams@example.com,Engineering,98000,2020-01-10\n\
+         4,Dan,Brown,dan.brown@example.com,Marketing,71000,2022-06-20\n\
+         5,Eve,Davis,eve.davis@example.com,Engineering,105000,2018-11-05\n",
+    )?;
 
     println!("Initialized {}", work_dir.display());
     Ok(())
