@@ -19,10 +19,7 @@ mod utils;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn lch_init(work_dir: *const c_char) -> i32 {
-    if env_logger::try_init().is_err() {
-        eprintln!("lch_init(): Failed to initialize logger (already initialized?)");
-        return -1;
-    }
+    let _ = env_logger::try_init();
 
     if work_dir.is_null() {
         log::error!("lch_init(): Bad argument: work directory cannot be NULL");
