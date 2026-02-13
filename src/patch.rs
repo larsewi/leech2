@@ -114,7 +114,15 @@ fn try_consolidate(
         return Ok((head_created, 0, None));
     }
 
-    let (num_blocks, deltas) = consolidate(block, last_known_hash)?;
+    let (num_blocks, mut deltas) = consolidate(block, last_known_hash)?;
+
+    // Strip old_value from updates — patches are fully consolidated so the
+    // receiver only needs new_value to apply changes.
+    for delta in &mut deltas {
+        for update in &mut delta.updates {
+            update.old_value.clear();
+        }
+    }
 
     let deltas_payload = Deltas { items: deltas };
     let state = state::State::load()?;
