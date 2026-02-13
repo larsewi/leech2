@@ -1,8 +1,0 @@
-[tables.foo]
-source = "foo.csv"
-fields = [
-    { name = "foo", type = "INTEGER", primary-key = true },
-    { name = "bar", type = "TEXT", primary-key = true },
-    { name = "baz", type = "BOOLEAN" },
-    { name = "qux", type = "FLOAT" },
-]

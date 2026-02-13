@@ -478,6 +478,7 @@ dependencies = [
  "prost-types",
  "serde",
  "sha1",
+ "tempfile",
  "toml",
  "zstd",
 ]

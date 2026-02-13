@@ -79,6 +79,5 @@ Module.symvers
 Mkfile.old
 dkms.conf
 
-leech2
-tests/.workdir/*
 .leech2/*
+test_c_ffi
