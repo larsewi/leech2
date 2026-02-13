@@ -27,6 +27,8 @@ fn default_field_type() -> String {
 #[derive(Debug, Deserialize)]
 pub struct TableConfig {
     pub source: String,
+    #[serde(default)]
+    pub header: bool,
     pub fields: Vec<FieldConfig>,
 }
 

@@ -117,6 +117,7 @@ fn cmd_init(work_dir: &std::path::Path) -> Result<(), Box<dyn std::error::Error>
         work_dir.join("config.toml"),
         r#"[tables.example]
 source = "example.csv"
+header = true
 
 [[tables.example.fields]]
 name = "id"

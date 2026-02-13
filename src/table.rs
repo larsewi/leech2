@@ -61,7 +61,7 @@ impl Table {
         let file =
             File::open(&path).map_err(|e| format!("failed to open '{}': {}", path.display(), e))?;
         let reader = csv::ReaderBuilder::new()
-            .has_headers(false)
+            .has_headers(config.header)
             .from_reader(file);
 
         log::debug!("Parsing csv file '{}'...", path.display());
