@@ -205,11 +205,13 @@ fn delta_to_sql(
 
     // UPDATEs
     for update in &delta.updates {
+        let sub_types = schema.sub_types();
         let set_parts: Vec<String> = update
-            .new_value
+            .changed_indices
             .iter()
-            .zip(schema.sub_types())
-            .map(|(val, (name, sql_type))| {
+            .zip(update.new_value.iter())
+            .map(|(idx, val)| {
+                let (name, sql_type) = &sub_types[*idx as usize];
                 let lit = quote_literal(val, sql_type)
                     .map_err(|e| format!("field '{}': {}", name, e))?;
                 Ok(format!("{} = {}", quote_ident(name), lit))

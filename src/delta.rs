@@ -6,6 +6,18 @@ use crate::state::State;
 use crate::table::Table;
 use crate::update::Update;
 
+/// Expand sparse values back to a full-length vector.
+/// Positions not in `changed_indices` are filled with empty strings.
+fn expand_sparse(changed_indices: &[u32], sparse_values: &[String], num_sub: usize) -> Vec<String> {
+    if changed_indices.is_empty() {
+        return sparse_values.to_vec();
+    }
+    let mut full = vec![String::new(); num_sub];
+    for (idx, val) in changed_indices.iter().zip(sparse_values.iter()) {
+        full[*idx as usize] = val.clone();
+    }
+    full
+}
 
 /// Delta represents the changes to a single table between two states.
 #[derive(Debug, Clone, PartialEq)]
@@ -24,6 +36,16 @@ pub struct Delta {
 
 impl From<crate::proto::delta::Delta> for Delta {
     fn from(proto: crate::proto::delta::Delta) -> Self {
+        // Determine subsidiary column count from fields and key length.
+        let num_pk = proto
+            .inserts
+            .first()
+            .map(|e| e.key.len())
+            .or_else(|| proto.deletes.first().map(|e| e.key.len()))
+            .or_else(|| proto.updates.first().map(|u| u.key.len()))
+            .unwrap_or(0);
+        let num_sub = proto.fields.len().saturating_sub(num_pk);
+
         let inserts = proto
             .inserts
             .into_iter()
@@ -37,7 +59,11 @@ impl From<crate::proto::delta::Delta> for Delta {
         let updates = proto
             .updates
             .into_iter()
-            .map(|u| (u.key, (u.old_value, u.new_value)))
+            .map(|u| {
+                let old_value = expand_sparse(&u.changed_indices, &u.old_value, num_sub);
+                let new_value = expand_sparse(&u.changed_indices, &u.new_value, num_sub);
+                (u.key, (old_value, new_value))
+            })
             .collect();
         Delta {
             name: proto.name,
@@ -64,10 +90,23 @@ impl From<Delta> for crate::proto::delta::Delta {
         let updates = delta
             .updates
             .into_iter()
-            .map(|(key, (old_value, new_value))| Update {
-                key,
-                old_value,
-                new_value,
+            .map(|(key, (old_value, new_value))| {
+                let mut changed_indices = Vec::new();
+                let mut sparse_old = Vec::new();
+                let mut sparse_new = Vec::new();
+                for (i, (o, n)) in old_value.iter().zip(new_value.iter()).enumerate() {
+                    if o != n {
+                        changed_indices.push(i as u32);
+                        sparse_old.push(o.clone());
+                        sparse_new.push(n.clone());
+                    }
+                }
+                Update {
+                    key,
+                    changed_indices,
+                    old_value: sparse_old,
+                    new_value: sparse_new,
+                }
             })
             .collect();
         crate::proto::delta::Delta {
