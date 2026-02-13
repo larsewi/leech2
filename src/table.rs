@@ -102,19 +102,30 @@ impl Table {
             .map(|&i| field_names[i].clone())
             .collect();
 
+        let expected_len = field_names.len();
         let mut records: HashMap<Vec<String>, Vec<String>> = HashMap::new();
 
-        for record in reader.into_records() {
+        for (row_num, record) in reader.into_records().enumerate() {
             let record = record?;
+
+            if record.len() != expected_len {
+                return Err(format!(
+                    "row {}: expected {} fields but got {}",
+                    row_num + 1,
+                    expected_len,
+                    record.len()
+                )
+                .into());
+            }
 
             let primary_key: Vec<String> = primary_indices
                 .iter()
-                .filter_map(|&i| record.get(i).map(|s| s.to_string()))
+                .map(|&i| record[i].to_string())
                 .collect();
 
             let subsidiary: Vec<String> = subsidiary_indices
                 .iter()
-                .filter_map(|&i| record.get(i).map(|s| s.to_string()))
+                .map(|&i| record[i].to_string())
                 .collect();
 
             records.insert(primary_key, subsidiary);
