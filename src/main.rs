@@ -26,39 +26,26 @@ struct Cli {
 enum Cmd {
     /// Initialize a new .leech2 work directory with an example table
     Init,
-    /// Create a block or patch
-    Create {
+    /// Create or show blocks
+    Block {
         #[command(subcommand)]
-        command: CreateCmd,
+        command: BlockCmd,
     },
-    /// Show a block, patch, or SQL
-    Show {
+    /// Create, show, or convert patches
+    Patch {
         #[command(subcommand)]
-        command: ShowCmd,
+        command: PatchCmd,
     },
     /// List all blocks from HEAD to genesis
     Log,
 }
 
 #[derive(Subcommand)]
-enum CreateCmd {
+enum BlockCmd {
     /// Create a new block from current CSV state
-    Block,
-    /// Create a patch from REF to HEAD and write to .leech2/PATCH
-    Patch {
-        /// Block hash prefix
-        #[arg(name = "REF", required_unless_present = "n")]
-        reference: Option<String>,
-        /// Create a patch covering the last N blocks
-        #[arg(short)]
-        n: Option<u32>,
-    },
-}
-
-#[derive(Subcommand)]
-enum ShowCmd {
+    Create,
     /// Show the full contents of a block
-    Block {
+    Show {
         /// Block hash prefix [default: HEAD]
         #[arg(name = "REF")]
         reference: Option<String>,
@@ -66,8 +53,21 @@ enum ShowCmd {
         #[arg(short)]
         n: Option<u32>,
     },
+}
+
+#[derive(Subcommand)]
+enum PatchCmd {
+    /// Create a patch from REF to HEAD and write to .leech2/PATCH
+    Create {
+        /// Block hash prefix
+        #[arg(name = "REF", required_unless_present = "n")]
+        reference: Option<String>,
+        /// Create a patch covering the last N blocks
+        #[arg(short)]
+        n: Option<u32>,
+    },
     /// Show the contents of the .leech2/PATCH file
-    Patch,
+    Show,
     /// Convert the .leech2/PATCH file to SQL
     Sql,
 }
@@ -251,20 +251,26 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
 
     match &cli.command {
         Cmd::Init => unreachable!(),
-        Cmd::Create { command } => match command {
-            CreateCmd::Block => cmd_create_block()?,
-            CreateCmd::Patch { reference, n } => {
-                cmd_create_patch(reference.as_deref(), *n)?;
+        Cmd::Block { command } => match command {
+            BlockCmd::Create => cmd_create_block()?,
+            BlockCmd::Show { reference, n } => {
+                let output = cmd_show_block(reference.as_deref(), *n)?;
+                print_with_pager(&output);
             }
         },
-        Cmd::Show { command } => {
-            let output = match command {
-                ShowCmd::Block { reference, n } => cmd_show_block(reference.as_deref(), *n)?,
-                ShowCmd::Patch => cmd_show_patch()?,
-                ShowCmd::Sql => cmd_show_sql()?,
-            };
-            print_with_pager(&output);
-        }
+        Cmd::Patch { command } => match command {
+            PatchCmd::Create { reference, n } => {
+                cmd_create_patch(reference.as_deref(), *n)?;
+            }
+            PatchCmd::Show => {
+                let output = cmd_show_patch()?;
+                print_with_pager(&output);
+            }
+            PatchCmd::Sql => {
+                let output = cmd_show_sql()?;
+                print_with_pager(&output);
+            }
+        },
         Cmd::Log => {
             let output = cmd_log()?;
             print_with_pager(&output);
