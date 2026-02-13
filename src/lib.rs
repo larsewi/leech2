@@ -1,5 +1,4 @@
 use std::ffi::{CStr, CString, c_char};
-use std::mem;
 use std::path::PathBuf;
 
 use prost::Message;
@@ -97,10 +96,9 @@ pub extern "C" fn lch_patch_create(
         return -1;
     }
 
-    buf.shrink_to_fit();
+    let buf = buf.into_boxed_slice();
     let buf_len = buf.len();
-    let ptr = buf.as_mut_ptr();
-    mem::forget(buf);
+    let ptr = Box::into_raw(buf) as *mut u8;
 
     unsafe {
         *out = ptr;
@@ -155,7 +153,7 @@ pub extern "C" fn lch_patch_to_sql(buf: *const u8, len: usize, out: *mut *mut c_
 pub extern "C" fn lch_free_buf(ptr: *mut u8, len: usize) {
     if !ptr.is_null() {
         unsafe {
-            drop(Vec::from_raw_parts(ptr, len, len));
+            drop(Box::from_raw(std::slice::from_raw_parts_mut(ptr, len)));
         }
     }
 }
