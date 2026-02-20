@@ -4,8 +4,9 @@
 
 ## Strip delete subsidary values in consolidated deltas (to reduce size)
 
-## Option to turn on/off compression (due to CPU concerns)
-- Configurable though config
+## Configure compression (due to CPU concerns)
+- Configure on/ off
+- Configure compression level
 
 ## Truncate history
 - Configurable through config
