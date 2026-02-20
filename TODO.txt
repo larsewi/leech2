@@ -1,0 +1,22 @@
+# TODO
+
+## Add SQL date / time column type to table config
+
+## Strip delete subsidary values in consolidated deltas (to reduce size)
+
+## Option to turn on/off compression (due to CPU concerns)
+- Configurable though config
+
+## Truncate history
+- Configurable through config
+- Orphaned blocks should always be removed
+- One stratergy to remove every block already reported to hub
+- One stratgery to remove every block after N blocks in the chain
+- One stratergy to remove based on date / time (e.g., older then 1 week)
+- The history is truncated on every new commit
+- Add acceptance tests for orphaned blocks, plus different stratergies
+
+## Support JSON config files
+- Format detected based on file ending .toml / .json
+
+## Add acceptance test for when state is smaller than delta
