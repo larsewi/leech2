@@ -28,6 +28,13 @@ fields = [
 
     Config::init(work_dir).unwrap();
 
+    // Before any blocks: HEAD is genesis, patch should be empty
+    assert_eq!(head::load().unwrap(), GENESIS_HASH);
+    let patch_empty = Patch::create(GENESIS_HASH).unwrap();
+    assert_eq!(patch_empty.num_blocks, 0);
+    assert!(patch_empty.payload.is_none());
+    assert_eq!(sql::patch_to_sql(&patch_empty).unwrap(), None);
+
     // Create genesis block
     let hash = Block::create().unwrap();
     assert_ne!(hash, GENESIS_HASH);
@@ -56,4 +63,10 @@ fields = [
 
     // Wire roundtrip
     common::assert_wire_roundtrip(&patch);
+
+    // No-op patch: last_known == HEAD, should return empty payload
+    let patch_noop = Patch::create(&hash).unwrap();
+    assert_eq!(patch_noop.num_blocks, 0);
+    assert!(patch_noop.payload.is_none());
+    assert_eq!(sql::patch_to_sql(&patch_noop).unwrap(), None);
 }
