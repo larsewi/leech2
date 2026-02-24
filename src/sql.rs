@@ -1,5 +1,7 @@
 use std::collections::HashSet;
 
+use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime};
+
 use crate::config;
 use crate::proto::patch::Patch;
 use crate::proto::patch::patch::Payload;
@@ -12,15 +14,23 @@ pub enum SqlType {
     Float,
     Boolean,
     Binary,
+    Date(String),
+    Time(String),
+    DateTime(String),
 }
 
 impl SqlType {
-    pub fn from_config(type_str: &str) -> Self {
+    pub fn from_config(type_str: &str, format: Option<&str>) -> Self {
         match type_str.to_uppercase().as_str() {
             "INTEGER" | "INT" | "BIGINT" | "SMALLINT" => SqlType::Integer,
             "FLOAT" | "DOUBLE" | "REAL" | "NUMERIC" | "DECIMAL" => SqlType::Float,
             "BOOLEAN" | "BOOL" => SqlType::Boolean,
             "BINARY" | "BYTEA" | "BLOB" => SqlType::Binary,
+            "DATE" => SqlType::Date(format.unwrap_or("%Y-%m-%d").to_string()),
+            "TIME" => SqlType::Time(format.unwrap_or("%H:%M:%S").to_string()),
+            "DATETIME" | "TIMESTAMP" | "TIMESTAMPTZ" => {
+                SqlType::DateTime(format.unwrap_or("%Y-%m-%d %H:%M:%S").to_string())
+            }
             _ => SqlType::Text,
         }
     }
@@ -43,10 +53,15 @@ impl TableSchema {
             .get(table_name)
             .ok_or_else(|| format!("table '{}' not found in config", table_name))?;
 
-        let type_map: std::collections::HashMap<&str, &str> = tc
+        let type_map: std::collections::HashMap<&str, (&str, Option<&str>)> = tc
             .fields
             .iter()
-            .map(|f| (f.name.as_str(), f.field_type.as_str()))
+            .map(|f| {
+                (
+                    f.name.as_str(),
+                    (f.field_type.as_str(), f.format.as_deref()),
+                )
+            })
             .collect();
 
         let pk = tc.primary_key();
@@ -55,13 +70,19 @@ impl TableSchema {
 
         let mut fields = Vec::new();
         for name in &pk {
-            let type_str = type_map.get(name.as_str()).copied().unwrap_or("TEXT");
-            fields.push((name.clone(), SqlType::from_config(type_str)));
+            let (type_str, fmt) = type_map
+                .get(name.as_str())
+                .copied()
+                .unwrap_or(("TEXT", None));
+            fields.push((name.clone(), SqlType::from_config(type_str, fmt)));
         }
         for name in &field_names {
             if !pk_set.contains(name.as_str()) {
-                let type_str = type_map.get(name.as_str()).copied().unwrap_or("TEXT");
-                fields.push((name.clone(), SqlType::from_config(type_str)));
+                let (type_str, fmt) = type_map
+                    .get(name.as_str())
+                    .copied()
+                    .unwrap_or(("TEXT", None));
+                fields.push((name.clone(), SqlType::from_config(type_str, fmt)));
             }
         }
 
@@ -111,6 +132,27 @@ pub fn quote_literal(s: &str, sql_type: &SqlType) -> Result<String, Box<dyn std:
                 return Err("invalid hex: contains non-hex characters".into());
             }
             Ok(format!("'\\x{}'", s))
+        }
+        SqlType::Date(fmt) => {
+            NaiveDate::parse_from_str(s, fmt)
+                .map_err(|e| format!("invalid date '{}' for format '{}': {}", s, fmt, e))?;
+            Ok(format!("'{}'", s.replace('\'', "''")))
+        }
+        SqlType::Time(fmt) => {
+            NaiveTime::parse_from_str(s, fmt)
+                .map_err(|e| format!("invalid time '{}' for format '{}': {}", s, fmt, e))?;
+            Ok(format!("'{}'", s.replace('\'', "''")))
+        }
+        SqlType::DateTime(fmt) => {
+            if NaiveDateTime::parse_from_str(s, fmt).is_ok() {
+                return Ok(format!("'{}'", s.replace('\'', "''")));
+            }
+            if let Ok(epoch) = s.parse::<i64>() {
+                if DateTime::from_timestamp(epoch, 0).is_some() {
+                    return Ok(format!("'{}'", s.replace('\'', "''")));
+                }
+            }
+            Err(format!("invalid datetime '{}' for format '{}': could not parse as datetime or unix epoch", s, fmt).into())
         }
     }
 }
@@ -311,27 +353,70 @@ mod tests {
 
     #[test]
     fn test_sql_type_from_config() {
-        assert_eq!(SqlType::from_config("INTEGER"), SqlType::Integer);
-        assert_eq!(SqlType::from_config("INT"), SqlType::Integer);
-        assert_eq!(SqlType::from_config("BIGINT"), SqlType::Integer);
-        assert_eq!(SqlType::from_config("SMALLINT"), SqlType::Integer);
-        assert_eq!(SqlType::from_config("FLOAT"), SqlType::Float);
-        assert_eq!(SqlType::from_config("DOUBLE"), SqlType::Float);
-        assert_eq!(SqlType::from_config("REAL"), SqlType::Float);
-        assert_eq!(SqlType::from_config("NUMERIC"), SqlType::Float);
-        assert_eq!(SqlType::from_config("DECIMAL"), SqlType::Float);
-        assert_eq!(SqlType::from_config("BOOLEAN"), SqlType::Boolean);
-        assert_eq!(SqlType::from_config("BOOL"), SqlType::Boolean);
-        assert_eq!(SqlType::from_config("TEXT"), SqlType::Text);
-        assert_eq!(SqlType::from_config("VARCHAR"), SqlType::Text);
-        assert_eq!(SqlType::from_config("unknown"), SqlType::Text);
-        assert_eq!(SqlType::from_config("BINARY"), SqlType::Binary);
-        assert_eq!(SqlType::from_config("BYTEA"), SqlType::Binary);
-        assert_eq!(SqlType::from_config("BLOB"), SqlType::Binary);
+        assert_eq!(SqlType::from_config("INTEGER", None), SqlType::Integer);
+        assert_eq!(SqlType::from_config("INT", None), SqlType::Integer);
+        assert_eq!(SqlType::from_config("BIGINT", None), SqlType::Integer);
+        assert_eq!(SqlType::from_config("SMALLINT", None), SqlType::Integer);
+        assert_eq!(SqlType::from_config("FLOAT", None), SqlType::Float);
+        assert_eq!(SqlType::from_config("DOUBLE", None), SqlType::Float);
+        assert_eq!(SqlType::from_config("REAL", None), SqlType::Float);
+        assert_eq!(SqlType::from_config("NUMERIC", None), SqlType::Float);
+        assert_eq!(SqlType::from_config("DECIMAL", None), SqlType::Float);
+        assert_eq!(SqlType::from_config("BOOLEAN", None), SqlType::Boolean);
+        assert_eq!(SqlType::from_config("BOOL", None), SqlType::Boolean);
+        assert_eq!(SqlType::from_config("TEXT", None), SqlType::Text);
+        assert_eq!(SqlType::from_config("VARCHAR", None), SqlType::Text);
+        assert_eq!(SqlType::from_config("unknown", None), SqlType::Text);
+        assert_eq!(SqlType::from_config("BINARY", None), SqlType::Binary);
+        assert_eq!(SqlType::from_config("BYTEA", None), SqlType::Binary);
+        assert_eq!(SqlType::from_config("BLOB", None), SqlType::Binary);
         // Case insensitive
-        assert_eq!(SqlType::from_config("integer"), SqlType::Integer);
-        assert_eq!(SqlType::from_config("Boolean"), SqlType::Boolean);
-        assert_eq!(SqlType::from_config("bytea"), SqlType::Binary);
+        assert_eq!(SqlType::from_config("integer", None), SqlType::Integer);
+        assert_eq!(SqlType::from_config("Boolean", None), SqlType::Boolean);
+        assert_eq!(SqlType::from_config("bytea", None), SqlType::Binary);
+        // Date/time types with defaults
+        assert_eq!(
+            SqlType::from_config("DATE", None),
+            SqlType::Date("%Y-%m-%d".to_string())
+        );
+        assert_eq!(
+            SqlType::from_config("TIME", None),
+            SqlType::Time("%H:%M:%S".to_string())
+        );
+        assert_eq!(
+            SqlType::from_config("DATETIME", None),
+            SqlType::DateTime("%Y-%m-%d %H:%M:%S".to_string())
+        );
+        assert_eq!(
+            SqlType::from_config("TIMESTAMP", None),
+            SqlType::DateTime("%Y-%m-%d %H:%M:%S".to_string())
+        );
+        assert_eq!(
+            SqlType::from_config("TIMESTAMPTZ", None),
+            SqlType::DateTime("%Y-%m-%d %H:%M:%S".to_string())
+        );
+        // Case insensitive
+        assert_eq!(
+            SqlType::from_config("date", None),
+            SqlType::Date("%Y-%m-%d".to_string())
+        );
+        assert_eq!(
+            SqlType::from_config("Timestamp", None),
+            SqlType::DateTime("%Y-%m-%d %H:%M:%S".to_string())
+        );
+        // Custom format
+        assert_eq!(
+            SqlType::from_config("DATE", Some("%d/%m/%Y")),
+            SqlType::Date("%d/%m/%Y".to_string())
+        );
+        assert_eq!(
+            SqlType::from_config("TIME", Some("%H:%M")),
+            SqlType::Time("%H:%M".to_string())
+        );
+        assert_eq!(
+            SqlType::from_config("DATETIME", Some("%Y-%m-%dT%H:%M:%S")),
+            SqlType::DateTime("%Y-%m-%dT%H:%M:%S".to_string())
+        );
     }
 
     #[test]
@@ -405,5 +490,57 @@ mod tests {
         assert!(quote_literal("ABC", &SqlType::Binary).is_err());
         // Non-hex characters
         assert!(quote_literal("GHIJ", &SqlType::Binary).is_err());
+    }
+
+    #[test]
+    fn test_quote_literal_date() {
+        let ty = SqlType::Date("%Y-%m-%d".to_string());
+        assert_eq!(quote_literal("2024-01-15", &ty).unwrap(), "'2024-01-15'");
+        assert_eq!(quote_literal("1970-01-01", &ty).unwrap(), "'1970-01-01'");
+        assert!(quote_literal("not-a-date", &ty).is_err());
+        assert!(quote_literal("2024-13-01", &ty).is_err());
+        assert!(quote_literal("15/01/2024", &ty).is_err());
+        // Custom format
+        let ty_custom = SqlType::Date("%d/%m/%Y".to_string());
+        assert_eq!(
+            quote_literal("15/01/2024", &ty_custom).unwrap(),
+            "'15/01/2024'"
+        );
+        assert!(quote_literal("2024-01-15", &ty_custom).is_err());
+    }
+
+    #[test]
+    fn test_quote_literal_time() {
+        let ty = SqlType::Time("%H:%M:%S".to_string());
+        assert_eq!(quote_literal("10:30:00", &ty).unwrap(), "'10:30:00'");
+        assert_eq!(quote_literal("23:59:59", &ty).unwrap(), "'23:59:59'");
+        assert!(quote_literal("not-a-time", &ty).is_err());
+        assert!(quote_literal("25:00:00", &ty).is_err());
+        // Custom format
+        let ty_custom = SqlType::Time("%H:%M".to_string());
+        assert_eq!(quote_literal("10:30", &ty_custom).unwrap(), "'10:30'");
+        assert!(quote_literal("10:30:00", &ty_custom).is_err());
+    }
+
+    #[test]
+    fn test_quote_literal_datetime() {
+        let ty = SqlType::DateTime("%Y-%m-%d %H:%M:%S".to_string());
+        assert_eq!(
+            quote_literal("2024-01-15 10:30:00", &ty).unwrap(),
+            "'2024-01-15 10:30:00'"
+        );
+        // Unix epoch
+        assert_eq!(quote_literal("1705312200", &ty).unwrap(), "'1705312200'");
+        assert_eq!(quote_literal("0", &ty).unwrap(), "'0'");
+        // Invalid
+        assert!(quote_literal("not-a-datetime", &ty).is_err());
+        assert!(quote_literal("2024-13-01 10:30:00", &ty).is_err());
+        // Custom format
+        let ty_custom = SqlType::DateTime("%Y-%m-%dT%H:%M:%S".to_string());
+        assert_eq!(
+            quote_literal("2024-01-15T10:30:00", &ty_custom).unwrap(),
+            "'2024-01-15T10:30:00'"
+        );
+        assert!(quote_literal("2024-01-15 10:30:00", &ty_custom).is_err());
     }
 }

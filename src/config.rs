@@ -18,6 +18,8 @@ pub struct FieldConfig {
     pub field_type: String,
     #[serde(rename = "primary-key", default)]
     pub primary_key: bool,
+    #[serde(default)]
+    pub format: Option<String>,
 }
 
 fn default_field_type() -> String {
@@ -47,6 +49,10 @@ impl TableConfig {
 
     pub fn field_types(&self) -> Vec<String> {
         self.fields.iter().map(|f| f.field_type.clone()).collect()
+    }
+
+    pub fn field_formats(&self) -> Vec<Option<String>> {
+        self.fields.iter().map(|f| f.format.clone()).collect()
     }
 }
 
