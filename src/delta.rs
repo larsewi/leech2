@@ -140,12 +140,12 @@ impl fmt::Display for crate::proto::delta::Delta {
         if !self.deletes.is_empty() {
             write!(f, "\n  Deletes ({}):", self.deletes.len())?;
             for entry in &self.deletes {
-                write!(
-                    f,
-                    "\n    ({}) {}",
-                    entry.key.join(", "),
+                let vals = if entry.value.is_empty() {
+                    vec!["_"; num_sub].join(", ")
+                } else {
                     entry.value.join(", ")
-                )?;
+                };
+                write!(f, "\n    ({}) {}", entry.key.join(", "), vals)?;
             }
         }
         if !self.updates.is_empty() {
