@@ -4,6 +4,11 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
+enum ConfigFormat {
+    Toml,
+    Json,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct Config {
     #[serde(skip)]
@@ -74,12 +79,29 @@ impl Config {
     }
 
     pub fn init(work_dir: &Path) -> Result<(), String> {
-        let path = work_dir.join("config.toml");
+        let toml_path = work_dir.join("config.toml");
+        let json_path = work_dir.join("config.json");
+
+        let (path, format) = if toml_path.exists() {
+            (toml_path, ConfigFormat::Toml)
+        } else if json_path.exists() {
+            (json_path, ConfigFormat::Json)
+        } else {
+            return Err("no config file found (expected config.toml or config.json)".to_string());
+        };
+
         log::debug!("Parsing config from file '{}'...", path.display());
         let content =
             fs::read_to_string(&path).map_err(|e| format!("failed to read config file: {}", e))?;
-        let mut config: Config =
-            toml::from_str(&content).map_err(|e| format!("failed to parse config: {}", e))?;
+        let mut config: Config = match format {
+            ConfigFormat::Toml => {
+                toml::from_str(&content).map_err(|e| format!("failed to parse config: {}", e))?
+            }
+            ConfigFormat::Json => {
+                serde_json::from_str(&content)
+                    .map_err(|e| format!("failed to parse config: {}", e))?
+            }
+        };
         config.work_dir = work_dir.to_path_buf();
 
         for (name, table) in &config.tables {
