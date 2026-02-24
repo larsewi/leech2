@@ -23,37 +23,51 @@ fields = [
     { name = "count", type = "INTEGER" },
     { name = "active", type = "BOOLEAN" },
     { name = "created", type = "DATE" },
+    { name = "temperature", type = "FLOAT" },
+    { name = "sampled_at", type = "TIME" },
+    { name = "recorded_at", type = "DATETIME" },
+    { name = "payload", type = "BINARY" },
 ]
 "#,
     );
 
-    // Block 1: initial data
+    // Block 1: initial data with all field types
     common::write_csv(
         work_dir,
         "records.csv",
-        "1,hello,42,true,2024-01-15\n",
+        "1,hello,42,true,2024-01-15,36.6,08:30:00,2024-01-15 10:30:00,48656C6C6F\n",
     );
     Config::init(work_dir).unwrap();
     let hash1 = Block::create().unwrap();
 
-    // Block 2: update all subsidiary fields, including single-quote in text
+    // Block 2: update all subsidiary fields
     common::write_csv(
         work_dir,
         "records.csv",
-        "1,it's a test,99,false,2024-06-30\n",
+        "1,it's a test,99,false,2024-06-30,-3.14,23:59:59,2024-06-30 18:00:00,DEADBEEF\n",
     );
     let _hash2 = Block::create().unwrap();
 
-    // Patch from genesis: verify INSERT quoting
+    // Patch from genesis: consolidated insert with v2 values (rule 7)
     let patch_genesis = Patch::create(GENESIS_HASH).unwrap();
     let sql_genesis = sql::patch_to_sql(&patch_genesis).unwrap().unwrap();
 
-    // Final state from genesis is a single insert with the v2 values
-    // (insert + update = insert with new value, rule 7)
-    assert!(sql_genesis.contains("99")); // INTEGER: no quotes
-    assert!(sql_genesis.contains("FALSE")); // BOOLEAN: normalized
-    assert!(sql_genesis.contains("'2024-06-30'")); // DATE: single-quoted
-    assert!(sql_genesis.contains("'it''s a test'")); // TEXT: escaped single quote
+    // TEXT: escaped single quote
+    assert!(sql_genesis.contains("'it''s a test'"));
+    // INTEGER: unquoted
+    assert!(sql_genesis.contains("99"));
+    // BOOLEAN: normalized
+    assert!(sql_genesis.contains("FALSE"));
+    // DATE: single-quoted
+    assert!(sql_genesis.contains("'2024-06-30'"));
+    // FLOAT: unquoted
+    assert!(sql_genesis.contains("-3.14"));
+    // TIME: single-quoted
+    assert!(sql_genesis.contains("'23:59:59'"));
+    // DATETIME: single-quoted
+    assert!(sql_genesis.contains("'2024-06-30 18:00:00'"));
+    // BINARY: hex-prefixed, quoted
+    assert!(sql_genesis.contains(r"'\xDEADBEEF'"));
 
     // Patch from hash1: verify type quoting regardless of payload type.
     // With 1 row and all fields changed, the patch may choose State (TRUNCATE+INSERT)
@@ -61,11 +75,14 @@ fields = [
     let patch_partial = Patch::create(&hash1).unwrap();
     let sql_partial = sql::patch_to_sql(&patch_partial).unwrap().unwrap();
 
-    // Verify type-specific formatting in the SQL output
-    assert!(sql_partial.contains("'it''s a test'")); // TEXT: escaped quote
-    assert!(sql_partial.contains("99")); // INTEGER: unquoted
-    assert!(sql_partial.contains("FALSE")); // BOOLEAN: normalized
-    assert!(sql_partial.contains("'2024-06-30'")); // DATE: quoted
+    assert!(sql_partial.contains("'it''s a test'"));
+    assert!(sql_partial.contains("99"));
+    assert!(sql_partial.contains("FALSE"));
+    assert!(sql_partial.contains("'2024-06-30'"));
+    assert!(sql_partial.contains("-3.14"));
+    assert!(sql_partial.contains("'23:59:59'"));
+    assert!(sql_partial.contains("'2024-06-30 18:00:00'"));
+    assert!(sql_partial.contains(r"'\xDEADBEEF'"));
 
     common::assert_wire_roundtrip(&patch_genesis);
     common::assert_wire_roundtrip(&patch_partial);
