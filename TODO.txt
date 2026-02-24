@@ -1,13 +1,5 @@
 # TODO
 
-## Add SQL date / time column type to table config
-
-## Strip delete subsidary values in consolidated deltas (to reduce size)
-
-## Configure compression (due to CPU concerns)
-- Configure on/ off
-- Configure compression level
-
 ## Truncate history
 - Configurable through config
 - Orphaned blocks should always be removed
@@ -16,8 +8,3 @@
 - One stratergy to remove based on date / time (e.g., older then 1 week)
 - The history is truncated on every new commit
 - Add acceptance tests for orphaned blocks, plus different stratergies
-
-## Support JSON config files
-- Format detected based on file ending .toml / .json
-
-## Add acceptance test for when state is smaller than delta
