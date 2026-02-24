@@ -116,9 +116,14 @@ fn try_consolidate(
 
     let (num_blocks, mut deltas) = consolidate(block, last_known_hash)?;
 
-    // Apply sparse encoding and strip old_value — patches are fully
-    // consolidated so the receiver only needs changed_indices + new_value.
+    // Strip data the receiver doesn't need — patches are fully consolidated
+    // so the receiver only needs keys + changed values.
     for delta in &mut deltas {
+        // Deletes: receiver only needs the primary key, not the old row values.
+        for delete in &mut delta.deletes {
+            delete.value.clear();
+        }
+        // Updates: sparse-encode to changed_indices + new_value only.
         for update in &mut delta.updates {
             let mut changed_indices = Vec::new();
             let mut sparse_new = Vec::new();
