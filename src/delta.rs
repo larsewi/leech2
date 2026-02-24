@@ -1046,6 +1046,32 @@ mod tests {
         assert!(parent.deletes.is_empty());
     }
 
+    // Merge with mismatched field names → error
+    #[test]
+    fn test_merge_field_mismatch_error() {
+        let mut parent = Delta {
+            name: "t".to_string(),
+            fields: vec!["id".to_string(), "name".to_string()],
+            inserts: HashMap::new(),
+            deletes: HashMap::new(),
+            updates: HashMap::new(),
+        };
+        let other = Delta {
+            name: "t".to_string(),
+            fields: vec!["id".to_string(), "email".to_string()],
+            inserts: HashMap::new(),
+            deletes: HashMap::new(),
+            updates: HashMap::new(),
+        };
+
+        let result = parent.merge(other);
+        assert!(result.is_err());
+        assert!(
+            result.unwrap_err().to_string().contains("field mismatch"),
+            "error should mention field mismatch"
+        );
+    }
+
     // Test merging with composite keys
     #[test]
     fn test_merge_composite_keys() {
