@@ -1,14 +1,23 @@
 use prost::Message;
 
+use crate::config;
 use crate::proto::patch::Patch;
 
-const ZSTD_COMPRESSION_LEVEL: i32 = 3;
+/// Zstd frame magic number (little-endian).
+const ZSTD_MAGIC: [u8; 4] = [0x28, 0xB5, 0x2F, 0xFD];
 
-/// Encode a Patch to protobuf and compress with zstd.
+/// Encode a Patch to protobuf, optionally compressing with zstd.
 pub fn encode_patch(patch: &Patch) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     let mut buf = Vec::new();
     patch.encode(&mut buf)?;
-    let compressed = zstd::encode_all(buf.as_slice(), ZSTD_COMPRESSION_LEVEL)?;
+
+    let config = config::Config::get()?;
+    if !config.compression {
+        log::info!("Patch encoded: {} bytes protobuf (compression disabled)", buf.len());
+        return Ok(buf);
+    }
+
+    let compressed = zstd::encode_all(buf.as_slice(), config.compression_level)?;
     log::info!(
         "Patch encoded: {} bytes protobuf, {} bytes compressed ({:.0}% reduction)",
         buf.len(),
@@ -22,9 +31,13 @@ pub fn encode_patch(patch: &Patch) -> Result<Vec<u8>, Box<dyn std::error::Error>
     Ok(compressed)
 }
 
-/// Decompress zstd and decode a Patch from protobuf.
+/// Decode a Patch from protobuf, auto-detecting zstd compression.
 pub fn decode_patch(data: &[u8]) -> Result<Patch, Box<dyn std::error::Error>> {
-    let decompressed = zstd::decode_all(data)?;
-    let patch = Patch::decode(decompressed.as_slice())?;
+    let bytes = if data.starts_with(&ZSTD_MAGIC) {
+        zstd::decode_all(data)?
+    } else {
+        data.to_vec()
+    };
+    let patch = Patch::decode(bytes.as_slice())?;
     Ok(patch)
 }

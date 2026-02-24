@@ -8,7 +8,15 @@ use std::sync::OnceLock;
 pub struct Config {
     #[serde(skip)]
     pub work_dir: PathBuf,
+    #[serde(default = "default_compression")]
+    pub compression: bool,
+    #[serde(rename = "compression-level", default)]
+    pub compression_level: i32,
     pub tables: HashMap<String, TableConfig>,
+}
+
+fn default_compression() -> bool {
+    true
 }
 
 #[derive(Debug, Deserialize)]
