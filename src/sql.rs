@@ -20,18 +20,22 @@ pub enum SqlType {
 }
 
 impl SqlType {
-    pub fn from_config(type_str: &str, format: Option<&str>) -> Self {
+    pub fn from_config(type_str: &str, format: Option<&str>) -> Result<Self, String> {
         match type_str.to_uppercase().as_str() {
-            "INTEGER" | "INT" | "BIGINT" | "SMALLINT" => SqlType::Integer,
-            "FLOAT" | "DOUBLE" | "REAL" | "NUMERIC" | "DECIMAL" => SqlType::Float,
-            "BOOLEAN" | "BOOL" => SqlType::Boolean,
-            "BINARY" | "BYTEA" | "BLOB" => SqlType::Binary,
-            "DATE" => SqlType::Date(format.unwrap_or("%Y-%m-%d").to_string()),
-            "TIME" => SqlType::Time(format.unwrap_or("%H:%M:%S").to_string()),
-            "DATETIME" | "TIMESTAMP" | "TIMESTAMPTZ" => {
-                SqlType::DateTime(format.unwrap_or("%Y-%m-%d %H:%M:%S").to_string())
-            }
-            _ => SqlType::Text,
+            "TEXT" => Ok(SqlType::Text),
+            "INTEGER" => Ok(SqlType::Integer),
+            "FLOAT" => Ok(SqlType::Float),
+            "BOOLEAN" => Ok(SqlType::Boolean),
+            "BINARY" => Ok(SqlType::Binary),
+            "DATE" => Ok(SqlType::Date(format.unwrap_or("%Y-%m-%d").to_string())),
+            "TIME" => Ok(SqlType::Time(format.unwrap_or("%H:%M:%S").to_string())),
+            "DATETIME" => Ok(SqlType::DateTime(
+                format.unwrap_or("%Y-%m-%d %H:%M:%S").to_string(),
+            )),
+            other => Err(format!(
+                "unknown field type '{}'; valid types are: TEXT, INTEGER, FLOAT, BOOLEAN, BINARY, DATE, TIME, DATETIME",
+                other
+            )),
         }
     }
 }
@@ -74,7 +78,9 @@ impl TableSchema {
                 .get(name.as_str())
                 .copied()
                 .unwrap_or(("TEXT", None));
-            fields.push((name.clone(), SqlType::from_config(type_str, fmt)));
+            let sql_type = SqlType::from_config(type_str, fmt)
+                .map_err(|e| format!("field '{}': {}", name, e))?;
+            fields.push((name.clone(), sql_type));
         }
         for name in &field_names {
             if !pk_set.contains(name.as_str()) {
@@ -82,7 +88,9 @@ impl TableSchema {
                     .get(name.as_str())
                     .copied()
                     .unwrap_or(("TEXT", None));
-                fields.push((name.clone(), SqlType::from_config(type_str, fmt)));
+                let sql_type = SqlType::from_config(type_str, fmt)
+                    .map_err(|e| format!("field '{}': {}", name, e))?;
+                fields.push((name.clone(), sql_type));
             }
         }
 
@@ -353,70 +361,74 @@ mod tests {
 
     #[test]
     fn test_sql_type_from_config() {
-        assert_eq!(SqlType::from_config("INTEGER", None), SqlType::Integer);
-        assert_eq!(SqlType::from_config("INT", None), SqlType::Integer);
-        assert_eq!(SqlType::from_config("BIGINT", None), SqlType::Integer);
-        assert_eq!(SqlType::from_config("SMALLINT", None), SqlType::Integer);
-        assert_eq!(SqlType::from_config("FLOAT", None), SqlType::Float);
-        assert_eq!(SqlType::from_config("DOUBLE", None), SqlType::Float);
-        assert_eq!(SqlType::from_config("REAL", None), SqlType::Float);
-        assert_eq!(SqlType::from_config("NUMERIC", None), SqlType::Float);
-        assert_eq!(SqlType::from_config("DECIMAL", None), SqlType::Float);
-        assert_eq!(SqlType::from_config("BOOLEAN", None), SqlType::Boolean);
-        assert_eq!(SqlType::from_config("BOOL", None), SqlType::Boolean);
-        assert_eq!(SqlType::from_config("TEXT", None), SqlType::Text);
-        assert_eq!(SqlType::from_config("VARCHAR", None), SqlType::Text);
-        assert_eq!(SqlType::from_config("unknown", None), SqlType::Text);
-        assert_eq!(SqlType::from_config("BINARY", None), SqlType::Binary);
-        assert_eq!(SqlType::from_config("BYTEA", None), SqlType::Binary);
-        assert_eq!(SqlType::from_config("BLOB", None), SqlType::Binary);
+        // Canonical types
+        assert_eq!(SqlType::from_config("TEXT", None).unwrap(), SqlType::Text);
+        assert_eq!(
+            SqlType::from_config("INTEGER", None).unwrap(),
+            SqlType::Integer
+        );
+        assert_eq!(SqlType::from_config("FLOAT", None).unwrap(), SqlType::Float);
+        assert_eq!(
+            SqlType::from_config("BOOLEAN", None).unwrap(),
+            SqlType::Boolean
+        );
+        assert_eq!(
+            SqlType::from_config("BINARY", None).unwrap(),
+            SqlType::Binary
+        );
         // Case insensitive
-        assert_eq!(SqlType::from_config("integer", None), SqlType::Integer);
-        assert_eq!(SqlType::from_config("Boolean", None), SqlType::Boolean);
-        assert_eq!(SqlType::from_config("bytea", None), SqlType::Binary);
+        assert_eq!(
+            SqlType::from_config("integer", None).unwrap(),
+            SqlType::Integer
+        );
+        assert_eq!(
+            SqlType::from_config("Boolean", None).unwrap(),
+            SqlType::Boolean
+        );
+        assert_eq!(
+            SqlType::from_config("binary", None).unwrap(),
+            SqlType::Binary
+        );
         // Date/time types with defaults
         assert_eq!(
-            SqlType::from_config("DATE", None),
+            SqlType::from_config("DATE", None).unwrap(),
             SqlType::Date("%Y-%m-%d".to_string())
         );
         assert_eq!(
-            SqlType::from_config("TIME", None),
+            SqlType::from_config("TIME", None).unwrap(),
             SqlType::Time("%H:%M:%S".to_string())
         );
         assert_eq!(
-            SqlType::from_config("DATETIME", None),
+            SqlType::from_config("DATETIME", None).unwrap(),
             SqlType::DateTime("%Y-%m-%d %H:%M:%S".to_string())
         );
+        // Case insensitive date/time
         assert_eq!(
-            SqlType::from_config("TIMESTAMP", None),
-            SqlType::DateTime("%Y-%m-%d %H:%M:%S".to_string())
-        );
-        assert_eq!(
-            SqlType::from_config("TIMESTAMPTZ", None),
-            SqlType::DateTime("%Y-%m-%d %H:%M:%S".to_string())
-        );
-        // Case insensitive
-        assert_eq!(
-            SqlType::from_config("date", None),
+            SqlType::from_config("date", None).unwrap(),
             SqlType::Date("%Y-%m-%d".to_string())
         );
         assert_eq!(
-            SqlType::from_config("Timestamp", None),
+            SqlType::from_config("datetime", None).unwrap(),
             SqlType::DateTime("%Y-%m-%d %H:%M:%S".to_string())
         );
         // Custom format
         assert_eq!(
-            SqlType::from_config("DATE", Some("%d/%m/%Y")),
+            SqlType::from_config("DATE", Some("%d/%m/%Y")).unwrap(),
             SqlType::Date("%d/%m/%Y".to_string())
         );
         assert_eq!(
-            SqlType::from_config("TIME", Some("%H:%M")),
+            SqlType::from_config("TIME", Some("%H:%M")).unwrap(),
             SqlType::Time("%H:%M".to_string())
         );
         assert_eq!(
-            SqlType::from_config("DATETIME", Some("%Y-%m-%dT%H:%M:%S")),
+            SqlType::from_config("DATETIME", Some("%Y-%m-%dT%H:%M:%S")).unwrap(),
             SqlType::DateTime("%Y-%m-%dT%H:%M:%S".to_string())
         );
+        // Unknown types are rejected
+        assert!(SqlType::from_config("VARCHAR", None).is_err());
+        assert!(SqlType::from_config("INT", None).is_err());
+        assert!(SqlType::from_config("BLOB", None).is_err());
+        assert!(SqlType::from_config("unknown", None).is_err());
     }
 
     #[test]
