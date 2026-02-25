@@ -133,7 +133,7 @@ pub fn quote_literal(s: &str, sql_type: &SqlType) -> Result<String, Box<dyn std:
             _ => Err(format!("invalid boolean value: '{}'", s).into()),
         },
         SqlType::Binary => {
-            if s.len() % 2 != 0 {
+            if !s.len().is_multiple_of(2) {
                 return Err(format!("invalid hex: odd length ({})", s.len()).into());
             }
             if !s.bytes().all(|b| b.is_ascii_hexdigit()) {
@@ -155,12 +155,16 @@ pub fn quote_literal(s: &str, sql_type: &SqlType) -> Result<String, Box<dyn std:
             if NaiveDateTime::parse_from_str(s, fmt).is_ok() {
                 return Ok(format!("'{}'", s.replace('\'', "''")));
             }
-            if let Ok(epoch) = s.parse::<i64>() {
-                if DateTime::from_timestamp(epoch, 0).is_some() {
-                    return Ok(format!("'{}'", s.replace('\'', "''")));
-                }
+            if let Ok(epoch) = s.parse::<i64>()
+                && DateTime::from_timestamp(epoch, 0).is_some()
+            {
+                return Ok(format!("'{}'", s.replace('\'', "''")));
             }
-            Err(format!("invalid datetime '{}' for format '{}': could not parse as datetime or unix epoch", s, fmt).into())
+            Err(format!(
+                "invalid datetime '{}' for format '{}': could not parse as datetime or unix epoch",
+                s, fmt
+            )
+            .into())
         }
     }
 }

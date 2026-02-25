@@ -13,7 +13,10 @@ pub fn encode_patch(patch: &Patch) -> Result<Vec<u8>, Box<dyn std::error::Error>
 
     let config = config::Config::get()?;
     if !config.compression {
-        log::info!("Patch encoded: {} bytes protobuf (compression disabled)", buf.len());
+        log::info!(
+            "Patch encoded: {} bytes protobuf (compression disabled)",
+            buf.len()
+        );
         return Ok(buf);
     }
 

@@ -25,20 +25,12 @@ fields = [
     );
 
     // Block 1: initial enrollments
-    common::write_csv(
-        work_dir,
-        "enrollments.csv",
-        "1,101,A\n1,102,B\n2,101,C\n",
-    );
+    common::write_csv(work_dir, "enrollments.csv", "1,101,A\n1,102,B\n2,101,C\n");
     Config::init(work_dir).unwrap();
     let hash1 = Block::create().unwrap();
 
     // Block 2: update (1,101) grade A->A+, delete (1,102), insert (2,103)
-    common::write_csv(
-        work_dir,
-        "enrollments.csv",
-        "1,101,A+\n2,101,C\n2,103,B\n",
-    );
+    common::write_csv(work_dir, "enrollments.csv", "1,101,A+\n2,101,C\n2,103,B\n");
     let _hash2 = Block::create().unwrap();
 
     // Patch from hash1

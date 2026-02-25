@@ -13,6 +13,8 @@ use crate::state;
 use crate::utils;
 use crate::utils::GENESIS_HASH;
 
+type ConsolidateResult = (Option<Timestamp>, u32, Option<Payload>);
+
 impl fmt::Display for Patch {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Patch:")?;
@@ -106,9 +108,9 @@ fn consolidate(
 fn try_consolidate(
     head_hash: &str,
     last_known_hash: &str,
-) -> Result<(Option<Timestamp>, u32, Option<Payload>), Box<dyn std::error::Error>> {
+) -> Result<ConsolidateResult, Box<dyn std::error::Error>> {
     let block = Block::load(head_hash)?;
-    let head_created = block.created.clone();
+    let head_created = block.created;
 
     if head_hash.starts_with(last_known_hash) {
         return Ok((head_created, 0, None));
@@ -127,7 +129,12 @@ fn try_consolidate(
         for update in &mut delta.updates {
             let mut changed_indices = Vec::new();
             let mut sparse_new = Vec::new();
-            for (i, (o, n)) in update.old_value.iter().zip(update.new_value.iter()).enumerate() {
+            for (i, (o, n)) in update
+                .old_value
+                .iter()
+                .zip(update.new_value.iter())
+                .enumerate()
+            {
                 if o != n {
                     changed_indices.push(i as u32);
                     sparse_new.push(n.clone());

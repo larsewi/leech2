@@ -6,6 +6,9 @@ use crate::state::State;
 use crate::table::Table;
 use crate::update::Update;
 
+type RecordMap = HashMap<Vec<String>, Vec<String>>;
+type UpdateMap = HashMap<Vec<String>, (Vec<String>, Vec<String>)>;
+
 /// Expand sparse values back to a full-length vector.
 /// Positions not in `changed_indices` are filled with empty strings.
 fn expand_sparse(changed_indices: &[u32], sparse_values: &[String], num_sub: usize) -> Vec<String> {
@@ -151,8 +154,7 @@ impl fmt::Display for crate::proto::delta::Delta {
         if !self.updates.is_empty() {
             write!(f, "\n  Updates ({}):", self.updates.len())?;
             for update in &self.updates {
-                let is_full =
-                    update.changed_indices.is_empty() && !update.new_value.is_empty();
+                let is_full = update.changed_indices.is_empty() && !update.new_value.is_empty();
                 let has_old = !update.old_value.is_empty();
 
                 let cols: Vec<String> = if is_full {
@@ -182,11 +184,9 @@ impl fmt::Display for crate::proto::delta::Delta {
                     (0..num_sub as u32)
                         .map(|i| {
                             if changed.contains(&i) {
-                                let new =
-                                    new_iter.next().map(|s| s.as_str()).unwrap_or("?");
+                                let new = new_iter.next().map(|s| s.as_str()).unwrap_or("?");
                                 if has_old {
-                                    let old =
-                                        old_iter.next().map(|s| s.as_str()).unwrap_or("?");
+                                    let old = old_iter.next().map(|s| s.as_str()).unwrap_or("?");
                                     format!("{} -> {}", old, new)
                                 } else {
                                     new.to_string()
@@ -209,7 +209,6 @@ impl Delta {
     /// Merge another delta (Child) into this delta (Parent), producing a single
     /// delta that represents the combined effect of both. See
     /// DELTA_MERGING_RULES.md for the full specification of the 15 rules.
-
     pub fn merge(&mut self, other: Delta) -> Result<(), Box<dyn std::error::Error>> {
         if self.fields != other.fields {
             return Err(format!(
@@ -405,11 +404,7 @@ impl Delta {
     fn compute_table(
         previous_table: Option<&Table>,
         current_table: &Table,
-    ) -> (
-        HashMap<Vec<String>, Vec<String>>,
-        HashMap<Vec<String>, Vec<String>>,
-        HashMap<Vec<String>, (Vec<String>, Vec<String>)>,
-    ) {
+    ) -> (RecordMap, RecordMap, UpdateMap) {
         let mut inserts = HashMap::new();
         let mut deletes = HashMap::new();
         let mut updates = HashMap::new();

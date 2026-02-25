@@ -26,5 +26,8 @@ fields = [
     Config::init(work_dir).unwrap();
 
     let result = Block::create();
-    assert!(result.is_err(), "block creation should fail with missing CSV");
+    assert!(
+        result.is_err(),
+        "block creation should fail with missing CSV"
+    );
 }

@@ -17,6 +17,7 @@ pub fn save(name: &str, data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
     })?;
 
     let path = work_dir.join(name);
+    #[allow(clippy::suspicious_open_options)]
     let file = OpenOptions::new()
         .write(true)
         .create(true)

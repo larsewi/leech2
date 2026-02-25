@@ -41,7 +41,7 @@ impl Block {
         let current_state = state::State::compute()?;
 
         let parent = head::load()?;
-        let created = Some(std::time::SystemTime::now().try_into()?);
+        let created = Some(std::time::SystemTime::now().into());
 
         let deltas = delta::Delta::compute(previous_state, &current_state);
         let payload = deltas

@@ -26,11 +26,7 @@ fields = [
     );
 
     // Block 1: initial data
-    common::write_csv(
-        work_dir,
-        "users.csv",
-        "1,Alice,a@ex.com\n2,Bob,b@ex.com\n",
-    );
+    common::write_csv(work_dir, "users.csv", "1,Alice,a@ex.com\n2,Bob,b@ex.com\n");
     Config::init(work_dir).unwrap();
     let hash1 = Block::create().unwrap();
 

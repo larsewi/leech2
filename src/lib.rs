@@ -16,8 +16,10 @@ pub mod update;
 pub mod utils;
 pub mod wire;
 
+/// # Safety
+/// `work_dir` must be a valid, non-null, null-terminated C string.
 #[unsafe(no_mangle)]
-pub extern "C" fn lch_init(work_dir: *const c_char) -> i32 {
+pub unsafe extern "C" fn lch_init(work_dir: *const c_char) -> i32 {
     let _ = env_logger::try_init();
 
     if work_dir.is_null() {
@@ -54,8 +56,11 @@ pub extern "C" fn lch_block_create() -> i32 {
     }
 }
 
+/// # Safety
+/// `last_known` must be a valid, non-null, null-terminated C string.
+/// `out` and `len` must be valid, non-null pointers.
 #[unsafe(no_mangle)]
-pub extern "C" fn lch_patch_create(
+pub unsafe extern "C" fn lch_patch_create(
     last_known: *const c_char,
     out: *mut *mut u8,
     len: *mut usize,
@@ -106,8 +111,15 @@ pub extern "C" fn lch_patch_create(
     0
 }
 
+/// # Safety
+/// `buf` must be a valid, non-null pointer to `len` bytes.
+/// `out` must be a valid, non-null pointer.
 #[unsafe(no_mangle)]
-pub extern "C" fn lch_patch_to_sql(buf: *const u8, len: usize, out: *mut *mut c_char) -> i32 {
+pub unsafe extern "C" fn lch_patch_to_sql(
+    buf: *const u8,
+    len: usize,
+    out: *mut *mut c_char,
+) -> i32 {
     if buf.is_null() {
         log::error!("lch_patch_to_sql(): Bad argument: buf cannot be NULL");
         return -1;
@@ -155,17 +167,21 @@ pub extern "C" fn lch_patch_to_sql(buf: *const u8, len: usize, out: *mut *mut c_
     0
 }
 
+/// # Safety
+/// `ptr` must be null or a pointer previously returned by `lch_patch_create`.
 #[unsafe(no_mangle)]
-pub extern "C" fn lch_free_buf(ptr: *mut u8, len: usize) {
+pub unsafe extern "C" fn lch_free_buf(ptr: *mut u8, len: usize) {
     if !ptr.is_null() {
         unsafe {
-            drop(Box::from_raw(std::slice::from_raw_parts_mut(ptr, len)));
+            drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(ptr, len)));
         }
     }
 }
 
+/// # Safety
+/// `ptr` must be null or a pointer previously returned by `lch_patch_to_sql`.
 #[unsafe(no_mangle)]
-pub extern "C" fn lch_free_str(ptr: *mut c_char) {
+pub unsafe extern "C" fn lch_free_str(ptr: *mut c_char) {
     if !ptr.is_null() {
         unsafe {
             drop(CString::from_raw(ptr));

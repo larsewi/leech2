@@ -97,10 +97,8 @@ impl Config {
             ConfigFormat::Toml => {
                 toml::from_str(&content).map_err(|e| format!("failed to parse config: {}", e))?
             }
-            ConfigFormat::Json => {
-                serde_json::from_str(&content)
-                    .map_err(|e| format!("failed to parse config: {}", e))?
-            }
+            ConfigFormat::Json => serde_json::from_str(&content)
+                .map_err(|e| format!("failed to parse config: {}", e))?,
         };
         config.work_dir = work_dir.to_path_buf();
 

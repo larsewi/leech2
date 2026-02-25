@@ -195,7 +195,7 @@ fn cmd_log() -> Result<String, Box<dyn std::error::Error>> {
         let timestamp = block
             .created
             .as_ref()
-            .map(|ts| format_timestamp(ts))
+            .map(format_timestamp)
             .unwrap_or_else(|| "N/A".to_string());
 
         let table_names: Vec<&str> = block.payload.iter().map(|d| d.name.as_str()).collect();

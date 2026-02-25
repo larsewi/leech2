@@ -7,6 +7,7 @@ pub mod table {
 pub mod delta {
     include!(concat!(env!("OUT_DIR"), "/delta.rs"));
 }
+#[allow(clippy::module_inception)]
 pub mod patch {
     include!(concat!(env!("OUT_DIR"), "/patch.rs"));
 }

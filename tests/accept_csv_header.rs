@@ -37,7 +37,10 @@ fields = [
     assert_eq!(common::count_sql(&sql, "INSERT INTO"), 2);
 
     // Verify that header values ("id", "name") are not in the SQL as data values
-    assert!(!sql.contains("VALUES ('id',"), "header row should be skipped");
+    assert!(
+        !sql.contains("VALUES ('id',"),
+        "header row should be skipped"
+    );
 
     common::assert_wire_roundtrip(&patch);
 }
