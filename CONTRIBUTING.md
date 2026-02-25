@@ -61,6 +61,8 @@ or any path passed to `lch_init`). It contains:
 | `STATE` | Protobuf-encoded snapshot of all tables |
 | `PATCH` | Last generated patch (CLI only) |
 | `<sha1>` | Protobuf-encoded block files, named by their hash |
+| `*.lock` | Lock files for inter-process synchronization (created automatically) |
+| `*.tmp` | Temporary files used during atomic writes (should not persist) |
 
 CSV source files are referenced by the config's `source` field. The path is
 resolved relative to the work directory but can also be an absolute path.

@@ -1,11 +1,31 @@
-use std::fs::{self, File, OpenOptions};
+use std::fs::{self, File};
 use std::io::{Read, Write};
+use std::path::Path;
 
 use fs2::FileExt;
 
 use crate::config;
 
-/// Saves data to a file in the work directory with an exclusive lock.
+/// Acquires a lock on a separate `<name>.lock` file for inter-process synchronization.
+/// Returns the lock file handle; the lock is released when the handle is dropped.
+fn acquire_lock(
+    dir: &Path,
+    name: &str,
+    exclusive: bool,
+) -> Result<File, Box<dyn std::error::Error>> {
+    let lock_path = dir.join(format!("{}.lock", name));
+    let lock_file = File::create(&lock_path)
+        .map_err(|e| format!("Failed to open lock file '{}': {}", lock_path.display(), e))?;
+    if exclusive {
+        lock_file.lock_exclusive()
+    } else {
+        lock_file.lock_shared()
+    }
+    .map_err(|e| format!("Failed to acquire lock on '{}': {}", lock_path.display(), e))?;
+    Ok(lock_file)
+}
+
+/// Saves data to a file in the work directory using a separate lock file and atomic rename.
 pub fn save(name: &str, data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
     let work_dir = &config::Config::get()?.work_dir;
     fs::create_dir_all(work_dir).map_err(|e| {
@@ -16,30 +36,26 @@ pub fn save(name: &str, data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
         )
     })?;
 
+    let _lock = acquire_lock(work_dir, name, true)?;
+
+    // Write to temp file, then atomic rename for crash safety.
+    let tmp_path = work_dir.join(format!("{}.tmp", name));
     let path = work_dir.join(name);
-    #[allow(clippy::suspicious_open_options)]
-    let file = OpenOptions::new()
-        .write(true)
-        .create(true)
-        .open(&path)
-        .map_err(|e| format!("Failed to open file '{}': {}", path.display(), e))?;
-    file.lock_exclusive().map_err(|e| {
+
+    File::create(&tmp_path)
+        .map_err(|e| format!("Failed to create temp file '{}': {}", tmp_path.display(), e))?
+        .write_all(data)
+        .map_err(|e| format!("Failed to write to '{}': {}", tmp_path.display(), e))?;
+    fs::rename(&tmp_path, &path).map_err(|e| {
         format!(
-            "Failed to acquire exclusive lock on '{}': {}",
+            "Failed to rename '{}' to '{}': {}",
+            tmp_path.display(),
             path.display(),
             e
         )
     })?;
 
-    file.set_len(0)
-        .map_err(|e| format!("Failed to truncate '{}': {}", path.display(), e))?;
-    (&file)
-        .write_all(data)
-        .map_err(|e| format!("Failed to write to '{}': {}", path.display(), e))?;
-
-    file.unlock()
-        .map_err(|e| format!("Failed to release lock on '{}': {}", path.display(), e))?;
-
+    // _lock dropped here, releasing exclusive lock.
     log::debug!("Stored {} bytes to '{}'", data.len(), path.display());
     Ok(())
 }
@@ -52,24 +68,16 @@ pub fn load(name: &str) -> Result<Option<Vec<u8>>, Box<dyn std::error::Error>> {
         return Ok(None);
     }
 
-    let file = File::open(&path)
-        .map_err(|e| format!("Failed to open file '{}': {}", path.display(), e))?;
-    file.lock_shared().map_err(|e| {
-        format!(
-            "Failed to acquire shared lock on '{}': {}",
-            path.display(),
-            e
-        )
-    })?;
+    let work_dir = path.parent().unwrap();
+    let _lock = acquire_lock(work_dir, name, false)?;
 
     let mut data = Vec::new();
-    (&file)
+    File::open(&path)
+        .map_err(|e| format!("Failed to open file '{}': {}", path.display(), e))?
         .read_to_end(&mut data)
         .map_err(|e| format!("Failed to read from '{}': {}", path.display(), e))?;
 
-    file.unlock()
-        .map_err(|e| format!("Failed to release lock on '{}': {}", path.display(), e))?;
-
+    // _lock dropped here, releasing shared lock.
     log::debug!("Loaded {} bytes from '{}'", data.len(), path.display());
     Ok(Some(data))
 }
