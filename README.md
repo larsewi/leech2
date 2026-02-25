@@ -87,6 +87,23 @@ format = "%Y-%m-%d"
 | `TIME` | `'10:30:00'` | Parsed with `format` (default `%H:%M:%S`) |
 | `DATETIME` | `'2024-01-15 10:30:00'` | Parsed with `format` or as unix epoch |
 
+### History truncation
+
+An optional `[truncate]` section controls automatic pruning of old block files
+after every `lch_block_create()` / `lch block create`:
+
+```toml
+[truncate]
+max-blocks = 100    # keep at most 100 blocks in the chain (>= 1)
+max-age = "7d"      # remove blocks older than this duration
+```
+
+Both fields are optional and independent. Supported duration suffixes: `s`
+(seconds), `m` (minutes), `h` (hours), `d` (days), `w` (weeks).
+
+Truncation always removes orphaned blocks (on disk but not reachable from HEAD)
+and blocks older than the last reported position (see `lch_patch_applied`).
+
 ### Validation
 
 - Each table must have at least one field marked `primary-key = true`
@@ -118,6 +135,7 @@ through `$PAGER` (defaults to `less`).
 int   lch_init(const char *work_dir);
 int   lch_block_create(void);
 int   lch_patch_create(const char *hash, uint8_t **buf, size_t *len);
+int   lch_patch_applied(uint8_t *buf, size_t len, int reported);
 int   lch_patch_to_sql(const uint8_t *buf, size_t len, char **sql);
 void  lch_free_buf(uint8_t *buf, size_t len);
 void  lch_free_str(char *str);
@@ -135,6 +153,7 @@ All functions return `0` on success, `-1` on error. Errors are logged via
  2. Create block    lch_block_create()
                      Reads CSVs -> computes new state -> diffs against
                      previous state -> writes block + STATE + HEAD.
+                     Runs history truncation afterwards.
 
  3. Create patch    lch_patch_create(last_known_hash)
                      Walks the chain from HEAD to the given hash,
@@ -145,6 +164,11 @@ All functions return `0` on success, `-1` on error. Errors are logged via
                      - Delta payload: DELETE + INSERT + UPDATE statements
                      - State payload: TRUNCATE + INSERT statements
                      All wrapped in BEGIN/COMMIT.
+
+ 5. Report patch    lch_patch_applied(buf, len, reported)
+                     Frees the patch buffer. If reported=1, also
+                     updates the REPORTED file so truncation knows
+                     which blocks are safe to remove.
 ```
 
 ### Example
@@ -163,9 +187,11 @@ lch_patch_create("0000000000000000000000000000000000000000", &buf, &len);
 char *sql;
 lch_patch_to_sql(buf, len, &sql);
 printf("%s", sql);
-
 lch_free_str(sql);
-lch_free_buf(buf, len);
+
+// Send patch to hub, then free buffer + update REPORTED
+int ok = hub_send(buf, len);
+lch_patch_applied(buf, len, ok);
 ```
 
 ## Contributing

@@ -8,10 +8,12 @@ pub mod entry;
 pub mod head;
 pub mod patch;
 mod proto;
+pub mod reported;
 pub mod sql;
 pub mod state;
 pub mod storage;
 pub mod table;
+pub mod truncate;
 pub mod update;
 pub mod utils;
 pub mod wire;
@@ -187,4 +189,37 @@ pub unsafe extern "C" fn lch_free_str(ptr: *mut c_char) {
             drop(CString::from_raw(ptr));
         }
     }
+}
+
+/// # Safety
+/// `buf` must be a valid pointer to `len` bytes, previously returned by `lch_patch_create`.
+/// The buffer is always freed regardless of the `reported` flag or any errors.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn lch_patch_applied(buf: *mut u8, len: usize, reported: i32) -> i32 {
+    // Reconstruct the Box<[u8]> to reclaim the allocation. Converting to Vec
+    // reuses the same allocation without copying, and the Vec is dropped (freed)
+    // when this function returns — regardless of early returns below.
+    let data = if buf.is_null() {
+        Vec::new()
+    } else {
+        unsafe { Box::from_raw(std::ptr::slice_from_raw_parts_mut(buf, len)) }.into_vec()
+    };
+
+    if reported != 0 {
+        let patch = match wire::decode_patch(&data) {
+            Ok(p) => p,
+            Err(e) => {
+                log::error!("lch_patch_applied(): Failed to decode patch: {}", e);
+                return -1; // data is dropped here, freeing the buffer
+            }
+        };
+
+        if let Err(e) = self::reported::save(&patch.head_hash) {
+            log::error!("lch_patch_applied(): Failed to save REPORTED: {}", e);
+            return -1; // data is dropped here, freeing the buffer
+        }
+    }
+
+    // data is dropped here, freeing the buffer
+    0
 }

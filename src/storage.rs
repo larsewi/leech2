@@ -60,6 +60,34 @@ pub fn save(name: &str, data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// Removes a file from the work directory using an exclusive lock.
+pub fn remove(name: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let work_dir = &config::Config::get()?.work_dir;
+    let path = work_dir.join(name);
+
+    if !path.exists() {
+        log::debug!(
+            "File '{}' does not exist, nothing to remove",
+            path.display()
+        );
+        return Ok(());
+    }
+
+    let _lock = acquire_lock(work_dir, name, true)?;
+
+    fs::remove_file(&path)
+        .map_err(|e| format!("Failed to remove file '{}': {}", path.display(), e))?;
+
+    // Best-effort cleanup of the lock file after removing the data file.
+    let lock_path = work_dir.join(format!("{}.lock", name));
+    // _lock is dropped here first, then we try to clean up
+    drop(_lock);
+    let _ = fs::remove_file(&lock_path);
+
+    log::debug!("Removed '{}'", path.display());
+    Ok(())
+}
+
 /// Loads data from a file in the work directory with a shared lock.
 pub fn load(name: &str) -> Result<Option<Vec<u8>>, Box<dyn std::error::Error>> {
     let path = config::Config::get()?.work_dir.join(name);

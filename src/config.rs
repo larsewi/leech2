@@ -3,10 +3,19 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
+use std::time::Duration;
 
 enum ConfigFormat {
     Toml,
     Json,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TruncateConfig {
+    #[serde(rename = "max-blocks")]
+    pub max_blocks: Option<u32>,
+    #[serde(rename = "max-age")]
+    pub max_age: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -18,6 +27,7 @@ pub struct Config {
     #[serde(rename = "compression-level", default)]
     pub compression_level: i32,
     pub tables: HashMap<String, TableConfig>,
+    pub truncate: Option<TruncateConfig>,
 }
 
 fn default_compression() -> bool {
@@ -122,9 +132,94 @@ impl Config {
             }
         }
 
+        if let Some(ref truncate) = config.truncate {
+            if let Some(max_blocks) = truncate.max_blocks
+                && max_blocks < 1
+            {
+                return Err("truncate.max-blocks must be >= 1".to_string());
+            }
+            if let Some(ref max_age) = truncate.max_age {
+                parse_duration(max_age).map_err(|e| format!("truncate.max-age: {}", e))?;
+            }
+        }
+
         log::info!("Initialized config with {} tables", config.tables.len());
         CONFIG
             .set(config)
             .map_err(|_| "config already initialized".to_string())
+    }
+}
+
+const SECONDS_PER_MINUTE: u64 = 60;
+const SECONDS_PER_HOUR: u64 = 60 * SECONDS_PER_MINUTE;
+const SECONDS_PER_DAY: u64 = 24 * SECONDS_PER_HOUR;
+const SECONDS_PER_WEEK: u64 = 7 * SECONDS_PER_DAY;
+
+/// Parse a duration string like "30s", "12h", "7d", "2w" into a `Duration`.
+/// Supported suffixes: `s` (seconds), `m` (minutes), `h` (hours), `d` (days), `w` (weeks).
+pub fn parse_duration(s: &str) -> Result<Duration, String> {
+    if s.is_empty() {
+        return Err("empty duration string".to_string());
+    }
+
+    let (num_str, suffix) = s.split_at(s.len() - 1);
+    let value: u64 = num_str
+        .parse()
+        .map_err(|_| format!("invalid duration '{}'", s))?;
+
+    let seconds = match suffix {
+        "s" => value,
+        "m" => value * SECONDS_PER_MINUTE,
+        "h" => value * SECONDS_PER_HOUR,
+        "d" => value * SECONDS_PER_DAY,
+        "w" => value * SECONDS_PER_WEEK,
+        _ => return Err(format!("invalid duration suffix '{}' in '{}'", suffix, s)),
+    };
+
+    Ok(Duration::from_secs(seconds))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_duration_seconds() {
+        assert_eq!(parse_duration("30s").unwrap(), Duration::from_secs(30));
+    }
+
+    #[test]
+    fn test_parse_duration_minutes() {
+        assert_eq!(parse_duration("5m").unwrap(), Duration::from_secs(300));
+    }
+
+    #[test]
+    fn test_parse_duration_hours() {
+        assert_eq!(parse_duration("12h").unwrap(), Duration::from_secs(43200));
+    }
+
+    #[test]
+    fn test_parse_duration_days() {
+        assert_eq!(parse_duration("7d").unwrap(), Duration::from_secs(604800));
+    }
+
+    #[test]
+    fn test_parse_duration_weeks() {
+        assert_eq!(parse_duration("2w").unwrap(), Duration::from_secs(1209600));
+    }
+
+    #[test]
+    fn test_parse_duration_invalid_suffix() {
+        assert!(parse_duration("10x").is_err());
+    }
+
+    #[test]
+    fn test_parse_duration_invalid_number() {
+        assert!(parse_duration("abcs").is_err());
+    }
+
+    #[test]
+    fn test_parse_duration_empty() {
+        assert!(parse_duration("").is_err());
     }
 }

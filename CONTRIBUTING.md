@@ -27,6 +27,8 @@ src/
   block.rs      Content-addressable block creation and loading
   patch.rs      Patch consolidation, payload selection
   head.rs       HEAD file read/write
+  reported.rs   REPORTED file read/write (last reported patch hash)
+  truncate.rs   History truncation (orphan, reported, max-blocks, max-age)
   storage.rs    File I/O with fs2 locking
   wire.rs       Protobuf encode/decode + zstd compression
   sql.rs        Patch-to-SQL conversion with type mapping
@@ -58,6 +60,7 @@ or any path passed to `lch_init`). It contains:
 |------|-------------|
 | `config.toml` or `config.json` | Table definitions and field schemas |
 | `HEAD` | Current block hash (40-character hex string) |
+| `REPORTED` | Hash of last successfully reported patch head (used by truncation) |
 | `STATE` | Protobuf-encoded snapshot of all tables |
 | `PATCH` | Last generated patch (CLI only) |
 | `<sha1>` | Protobuf-encoded block files, named by their hash |

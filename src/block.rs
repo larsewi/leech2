@@ -6,6 +6,7 @@ use crate::delta;
 use crate::head;
 use crate::state;
 use crate::storage;
+use crate::truncate;
 use crate::utils;
 
 pub use crate::proto::block::Block;
@@ -65,6 +66,10 @@ impl Block {
 
         current_state.save()?;
         head::save(&hash)?;
+
+        if let Err(e) = truncate::run() {
+            log::warn!("Truncation failed (non-fatal): {}", e);
+        }
 
         Ok(hash)
     }
