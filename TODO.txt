@@ -8,3 +8,5 @@
 - One stratergy to remove based on date / time (e.g., older then 1 week)
 - The history is truncated on every new commit
 - Add acceptance tests for orphaned blocks, plus different stratergies
+
+## Move Makefile into test directory
