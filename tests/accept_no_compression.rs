@@ -19,7 +19,8 @@ fn test_compression_disabled() {
         work_dir,
         "config.toml",
         r#"
-compression = false
+[compression]
+enable = false
 
 [tables.users]
 source = "users.csv"

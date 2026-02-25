@@ -19,19 +19,34 @@ pub struct TruncateConfig {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct CompressionConfig {
+    #[serde(default = "default_compression_enable")]
+    pub enable: bool,
+    #[serde(default)]
+    pub level: i32,
+}
+
+impl Default for CompressionConfig {
+    fn default() -> Self {
+        Self {
+            enable: true,
+            level: 0,
+        }
+    }
+}
+
+fn default_compression_enable() -> bool {
+    true
+}
+
+#[derive(Debug, Deserialize)]
 pub struct Config {
     #[serde(skip)]
     pub work_dir: PathBuf,
-    #[serde(default = "default_compression")]
-    pub compression: bool,
-    #[serde(rename = "compression-level", default)]
-    pub compression_level: i32,
+    #[serde(default)]
+    pub compression: CompressionConfig,
     pub tables: HashMap<String, TableConfig>,
     pub truncate: Option<TruncateConfig>,
-}
-
-fn default_compression() -> bool {
-    true
 }
 
 #[derive(Debug, Deserialize)]

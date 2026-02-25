@@ -12,7 +12,7 @@ pub fn encode_patch(patch: &Patch) -> Result<Vec<u8>, Box<dyn std::error::Error>
     patch.encode(&mut buf)?;
 
     let config = config::Config::get()?;
-    if !config.compression {
+    if !config.compression.enable {
         log::info!(
             "Patch encoded: {} bytes protobuf (compression disabled)",
             buf.len()
@@ -20,7 +20,7 @@ pub fn encode_patch(patch: &Patch) -> Result<Vec<u8>, Box<dyn std::error::Error>
         return Ok(buf);
     }
 
-    let compressed = zstd::encode_all(buf.as_slice(), config.compression_level)?;
+    let compressed = zstd::encode_all(buf.as_slice(), config.compression.level)?;
     log::info!(
         "Patch encoded: {} bytes protobuf, {} bytes compressed ({:.0}% reduction)",
         buf.len(),

@@ -86,12 +86,13 @@ format = "%Y-%m-%d"
 
 ### Compression
 
-Patches are compressed with zstd by default. An optional top-level section
-controls this:
+Patches are compressed with zstd by default. An optional `[compression]`
+section controls this:
 
 ```toml
-compression = true          # enable zstd compression (default: true)
-compression-level = 3       # zstd level (default: 0)
+[compression]
+enable = true               # enable zstd compression (default: true)
+level = 3                   # zstd level (default: 0)
 ```
 
 ### History truncation
