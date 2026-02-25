@@ -10,3 +10,5 @@
 - Add acceptance tests for orphaned blocks, plus different stratergies
 
 ## Move Makefile into test directory
+
+## Make the README more readable for someone who has never heard of leech2
