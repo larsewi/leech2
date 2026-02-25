@@ -170,20 +170,9 @@ pub unsafe extern "C" fn lch_patch_to_sql(
 }
 
 /// # Safety
-/// `ptr` must be null or a pointer previously returned by `lch_patch_create`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn lch_free_buf(ptr: *mut u8, len: usize) {
-    if !ptr.is_null() {
-        unsafe {
-            drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(ptr, len)));
-        }
-    }
-}
-
-/// # Safety
 /// `ptr` must be null or a pointer previously returned by `lch_patch_to_sql`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn lch_free_str(ptr: *mut c_char) {
+pub unsafe extern "C" fn lch_free_sql(ptr: *mut c_char) {
     if !ptr.is_null() {
         unsafe {
             drop(CString::from_raw(ptr));

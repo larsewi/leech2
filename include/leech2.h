@@ -9,7 +9,6 @@ extern int lch_block_create(void);
 extern int lch_patch_create(const char *hash, uint8_t **buf, size_t *len);
 extern int lch_patch_to_sql(const uint8_t *buf, size_t len, char **sql);
 extern int lch_patch_applied(uint8_t *buf, size_t len, int reported);
-extern void lch_free_buf(uint8_t *buf, size_t len);
-extern void lch_free_str(char *str);
+extern void lch_free_sql(char *sql);
 
 #endif /* __LEECH2_H__ */

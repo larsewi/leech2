@@ -137,8 +137,7 @@ int   lch_block_create(void);
 int   lch_patch_create(const char *hash, uint8_t **buf, size_t *len);
 int   lch_patch_applied(uint8_t *buf, size_t len, int reported);
 int   lch_patch_to_sql(const uint8_t *buf, size_t len, char **sql);
-void  lch_free_buf(uint8_t *buf, size_t len);
-void  lch_free_str(char *str);
+void  lch_free_sql(char *sql);
 ```
 
 All functions return `0` on success, `-1` on error. Errors are logged via
@@ -187,7 +186,7 @@ lch_patch_create("0000000000000000000000000000000000000000", &buf, &len);
 char *sql;
 lch_patch_to_sql(buf, len, &sql);
 printf("%s", sql);
-lch_free_str(sql);
+lch_free_sql(sql);
 
 // Send patch to hub, then free buffer + update REPORTED
 int ok = hub_send(buf, len);
