@@ -73,16 +73,16 @@ format = "%Y-%m-%d"
 
 ### Field types
 
-| Type | SQL literal | Notes |
-|------|-------------|-------|
-| `TEXT` | `'value'` | Single quotes, escaped |
-| `INTEGER` | `42` | Validated as `i64` |
-| `FLOAT` | `3.14` | Validated as `f64` |
-| `BOOLEAN` | `TRUE`/`FALSE` | Accepts `true/false`, `1/0`, `t/f`, `yes/no` |
-| `BINARY` | `'\xDEADBEEF'` | Hex-encoded input |
-| `DATE` | `'2024-01-15'` | Parsed with `format` (default `%Y-%m-%d`) |
-| `TIME` | `'10:30:00'` | Parsed with `format` (default `%H:%M:%S`) |
-| `DATETIME` | `'2024-01-15 10:30:00'` | Parsed with `format` or as unix epoch |
+| Type       | SQL literal             | Notes                                        |
+|------------|-------------------------|----------------------------------------------|
+| `TEXT`     | `'value'`               | Single quotes, escaped                       |
+| `INTEGER`  | `42`                    | Validated as `i64`                           |
+| `FLOAT`    | `3.14`                  | Validated as `f64`                           |
+| `BOOLEAN`  | `TRUE`/`FALSE`          | Accepts `true/false`, `1/0`, `t/f`, `yes/no` |
+| `BINARY`   | `'\xDEADBEEF'`          | Hex-encoded input                            |
+| `DATE`     | `'2024-01-15'`          | Parsed with `format` (default `%Y-%m-%d`)    |
+| `TIME`     | `'10:30:00'`            | Parsed with `format` (default `%H:%M:%S`)    |
+| `DATETIME` | `'2024-01-15 10:30:00'` | Parsed with `format` or as unix epoch        |
 
 ### Compression
 
@@ -91,8 +91,8 @@ section controls this:
 
 ```toml
 [compression]
-enable = true               # enable zstd compression (default: true)
-level = 3                   # zstd level (default: 0)
+enable = true  # enable zstd compression (default: true)
+level = 3      # zstd level (default: 0)
 ```
 
 ### History truncation
@@ -102,8 +102,8 @@ after every `lch_block_create()` / `lch block create`:
 
 ```toml
 [truncate]
-max-blocks = 100    # keep at most 100 blocks in the chain (>= 1)
-max-age = "7d"      # remove blocks older than this duration
+max-blocks = 100  # keep at most 100 blocks in the chain (>= 1)
+max-age = "7d"    # remove blocks older than this duration
 ```
 
 Both fields are optional and independent. Supported duration suffixes: `s`
