@@ -52,9 +52,6 @@ lch patch sql
 Config can be `config.toml` or `config.json`. TOML example:
 
 ```toml
-compression = true          # enable zstd compression (default: true)
-compression-level = 3       # zstd level (default: 0)
-
 [tables.employees]
 source = "employees.csv"    # relative to work dir, or absolute
 header = true
@@ -86,6 +83,16 @@ format = "%Y-%m-%d"
 | `DATE` | `'2024-01-15'` | Parsed with `format` (default `%Y-%m-%d`) |
 | `TIME` | `'10:30:00'` | Parsed with `format` (default `%H:%M:%S`) |
 | `DATETIME` | `'2024-01-15 10:30:00'` | Parsed with `format` or as unix epoch |
+
+### Compression
+
+Patches are compressed with zstd by default. An optional top-level section
+controls this:
+
+```toml
+compression = true          # enable zstd compression (default: true)
+compression-level = 3       # zstd level (default: 0)
+```
 
 ### History truncation
 
