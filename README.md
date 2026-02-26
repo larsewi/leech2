@@ -1,5 +1,9 @@
 # leech2
 
+<p align="center">
+  <img src="logo.svg" alt="Leech Logo" width="120"/>
+</p>
+
 leech2 tracks changes to CSV-backed database tables using a git-like
 content-addressable block chain. It computes deltas between CSV snapshots,
 stores them as linked blocks, and can produce consolidated patches that convert

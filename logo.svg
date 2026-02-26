@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 360" width="200" height="360">
+  <!-- Body - vertical worm shape, wider head tapering down -->
+  <path d="M 100,40
+           C 145,40 155,60 155,85
+           C 155,110 150,120 148,130
+           C 145,145 140,155 138,170
+           C 135,190 132,210 130,230
+           C 128,250 125,270 122,290
+           C 120,305 118,315 115,320
+           C 108,335 92,335 85,320
+           C 82,315 80,305 78,290
+           C 76,275 75,260 74,245
+           C 73,225 72,210 72,195
+           C 72,175 73,160 75,145
+           C 55,130 45,110 45,85
+           C 45,60 55,40 100,40 Z"
+        fill="#5a5478" stroke="#222" stroke-width="5" stroke-linejoin="round"/>
+
+  <!-- Segment lines -->
+  <path d="M 80,145 Q 105,152 135,145" stroke="#222" stroke-width="3" fill="none" stroke-linecap="round" opacity="0.5"/>
+  <path d="M 77,185 Q 102,192 128,185" stroke="#222" stroke-width="3" fill="none" stroke-linecap="round" opacity="0.5"/>
+  <path d="M 78,225 Q 100,231 124,225" stroke="#222" stroke-width="3" fill="none" stroke-linecap="round" opacity="0.5"/>
+  <path d="M 82,265 Q 98,270 118,265" stroke="#222" stroke-width="3" fill="none" stroke-linecap="round" opacity="0.5"/>
+
+  <!-- Mouth - big open maw -->
+  <ellipse cx="100" cy="95" rx="35" ry="16" fill="#cc2222" stroke="#222" stroke-width="3"/>
+
+
+  <!-- Eyes - simple cartoon dots with white highlight -->
+  <!-- Left eye -->
+  <circle cx="78" cy="60" r="8" fill="white" stroke="#222" stroke-width="2.5"/>
+  <circle cx="80" cy="60" r="4" fill="#3388cc"/>
+  <circle cx="78" cy="58" r="1.5" fill="white"/>
+  <!-- Right eye -->
+  <circle cx="122" cy="60" r="8" fill="white" stroke="#222" stroke-width="2.5"/>
+  <circle cx="124" cy="60" r="4" fill="#3388cc"/>
+  <circle cx="122" cy="58" r="1.5" fill="white"/>
+
+  <!-- Tail sucker - small circle at bottom -->
+  <ellipse cx="100" cy="328" rx="14" ry="10" fill="#cc2222" stroke="#222" stroke-width="3"/>
+  <line x1="95" y1="325" x2="95" y2="331" stroke="#222" stroke-width="2" stroke-linecap="round" opacity="0.5"/>
+  <line x1="100" y1="324" x2="100" y2="332" stroke="#222" stroke-width="2" stroke-linecap="round" opacity="0.5"/>
+  <line x1="105" y1="325" x2="105" y2="331" stroke="#222" stroke-width="2" stroke-linecap="round" opacity="0.5"/>
+</svg>
