@@ -151,12 +151,12 @@ to `less`).
 #include "leech2.h"
 
 lch_config_t *lch_init(const char *work_dir);
-void  lch_deinit(lch_config_t *config);
-int   lch_block_create(const lch_config_t *config);
-int   lch_patch_create(const lch_config_t *config, const char *hash, uint8_t **buf, size_t *len);
-int   lch_patch_applied(const lch_config_t *config, uint8_t *buf, size_t len, int reported);
-int   lch_patch_to_sql(const lch_config_t *config, const uint8_t *buf, size_t len, char **sql);
-void  lch_free_sql(char *sql);
+void lch_deinit(lch_config_t *config);
+int lch_block_create(const lch_config_t *config);
+int lch_patch_create(const lch_config_t *config, const char *hash, uint8_t **buf, size_t *len);
+int lch_patch_applied(const lch_config_t *config, uint8_t *buf, size_t len, int reported);
+int lch_patch_to_sql(const lch_config_t *config, const uint8_t *buf, size_t len, char **sql);
+void lch_free_sql(char *sql);
 ```
 
 `lch_init()` returns an opaque config handle (NULL on error). All other
