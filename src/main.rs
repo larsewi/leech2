@@ -57,8 +57,8 @@ enum BlockCmd {
 enum PatchCmd {
     /// Create a patch from REF to HEAD and write to .leech2/PATCH
     Create {
-        /// Block hash prefix
-        #[arg(name = "REF", required_unless_present = "n")]
+        /// Block hash prefix [default: REPORTED or GENESIS]
+        #[arg(name = "REF")]
         reference: Option<String>,
         /// Create a patch covering the last N blocks
         #[arg(short)]
@@ -68,6 +68,8 @@ enum PatchCmd {
     Show,
     /// Convert the .leech2/PATCH file to SQL
     Sql,
+    /// Mark the current patch as applied (saves head hash to REPORTED)
+    Applied,
 }
 
 fn work_dir(cli: &Cli) -> PathBuf {
@@ -171,7 +173,12 @@ fn cmd_patch_create(
     reference: Option<&str>,
     n: Option<u32>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let hash = resolve_ref(reference, n)?;
+    let hash = match (reference, n) {
+        (None, None) => {
+            leech2::reported::load()?.unwrap_or_else(|| leech2::utils::GENESIS_HASH.to_string())
+        }
+        _ => resolve_ref(reference, n)?,
+    };
     let patch = leech2::patch::Patch::create(&hash)?;
 
     let buf = leech2::wire::encode_patch(&patch)?;
@@ -253,6 +260,17 @@ fn cmd_patch_sql() -> Result<String, Box<dyn std::error::Error>> {
     }
 }
 
+fn cmd_patch_applied() -> Result<(), Box<dyn std::error::Error>> {
+    let data = leech2::storage::load(PATCH_FILE)?
+        .ok_or("no patch file found, run `lch patch create` first")?;
+
+    let patch = leech2::wire::decode_patch(&data)?;
+    leech2::reported::save(&patch.head_hash)?;
+
+    println!("{}", patch.head_hash);
+    Ok(())
+}
+
 fn print_with_pager(content: &str) {
     let pager_cmd = std::env::var("PAGER").unwrap_or_else(|_| "less".to_string());
 
@@ -303,6 +321,9 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             PatchCmd::Sql => {
                 let output = cmd_patch_sql()?;
                 print_with_pager(&output);
+            }
+            PatchCmd::Applied => {
+                cmd_patch_applied()?;
             }
         },
         Cmd::Log => {
