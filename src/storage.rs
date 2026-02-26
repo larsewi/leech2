@@ -96,7 +96,9 @@ pub fn load(name: &str) -> Result<Option<Vec<u8>>, Box<dyn std::error::Error>> {
         return Ok(None);
     }
 
-    let work_dir = path.parent().unwrap();
+    let work_dir = path
+        .parent()
+        .ok_or_else(|| format!("File path '{}' has no parent directory", path.display()))?;
     let _lock = acquire_lock(work_dir, name, false)?;
 
     let mut data = Vec::new();

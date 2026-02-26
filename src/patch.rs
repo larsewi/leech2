@@ -67,12 +67,12 @@ pub fn resolve_hash_prefix(prefix: &str) -> Result<String, Box<dyn std::error::E
         }
     }
 
-    match matches.len() {
-        0 => Err(format!("no block found matching prefix '{}'", prefix).into()),
-        1 => Ok(matches.into_iter().next().unwrap()),
-        _ => Err(format!(
+    match matches.as_slice() {
+        [] => Err(format!("no block found matching prefix '{}'", prefix).into()),
+        [single] => Ok(single.clone()),
+        [first, second, ..] => Err(format!(
             "ambiguous hash prefix '{}': matches {} and {}",
-            prefix, matches[0], matches[1]
+            prefix, first, second
         )
         .into()),
     }

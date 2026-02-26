@@ -16,6 +16,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - Always run `cargo fmt` and `cargo clippy` after changing Rust code.
 - Update documentation ([README.md](README.md), [CONTRIBUTING.md](CONTRIBUTING.md), [DELTA_MERGING_RULES.md](DELTA_MERGING_RULES.md)) when changing or adding features.
+- Avoid `unwrap()`, `expect()`, and other panicking functions in production code. Use proper error handling (`?`, `ok_or_else`, pattern matching, etc.) instead. Panicking in tests is acceptable.
 
 ## Architecture
 
