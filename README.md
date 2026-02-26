@@ -40,11 +40,14 @@ lch block create
 # Make more edits and create another block
 lch block create
 
-# Generate a patch covering the last 2 blocks
-lch patch create -n 2
+# Generate a patch (from REPORTED, or GENESIS on first run)
+lch patch create
 
 # Convert the patch to SQL
 lch patch sql
+
+# Mark the patch as applied so next patch starts from here
+lch patch applied
 ```
 
 ## Configuration
@@ -126,14 +129,17 @@ Commands:
   init                        Initialize .leech2/ with example config and CSV
   block create                Snapshot CSVs and create a new block
   block show [REF|-n N]       Display a block's contents
-  patch create <REF|-n N>     Build a patch from REF (or N blocks back) to HEAD
+  patch create [REF|-n N]     Build a patch from REF (or N blocks back) to HEAD
   patch show                  Display the last generated patch
   patch sql                   Convert the last patch to SQL
+  patch applied               Mark the current patch as applied (updates REPORTED)
   log                         List all blocks from HEAD to genesis
 ```
 
-`REF` can be a full SHA-1 hash or an unambiguous prefix. Output is paged
-through `$PAGER` (defaults to `less`).
+`REF` can be a full SHA-1 hash or an unambiguous prefix. When `patch create`
+is called without `REF` or `-n`, it defaults to the REPORTED hash (or GENESIS
+if no patch has been reported yet). Output is paged through `$PAGER` (defaults
+to `less`).
 
 ## C API
 
