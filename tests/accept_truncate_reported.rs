@@ -23,14 +23,14 @@ fields = [
     );
 
     common::write_csv(work_dir, "users.csv", "1,Alice\n");
-    Config::init(work_dir).unwrap();
-    let hash1 = Block::create().unwrap();
+    let config = Config::load(work_dir).unwrap();
+    let hash1 = Block::create(&config).unwrap();
 
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
-    let hash2 = Block::create().unwrap();
+    let hash2 = Block::create(&config).unwrap();
 
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n3,Charlie\n");
-    let hash3 = Block::create().unwrap();
+    let hash3 = Block::create(&config).unwrap();
 
     // No REPORTED file yet — all blocks should be preserved
     assert!(work_dir.join(&hash1).exists());
@@ -38,10 +38,10 @@ fields = [
     assert!(work_dir.join(&hash3).exists());
 
     // Mark B2 as reported — blocks older than B2 should be removed on next create
-    reported::save(&hash2).unwrap();
+    reported::save(work_dir, &hash2).unwrap();
 
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n3,Charlie\n4,Dave\n");
-    let hash4 = Block::create().unwrap();
+    let hash4 = Block::create(&config).unwrap();
 
     // B1 should be removed (older than REPORTED=B2)
     assert!(

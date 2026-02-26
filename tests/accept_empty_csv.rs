@@ -26,12 +26,12 @@ fields = [
 
     // Block 1: empty CSV (0 rows)
     common::write_csv(work_dir, "users.csv", "");
-    Config::init(work_dir).unwrap();
-    let hash1 = Block::create().unwrap();
+    let config = Config::load(work_dir).unwrap();
+    let hash1 = Block::create(&config).unwrap();
 
     // Patch from genesis with empty table: no data to insert
-    let patch = Patch::create(GENESIS_HASH).unwrap();
-    let sql = sql::patch_to_sql(&patch).unwrap();
+    let patch = Patch::create(&config, GENESIS_HASH).unwrap();
+    let sql = sql::patch_to_sql(&config, &patch).unwrap();
     match sql {
         Some(s) => {
             assert_eq!(common::count_sql(&s, "INSERT INTO"), 0);
@@ -42,12 +42,12 @@ fields = [
 
     // Block 2: add rows to previously empty table
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
-    let _hash2 = Block::create().unwrap();
+    let _hash2 = Block::create(&config).unwrap();
 
     // Patch from hash1: should show 2 inserts
-    let patch2 = Patch::create(&hash1).unwrap();
-    let sql2 = sql::patch_to_sql(&patch2).unwrap().unwrap();
+    let patch2 = Patch::create(&config, &hash1).unwrap();
+    let sql2 = sql::patch_to_sql(&config, &patch2).unwrap().unwrap();
     assert_eq!(common::count_sql(&sql2, "INSERT INTO"), 2);
 
-    common::assert_wire_roundtrip(&patch2);
+    common::assert_wire_roundtrip(&config, &patch2);
 }

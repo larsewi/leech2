@@ -1,8 +1,9 @@
 use std::collections::HashSet;
+use std::path::Path;
 use std::time::SystemTime;
 
 use crate::block::Block;
-use crate::config::{self, parse_duration};
+use crate::config::{Config, parse_duration};
 use crate::head;
 use crate::reported;
 use crate::storage;
@@ -16,8 +17,9 @@ struct ChainEntry {
 /// Returns `(block_hashes, stale_lock_files)` by scanning the work directory.
 /// Block hashes are 40-hex-char filenames. Stale lock files are `.<40-hex>.lock`
 /// files whose corresponding block is not on disk.
-fn scan_work_dir() -> Result<(HashSet<String>, Vec<String>), Box<dyn std::error::Error>> {
-    let work_dir = &config::Config::get()?.work_dir;
+fn scan_work_dir(
+    work_dir: &Path,
+) -> Result<(HashSet<String>, Vec<String>), Box<dyn std::error::Error>> {
     let mut blocks = HashSet::new();
     let mut lock_files = Vec::new();
 
@@ -50,8 +52,9 @@ fn scan_work_dir() -> Result<(HashSet<String>, Vec<String>), Box<dyn std::error:
     Ok((blocks, lock_files))
 }
 
-pub fn run() -> Result<(), Box<dyn std::error::Error>> {
-    let head_hash = head::load()?;
+pub fn run(config: &Config) -> Result<(), Box<dyn std::error::Error>> {
+    let work_dir = &config.work_dir;
+    let head_hash = head::load(work_dir)?;
 
     // Walk chain from HEAD → GENESIS, building ordered list and reachable set together
     let mut chain = Vec::new();
@@ -59,7 +62,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut current_hash = head_hash.clone();
     while current_hash != GENESIS_HASH {
-        let block = match Block::load(&current_hash) {
+        let block = match Block::load(work_dir, &current_hash) {
             Ok(b) => b,
             Err(_) => {
                 // Block was previously truncated — end of reachable chain
@@ -84,15 +87,14 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     // Orphan removal: delete block files on disk not in reachable set,
     // and stale lock files whose block no longer exists
-    let (on_disk, stale_locks) = scan_work_dir()?;
+    let (on_disk, stale_locks) = scan_work_dir(work_dir)?;
     for hash in &on_disk {
         if !reachable.contains(hash) {
             log::info!("Removing orphaned block '{:.7}...'", hash);
-            storage::remove(hash)?;
+            storage::remove(work_dir, hash)?;
         }
     }
 
-    let work_dir = &config::Config::get()?.work_dir;
     for lock_file in &stale_locks {
         log::info!("Removing stale lock file '{}'", lock_file);
         let _ = std::fs::remove_file(work_dir.join(lock_file));
@@ -103,12 +105,11 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Precompute rule parameters
-    let reported_pos = match reported::load()? {
+    let reported_pos = match reported::load(work_dir)? {
         Some(ref hash) => chain.iter().position(|e| e.hash == *hash),
         None => None,
     };
 
-    let config = config::Config::get()?;
     let max_blocks = config
         .truncate
         .as_ref()
@@ -132,7 +133,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
 
         if should_remove {
             log::info!("Truncating block '{:.7}...'", entry.hash);
-            storage::remove(&entry.hash)?;
+            storage::remove(work_dir, &entry.hash)?;
             removed += 1;
         }
     }

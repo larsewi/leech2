@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::fs::File;
+use std::path::Path;
 
-use crate::config::{self, TableConfig};
+use crate::config::TableConfig;
 use crate::entry::Entry;
 
 /// A table with records stored in a hash map for efficient lookup.
@@ -60,8 +61,12 @@ impl fmt::Display for crate::proto::table::Table {
 
 impl Table {
     /// Loads a table from a CSV file.
-    pub fn load(name: &str, config: &TableConfig) -> Result<Self, Box<dyn std::error::Error>> {
-        let path = config::Config::get()?.work_dir.join(&config.source);
+    pub fn load(
+        work_dir: &Path,
+        name: &str,
+        config: &TableConfig,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let path = work_dir.join(&config.source);
         let file =
             File::open(&path).map_err(|e| format!("failed to open '{}': {}", path.display(), e))?;
         let reader = csv::ReaderBuilder::new()

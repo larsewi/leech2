@@ -24,8 +24,8 @@ fields = [
     );
 
     common::write_csv(work_dir, "users.csv", "1,Alice\n");
-    Config::init(work_dir).unwrap();
-    let hash1 = Block::create().unwrap();
+    let config = Config::load(work_dir).unwrap();
+    let hash1 = Block::create(&config).unwrap();
 
     // Add a fake orphaned 40-hex file and a stale lock file
     let orphan_hash = "aa00000000000000000000000000000000000000";
@@ -37,7 +37,7 @@ fields = [
 
     // Create another block — truncation runs and should remove the orphan
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
-    let hash2 = Block::create().unwrap();
+    let hash2 = Block::create(&config).unwrap();
 
     // Orphan and its stale lock file should be gone
     assert!(
@@ -55,11 +55,11 @@ fields = [
 
     // --- Test orphan from old HEAD ---
     // Manually reset HEAD to GENESIS, making all current blocks orphans
-    head::save(GENESIS_HASH).unwrap();
+    head::save(work_dir, GENESIS_HASH).unwrap();
 
     // Create a new block — truncation should remove the now-orphaned blocks
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n3,Charlie\n");
-    let hash3 = Block::create().unwrap();
+    let hash3 = Block::create(&config).unwrap();
 
     // Old blocks should be removed (orphaned)
     assert!(

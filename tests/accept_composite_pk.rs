@@ -26,16 +26,16 @@ fields = [
 
     // Block 1: initial enrollments
     common::write_csv(work_dir, "enrollments.csv", "1,101,A\n1,102,B\n2,101,C\n");
-    Config::init(work_dir).unwrap();
-    let hash1 = Block::create().unwrap();
+    let config = Config::load(work_dir).unwrap();
+    let hash1 = Block::create(&config).unwrap();
 
     // Block 2: update (1,101) grade A->A+, delete (1,102), insert (2,103)
     common::write_csv(work_dir, "enrollments.csv", "1,101,A+\n2,101,C\n2,103,B\n");
-    let _hash2 = Block::create().unwrap();
+    let _hash2 = Block::create(&config).unwrap();
 
     // Patch from hash1
-    let patch = Patch::create(&hash1).unwrap();
-    let sql = sql::patch_to_sql(&patch).unwrap().unwrap();
+    let patch = Patch::create(&config, &hash1).unwrap();
+    let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
 
     // DELETE should use composite key with AND
     assert!(
@@ -51,5 +51,5 @@ fields = [
     assert!(sql.contains(r#"WHERE "student_id" = 1 AND "course_id" = 101;"#));
     assert!(sql.contains(r#"SET "grade" = 'A+'"#));
 
-    common::assert_wire_roundtrip(&patch);
+    common::assert_wire_roundtrip(&config, &patch);
 }

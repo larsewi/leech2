@@ -27,11 +27,11 @@ fields = [
 
     // CSV with header row — the header should be skipped
     common::write_csv(work_dir, "users.csv", "id,name\n1,Alice\n2,Bob\n");
-    Config::init(work_dir).unwrap();
-    Block::create().unwrap();
+    let config = Config::load(work_dir).unwrap();
+    Block::create(&config).unwrap();
 
-    let patch = Patch::create(GENESIS_HASH).unwrap();
-    let sql = sql::patch_to_sql(&patch).unwrap().unwrap();
+    let patch = Patch::create(&config, GENESIS_HASH).unwrap();
+    let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
 
     // Should have 2 inserts (the header row is not treated as data)
     assert_eq!(common::count_sql(&sql, "INSERT INTO"), 2);
@@ -42,5 +42,5 @@ fields = [
         "header row should be skipped"
     );
 
-    common::assert_wire_roundtrip(&patch);
+    common::assert_wire_roundtrip(&config, &patch);
 }

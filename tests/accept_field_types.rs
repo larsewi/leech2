@@ -37,8 +37,8 @@ fields = [
         "records.csv",
         "1,hello,42,true,2024-01-15,36.6,08:30:00,2024-01-15 10:30:00,48656C6C6F\n",
     );
-    Config::init(work_dir).unwrap();
-    let hash1 = Block::create().unwrap();
+    let config = Config::load(work_dir).unwrap();
+    let hash1 = Block::create(&config).unwrap();
 
     // Block 2: update all subsidiary fields
     common::write_csv(
@@ -46,11 +46,11 @@ fields = [
         "records.csv",
         "1,it's a test,99,false,2024-06-30,-3.14,23:59:59,2024-06-30 18:00:00,DEADBEEF\n",
     );
-    let _hash2 = Block::create().unwrap();
+    let _hash2 = Block::create(&config).unwrap();
 
     // Patch from genesis: consolidated insert with v2 values (rule 7)
-    let patch_genesis = Patch::create(GENESIS_HASH).unwrap();
-    let sql_genesis = sql::patch_to_sql(&patch_genesis).unwrap().unwrap();
+    let patch_genesis = Patch::create(&config, GENESIS_HASH).unwrap();
+    let sql_genesis = sql::patch_to_sql(&config, &patch_genesis).unwrap().unwrap();
 
     // TEXT: escaped single quote
     assert!(sql_genesis.contains("'it''s a test'"));
@@ -72,8 +72,8 @@ fields = [
     // Patch from hash1: verify type quoting regardless of payload type.
     // With 1 row and all fields changed, the patch may choose State (TRUNCATE+INSERT)
     // or Deltas (UPDATE). Either way, the SQL literals must be correctly formatted.
-    let patch_partial = Patch::create(&hash1).unwrap();
-    let sql_partial = sql::patch_to_sql(&patch_partial).unwrap().unwrap();
+    let patch_partial = Patch::create(&config, &hash1).unwrap();
+    let sql_partial = sql::patch_to_sql(&config, &patch_partial).unwrap().unwrap();
 
     assert!(sql_partial.contains("'it''s a test'"));
     assert!(sql_partial.contains("99"));
@@ -84,6 +84,6 @@ fields = [
     assert!(sql_partial.contains("'2024-06-30 18:00:00'"));
     assert!(sql_partial.contains(r"'\xDEADBEEF'"));
 
-    common::assert_wire_roundtrip(&patch_genesis);
-    common::assert_wire_roundtrip(&patch_partial);
+    common::assert_wire_roundtrip(&config, &patch_genesis);
+    common::assert_wire_roundtrip(&config, &patch_partial);
 }

@@ -1,7 +1,9 @@
 use std::fmt;
+use std::path::Path;
 
 use prost::Message;
 
+use crate::config::Config;
 use crate::delta;
 use crate::head;
 use crate::state;
@@ -28,20 +30,21 @@ impl fmt::Display for Block {
 }
 
 impl Block {
-    pub fn load(hash: &str) -> Result<Block, Box<dyn std::error::Error>> {
-        let data =
-            storage::load(hash)?.ok_or_else(|| format!("Block '{:.7}...' not found", hash))?;
+    pub fn load(work_dir: &Path, hash: &str) -> Result<Block, Box<dyn std::error::Error>> {
+        let data = storage::load(work_dir, hash)?
+            .ok_or_else(|| format!("Block '{:.7}...' not found", hash))?;
         let block = Block::decode(data.as_slice())
             .map_err(|e| format!("Failed to decode block '{:.7}...': {}", hash, e))?;
         log::info!("Loaded block '{:.7}...'", hash);
         Ok(block)
     }
 
-    pub fn create() -> Result<String, Box<dyn std::error::Error>> {
-        let previous_state = state::State::load()?;
-        let current_state = state::State::compute()?;
+    pub fn create(config: &Config) -> Result<String, Box<dyn std::error::Error>> {
+        let work_dir = &config.work_dir;
+        let previous_state = state::State::load(work_dir)?;
+        let current_state = state::State::compute(config)?;
 
-        let parent = head::load()?;
+        let parent = head::load(work_dir)?;
         let created = Some(std::time::SystemTime::now().into());
 
         let deltas = delta::Delta::compute(previous_state, &current_state);
@@ -60,14 +63,14 @@ impl Block {
         let mut buf = Vec::new();
         block.encode(&mut buf)?;
         let hash = utils::compute_hash(&buf);
-        storage::save(&hash, &buf)?;
+        storage::save(work_dir, &hash, &buf)?;
 
         log::info!("Created block '{:.7}...'", hash);
 
-        current_state.save()?;
-        head::save(&hash)?;
+        current_state.save(work_dir)?;
+        head::save(work_dir, &hash)?;
 
-        if let Err(e) = truncate::run() {
+        if let Err(e) = truncate::run(config) {
             log::warn!("Truncation failed (non-fatal): {}", e);
         }
 

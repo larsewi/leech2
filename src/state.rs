@@ -1,9 +1,10 @@
 use std::collections::HashMap;
 use std::fmt;
+use std::path::Path;
 
 use prost::Message;
 
-use crate::config;
+use crate::config::Config;
 use crate::storage;
 use crate::table::Table;
 use crate::utils::indent;
@@ -53,8 +54,8 @@ impl fmt::Display for crate::proto::state::State {
 }
 
 impl State {
-    pub fn load() -> Result<Option<Self>, Box<dyn std::error::Error>> {
-        let Some(data) = storage::load(STATE_FILE)? else {
+    pub fn load(work_dir: &Path) -> Result<Option<Self>, Box<dyn std::error::Error>> {
+        let Some(data) = storage::load(work_dir, STATE_FILE)? else {
             log::info!("No previous state found");
             return Ok(None);
         };
@@ -69,11 +70,11 @@ impl State {
         Ok(Some(state))
     }
 
-    pub fn compute() -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn compute(config: &Config) -> Result<Self, Box<dyn std::error::Error>> {
         let mut tables: HashMap<String, Table> = HashMap::new();
 
-        for (name, table_config) in &config::Config::get()?.tables {
-            let table = Table::load(name, table_config)?;
+        for (name, table_config) in &config.tables {
+            let table = Table::load(&config.work_dir, name, table_config)?;
             tables.insert(name.clone(), table);
         }
 
@@ -83,11 +84,11 @@ impl State {
         Ok(state)
     }
 
-    pub fn save(&self) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn save(&self, work_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
         let proto_state = crate::proto::state::State::from(self.clone());
         let mut buf = Vec::new();
         proto_state.encode(&mut buf)?;
-        storage::save(STATE_FILE, &buf)?;
+        storage::save(work_dir, STATE_FILE, &buf)?;
         log::info!(
             "Updated previous state to current state with {} tables",
             self.tables.len()

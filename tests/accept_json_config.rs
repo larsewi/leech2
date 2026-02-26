@@ -29,16 +29,16 @@ fn test_json_config_file() {
     );
 
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
-    Config::init(work_dir).unwrap();
+    let config = Config::load(work_dir).unwrap();
 
-    let hash = Block::create().unwrap();
+    let hash = Block::create(&config).unwrap();
 
-    let patch = Patch::create(GENESIS_HASH).unwrap();
+    let patch = Patch::create(&config, GENESIS_HASH).unwrap();
     assert_eq!(patch.num_blocks, 1);
     assert_eq!(patch.head_hash, hash);
 
-    let sql = sql::patch_to_sql(&patch).unwrap().unwrap();
+    let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
     assert_eq!(common::count_sql(&sql, "INSERT INTO"), 2);
 
-    common::assert_wire_roundtrip(&patch);
+    common::assert_wire_roundtrip(&config, &patch);
 }

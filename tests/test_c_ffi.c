@@ -14,39 +14,44 @@ int main(int argc, char *argv[]) {
   }
   const char *const work_dir = argv[1];
 
-  int ret = lch_init(work_dir);
-  if (ret != 0) {
+  lch_config_t *config = lch_init(work_dir);
+  if (config == NULL) {
     fprintf(stderr, "lch_init failed\n");
     return EXIT_FAILURE;
   }
 
-  ret = lch_block_create();
+  int ret = lch_block_create(config);
   if (ret != 0) {
     fprintf(stderr, "lch_block_create failed\n");
+    lch_deinit(config);
     return EXIT_FAILURE;
   }
 
   uint8_t *buf = NULL;
   size_t len = 0;
-  ret = lch_patch_create(GENESIS_HASH, &buf, &len);
+  ret = lch_patch_create(config, GENESIS_HASH, &buf, &len);
   if (ret != 0) {
     fprintf(stderr, "lch_patch_create failed\n");
+    lch_deinit(config);
     return EXIT_FAILURE;
   }
 
   char *sql = NULL;
-  ret = lch_patch_to_sql(buf, len, &sql);
+  ret = lch_patch_to_sql(config, buf, len, &sql);
   if (ret != 0) {
     fprintf(stderr, "lch_patch_to_sql failed\n");
-    lch_patch_applied(buf, len, 0);
+    lch_patch_applied(config, buf, len, 0);
+    lch_deinit(config);
     return EXIT_FAILURE;
   }
 
-  lch_patch_applied(buf, len, 1);
+  lch_patch_applied(config, buf, len, 1);
 
   if (sql != NULL) {
     lch_free_sql(sql);
   }
+
+  lch_deinit(config);
 
   return EXIT_SUCCESS;
 }

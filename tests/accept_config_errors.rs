@@ -6,7 +6,7 @@ use leech2::config::Config;
 fn test_config_validation_errors() {
     // --- Missing config file ---
     let tmp = tempfile::tempdir().unwrap();
-    let result = Config::init(tmp.path());
+    let result = Config::load(tmp.path());
     assert!(result.is_err());
     assert!(
         result.unwrap_err().contains("no config file found"),
@@ -27,7 +27,7 @@ fields = [
 ]
 "#,
     );
-    let result = Config::init(tmp.path());
+    let result = Config::load(tmp.path());
     assert!(result.is_err());
     assert!(
         result.unwrap_err().contains("primary-key"),
@@ -48,7 +48,7 @@ fields = [
 ]
 "#,
     );
-    let result = Config::init(tmp.path());
+    let result = Config::load(tmp.path());
     assert!(result.is_err());
     assert!(
         result.unwrap_err().contains("duplicate field name"),
@@ -58,7 +58,7 @@ fields = [
     // --- Invalid TOML syntax ---
     let tmp = tempfile::tempdir().unwrap();
     common::write_config(tmp.path(), "config.toml", "this is not valid toml [[[");
-    let result = Config::init(tmp.path());
+    let result = Config::load(tmp.path());
     assert!(result.is_err());
     assert!(
         result.unwrap_err().contains("failed to parse config"),
@@ -68,7 +68,7 @@ fields = [
     // --- Invalid JSON syntax ---
     let tmp = tempfile::tempdir().unwrap();
     common::write_config(tmp.path(), "config.json", "{not valid json}");
-    let result = Config::init(tmp.path());
+    let result = Config::load(tmp.path());
     assert!(result.is_err());
     assert!(
         result.unwrap_err().contains("failed to parse config"),

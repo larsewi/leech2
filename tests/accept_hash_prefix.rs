@@ -24,24 +24,24 @@ fields = [
     );
 
     common::write_csv(work_dir, "users.csv", "1,Alice\n");
-    Config::init(work_dir).unwrap();
-    let hash1 = Block::create().unwrap();
+    let config = Config::load(work_dir).unwrap();
+    let hash1 = Block::create(&config).unwrap();
 
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
-    let hash2 = Block::create().unwrap();
+    let hash2 = Block::create(&config).unwrap();
 
     // Use a short prefix of hash1 (first 8 chars)
     let prefix = &hash1[..8];
-    let patch = Patch::create(prefix).unwrap();
+    let patch = Patch::create(&config, prefix).unwrap();
     assert_eq!(patch.num_blocks, 1);
     assert_eq!(patch.head_hash, hash2);
 
-    let sql = sql::patch_to_sql(&patch).unwrap().unwrap();
+    let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
     assert!(sql.contains(r#"INSERT INTO "users" ("id", "name") VALUES (2, 'Bob');"#));
 
     // Invalid prefix should error
-    let result = Patch::create("deadbeefdeadbeef");
+    let result = Patch::create(&config, "deadbeefdeadbeef");
     assert!(result.is_err(), "unknown hash prefix should return error");
 
-    common::assert_wire_roundtrip(&patch);
+    common::assert_wire_roundtrip(&config, &patch);
 }

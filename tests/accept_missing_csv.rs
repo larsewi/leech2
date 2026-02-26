@@ -23,9 +23,9 @@ fields = [
     );
     // Deliberately NOT creating users.csv
 
-    Config::init(work_dir).unwrap();
+    let config = Config::load(work_dir).unwrap();
 
-    let result = Block::create();
+    let result = Block::create(&config);
     assert!(
         result.is_err(),
         "block creation should fail with missing CSV"

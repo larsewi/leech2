@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime};
 
-use crate::config;
+use crate::config::Config;
 use crate::proto::patch::Patch;
 use crate::proto::patch::patch::Payload;
 
@@ -50,8 +50,7 @@ struct TableSchema {
 }
 
 impl TableSchema {
-    fn resolve(table_name: &str) -> Result<Self, Box<dyn std::error::Error>> {
-        let config = config::Config::get()?;
+    fn resolve(config: &Config, table_name: &str) -> Result<Self, Box<dyn std::error::Error>> {
         let tc = config
             .tables
             .get(table_name)
@@ -209,10 +208,11 @@ fn format_row(
 
 /// Generate SQL statements for a delta (DELETE/INSERT/UPDATE).
 fn delta_to_sql(
+    config: &Config,
     delta: &crate::proto::delta::Delta,
     out: &mut String,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let schema = TableSchema::resolve(&delta.name)?;
+    let schema = TableSchema::resolve(config, &delta.name)?;
     let table = quote_ident(&schema.table_name);
 
     // DELETEs
@@ -294,11 +294,12 @@ fn delta_to_sql(
 
 /// Generate SQL statements for a full state (TRUNCATE + INSERT per table).
 fn state_to_sql(
+    config: &Config,
     state: &crate::proto::state::State,
     out: &mut String,
 ) -> Result<(), Box<dyn std::error::Error>> {
     for (table_name, table) in &state.tables {
-        let schema = TableSchema::resolve(table_name)?;
+        let schema = TableSchema::resolve(config, table_name)?;
         let quoted_table = quote_ident(table_name);
 
         out.push_str(&format!("TRUNCATE {};\n", quoted_table));
@@ -329,7 +330,10 @@ fn state_to_sql(
 /// Convert a decoded patch to SQL statements.
 ///
 /// Returns a SQL string wrapped in BEGIN/COMMIT.
-pub fn patch_to_sql(patch: &Patch) -> Result<Option<String>, Box<dyn std::error::Error>> {
+pub fn patch_to_sql(
+    config: &Config,
+    patch: &Patch,
+) -> Result<Option<String>, Box<dyn std::error::Error>> {
     log::info!("Converting patch to SQL: {}", patch);
 
     match &patch.payload {
@@ -337,7 +341,7 @@ pub fn patch_to_sql(patch: &Patch) -> Result<Option<String>, Box<dyn std::error:
             log::info!("Converting {} deltas to SQL", deltas.items.len());
             let mut sql = String::from("BEGIN;\n");
             for delta in &deltas.items {
-                delta_to_sql(delta, &mut sql)?;
+                delta_to_sql(config, delta, &mut sql)?;
             }
             sql.push_str("COMMIT;\n");
             Ok(Some(sql))
@@ -348,7 +352,7 @@ pub fn patch_to_sql(patch: &Patch) -> Result<Option<String>, Box<dyn std::error:
                 state.tables.len()
             );
             let mut sql = String::from("BEGIN;\n");
-            state_to_sql(state, &mut sql)?;
+            state_to_sql(config, state, &mut sql)?;
             sql.push_str("COMMIT;\n");
             Ok(Some(sql))
         }

@@ -3,6 +3,7 @@
 use std::collections::HashSet;
 use std::path::Path;
 
+use leech2::config::Config;
 use leech2::patch::Patch;
 use leech2::sql;
 use leech2::wire;
@@ -53,14 +54,14 @@ pub fn count_sql(sql: &str, keyword: &str) -> usize {
 
 /// Assert that a patch survives wire encoding/decoding (protobuf + optional
 /// zstd compression) and produces identical SQL output.
-pub fn assert_wire_roundtrip(patch: &Patch) {
-    let encoded = wire::encode_patch(patch).unwrap();
+pub fn assert_wire_roundtrip(config: &Config, patch: &Patch) {
+    let encoded = wire::encode_patch(config, patch).unwrap();
     let decoded = wire::decode_patch(&encoded).unwrap();
 
     assert_eq!(patch.head_hash, decoded.head_hash);
     assert_eq!(patch.num_blocks, decoded.num_blocks);
 
-    let sql_before = sql::patch_to_sql(patch).unwrap();
-    let sql_after = sql::patch_to_sql(&decoded).unwrap();
+    let sql_before = sql::patch_to_sql(config, patch).unwrap();
+    let sql_after = sql::patch_to_sql(config, &decoded).unwrap();
     assert_eq!(sql_before, sql_after, "SQL mismatch after wire roundtrip");
 }

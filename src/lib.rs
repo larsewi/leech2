@@ -20,36 +20,59 @@ pub mod wire;
 
 /// # Safety
 /// `work_dir` must be a valid, non-null, null-terminated C string.
+/// Returns a config handle on success, or NULL on failure.
+/// The caller must free the returned handle with `lch_deinit`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn lch_init(work_dir: *const c_char) -> i32 {
+pub unsafe extern "C" fn lch_init(work_dir: *const c_char) -> *mut config::Config {
     let _ = env_logger::try_init();
 
     if work_dir.is_null() {
         log::error!("lch_init(): Bad argument: work directory cannot be NULL");
-        return -1;
+        return std::ptr::null_mut();
     }
 
     let path = match unsafe { CStr::from_ptr(work_dir) }.to_str() {
         Ok(path) => PathBuf::from(path),
         Err(e) => {
             log::error!("lch_init(): Bad argument: {e}");
-            return -1;
+            return std::ptr::null_mut();
         }
     };
 
     log::debug!("lch_init(work_dir={})", path.display());
 
-    if let Err(e) = config::Config::init(&path) {
-        log::error!("lch_init(): {}", e);
+    match config::Config::load(&path) {
+        Ok(cfg) => Box::into_raw(Box::new(cfg)),
+        Err(e) => {
+            log::error!("lch_init(): {}", e);
+            std::ptr::null_mut()
+        }
+    }
+}
+
+/// # Safety
+/// `config` must be a valid pointer returned by `lch_init`, or NULL (no-op).
+/// After calling this function, the config pointer is invalid and must not be used.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn lch_deinit(config: *mut config::Config) {
+    if !config.is_null() {
+        unsafe {
+            drop(Box::from_raw(config));
+        }
+    }
+}
+
+/// # Safety
+/// `config` must be a valid, non-null pointer returned by `lch_init`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn lch_block_create(config: *const config::Config) -> i32 {
+    if config.is_null() {
+        log::error!("lch_block_create(): Bad argument: config cannot be NULL");
         return -1;
     }
 
-    0
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn lch_block_create() -> i32 {
-    match block::Block::create() {
+    let config = unsafe { &*config };
+    match block::Block::create(config) {
         Ok(_) => 0,
         Err(e) => {
             log::error!("lch_block_create(): {}", e);
@@ -59,14 +82,21 @@ pub extern "C" fn lch_block_create() -> i32 {
 }
 
 /// # Safety
+/// `config` must be a valid, non-null pointer returned by `lch_init`.
 /// `last_known` must be a valid, non-null, null-terminated C string.
 /// `out` and `len` must be valid, non-null pointers.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn lch_patch_create(
+    config: *const config::Config,
     last_known: *const c_char,
     out: *mut *mut u8,
     len: *mut usize,
 ) -> i32 {
+    if config.is_null() {
+        log::error!("lch_patch_create(): Bad argument: config cannot be NULL");
+        return -1;
+    }
+
     if last_known.is_null() {
         log::error!("lch_patch_create(): Bad argument: block hash cannot be NULL");
         return -1;
@@ -77,6 +107,8 @@ pub unsafe extern "C" fn lch_patch_create(
         return -1;
     }
 
+    let config = unsafe { &*config };
+
     let hash = match unsafe { CStr::from_ptr(last_known) }.to_str() {
         Ok(hash) => hash,
         Err(e) => {
@@ -85,7 +117,7 @@ pub unsafe extern "C" fn lch_patch_create(
         }
     };
 
-    let p = match patch::Patch::create(hash) {
+    let p = match patch::Patch::create(config, hash) {
         Ok(p) => p,
         Err(e) => {
             log::error!("lch_patch_create(): {}", e);
@@ -93,7 +125,7 @@ pub unsafe extern "C" fn lch_patch_create(
         }
     };
 
-    let buf = match wire::encode_patch(&p) {
+    let buf = match wire::encode_patch(config, &p) {
         Ok(buf) => buf,
         Err(e) => {
             log::error!("lch_patch_create(): Failed to encode patch: {}", e);
@@ -114,14 +146,21 @@ pub unsafe extern "C" fn lch_patch_create(
 }
 
 /// # Safety
+/// `config` must be a valid, non-null pointer returned by `lch_init`.
 /// `buf` must be a valid, non-null pointer to `len` bytes.
 /// `out` must be a valid, non-null pointer.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn lch_patch_to_sql(
+    config: *const config::Config,
     buf: *const u8,
     len: usize,
     out: *mut *mut c_char,
 ) -> i32 {
+    if config.is_null() {
+        log::error!("lch_patch_to_sql(): Bad argument: config cannot be NULL");
+        return -1;
+    }
+
     if buf.is_null() {
         log::error!("lch_patch_to_sql(): Bad argument: buf cannot be NULL");
         return -1;
@@ -132,6 +171,7 @@ pub unsafe extern "C" fn lch_patch_to_sql(
         return -1;
     }
 
+    let config = unsafe { &*config };
     let data = unsafe { std::slice::from_raw_parts(buf, len) };
 
     let patch = match wire::decode_patch(data) {
@@ -142,7 +182,7 @@ pub unsafe extern "C" fn lch_patch_to_sql(
         }
     };
 
-    let sql = match sql::patch_to_sql(&patch) {
+    let sql = match sql::patch_to_sql(config, &patch) {
         Ok(Some(s)) => s,
         Ok(None) => {
             unsafe { *out = std::ptr::null_mut() };
@@ -181,10 +221,29 @@ pub unsafe extern "C" fn lch_free_sql(ptr: *mut c_char) {
 }
 
 /// # Safety
+/// `config` must be a valid, non-null pointer returned by `lch_init`.
 /// `buf` must be a valid pointer to `len` bytes, previously returned by `lch_patch_create`.
 /// The buffer is always freed regardless of the `reported` flag or any errors.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn lch_patch_applied(buf: *mut u8, len: usize, reported: i32) -> i32 {
+pub unsafe extern "C" fn lch_patch_applied(
+    config: *const config::Config,
+    buf: *mut u8,
+    len: usize,
+    reported: i32,
+) -> i32 {
+    if config.is_null() {
+        log::error!("lch_patch_applied(): Bad argument: config cannot be NULL");
+        // Still free the buffer even on argument errors
+        if !buf.is_null() {
+            unsafe {
+                drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(buf, len)));
+            }
+        }
+        return -1;
+    }
+
+    let config = unsafe { &*config };
+
     // Reconstruct the Box<[u8]> to reclaim the allocation. Converting to Vec
     // reuses the same allocation without copying, and the Vec is dropped (freed)
     // when this function returns — regardless of early returns below.
@@ -203,7 +262,7 @@ pub unsafe extern "C" fn lch_patch_applied(buf: *mut u8, len: usize, reported: i
             }
         };
 
-        if let Err(e) = self::reported::save(&patch.head_hash) {
+        if let Err(e) = self::reported::save(&config.work_dir, &patch.head_hash) {
             log::error!("lch_patch_applied(): Failed to save REPORTED: {}", e);
             return -1; // data is dropped here, freeing the buffer
         }

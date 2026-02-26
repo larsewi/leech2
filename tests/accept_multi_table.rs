@@ -34,19 +34,19 @@ fields = [
     // Block 1: initial data for both tables
     common::write_csv(work_dir, "users.csv", "1,Alice\n");
     common::write_csv(work_dir, "products.csv", "ABC,100\n");
-    Config::init(work_dir).unwrap();
-    let hash1 = Block::create().unwrap();
+    let config = Config::load(work_dir).unwrap();
+    let hash1 = Block::create(&config).unwrap();
 
     // Block 2: insert user, update product price
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
     common::write_csv(work_dir, "products.csv", "ABC,150\n");
-    let _hash2 = Block::create().unwrap();
+    let _hash2 = Block::create(&config).unwrap();
 
     // Patch from hash1: should have changes for both tables
-    let patch = Patch::create(&hash1).unwrap();
+    let patch = Patch::create(&config, &hash1).unwrap();
     assert_eq!(patch.num_blocks, 1);
 
-    let sql = sql::patch_to_sql(&patch).unwrap().unwrap();
+    let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
 
     // Users table: 1 insert (Bob)
     assert!(sql.contains(r#"INSERT INTO "users" ("id", "name") VALUES (2, 'Bob');"#));
@@ -55,13 +55,13 @@ fields = [
     assert!(sql.contains(r#"UPDATE "products" SET "price" = 150 WHERE "sku" = 'ABC';"#));
 
     // Patch from genesis: should have inserts for both tables
-    let patch_genesis = Patch::create(GENESIS_HASH).unwrap();
-    let sql_genesis = sql::patch_to_sql(&patch_genesis).unwrap().unwrap();
+    let patch_genesis = Patch::create(&config, GENESIS_HASH).unwrap();
+    let sql_genesis = sql::patch_to_sql(&config, &patch_genesis).unwrap().unwrap();
 
     // Should reference both tables
     assert!(sql_genesis.contains(r#""users""#));
     assert!(sql_genesis.contains(r#""products""#));
 
-    common::assert_wire_roundtrip(&patch);
-    common::assert_wire_roundtrip(&patch_genesis);
+    common::assert_wire_roundtrip(&config, &patch);
+    common::assert_wire_roundtrip(&config, &patch_genesis);
 }

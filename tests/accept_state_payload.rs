@@ -29,21 +29,21 @@ fields = [
         csv.push_str(&format!("{},item{}\n", i, i));
     }
     common::write_csv(work_dir, "items.csv", &csv);
-    Config::init(work_dir).unwrap();
-    let hash1 = Block::create().unwrap();
+    let config = Config::load(work_dir).unwrap();
+    let hash1 = Block::create(&config).unwrap();
 
     // Block 2: keep only 2 rows (delete 18)
     common::write_csv(work_dir, "items.csv", "1,item1\n2,item2\n");
-    let _hash2 = Block::create().unwrap();
+    let _hash2 = Block::create(&config).unwrap();
 
     // Patch from hash1: delta has 18 deletes, state has 2 rows.
     // State should be smaller -> SQL uses TRUNCATE + INSERT pattern.
     // If deltas win instead, SQL uses DELETE FROM pattern.
-    let patch = Patch::create(&hash1).unwrap();
+    let patch = Patch::create(&config, &hash1).unwrap();
     assert_eq!(patch.num_blocks, 1);
     assert!(patch.payload.is_some(), "expected a payload");
 
-    let sql = sql::patch_to_sql(&patch).unwrap().unwrap();
+    let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
 
     if sql.contains("TRUNCATE") {
         // State payload: TRUNCATE + 2 INSERTs
@@ -55,5 +55,5 @@ fields = [
         assert_eq!(common::count_sql(&sql, "INSERT INTO"), 0);
     }
 
-    common::assert_wire_roundtrip(&patch);
+    common::assert_wire_roundtrip(&config, &patch);
 }

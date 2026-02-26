@@ -4,6 +4,7 @@ use std::process::{Command as ProcessCommand, ExitCode, Stdio};
 
 use clap::{Parser, Subcommand};
 use leech2::block::Block;
+use leech2::config::Config;
 use leech2::utils::{GENESIS_HASH, format_timestamp};
 
 const LEECH2_DIR: &str = ".leech2";
@@ -78,24 +79,25 @@ fn work_dir(cli: &Cli) -> PathBuf {
 }
 
 fn resolve_ref(
+    config: &Config,
     reference: Option<&str>,
     n: Option<u32>,
 ) -> Result<String, Box<dyn std::error::Error>> {
     match (reference, n) {
         (Some(_), Some(_)) => Err("cannot specify both a hash prefix and -n".into()),
-        (Some(r), None) => leech2::patch::resolve_hash_prefix(r),
-        (None, Some(n)) => walk_back(n),
-        (None, None) => leech2::head::load(),
+        (Some(r), None) => leech2::patch::resolve_hash_prefix(&config.work_dir, r),
+        (None, Some(n)) => walk_back(&config.work_dir, n),
+        (None, None) => leech2::head::load(&config.work_dir),
     }
 }
 
-fn walk_back(n: u32) -> Result<String, Box<dyn std::error::Error>> {
-    let mut hash = leech2::head::load()?;
+fn walk_back(work_dir: &std::path::Path, n: u32) -> Result<String, Box<dyn std::error::Error>> {
+    let mut hash = leech2::head::load(work_dir)?;
     for i in 0..n {
         if hash == GENESIS_HASH {
             return Err(format!("only {} block(s) in chain, cannot go back {}", i, n).into());
         }
-        let block = Block::load(&hash)?;
+        let block = Block::load(work_dir, &hash)?;
         hash = block.parent;
     }
     Ok(hash)
@@ -163,33 +165,34 @@ type = "TEXT"
     Ok(())
 }
 
-fn cmd_block_create() -> Result<(), Box<dyn std::error::Error>> {
-    let hash = Block::create()?;
+fn cmd_block_create(config: &Config) -> Result<(), Box<dyn std::error::Error>> {
+    let hash = Block::create(config)?;
     println!("{}", hash);
     Ok(())
 }
 
 fn cmd_patch_create(
+    config: &Config,
     reference: Option<&str>,
     n: Option<u32>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let hash = match (reference, n) {
-        (None, None) => {
-            leech2::reported::load()?.unwrap_or_else(|| leech2::utils::GENESIS_HASH.to_string())
-        }
-        _ => resolve_ref(reference, n)?,
+        (None, None) => leech2::reported::load(&config.work_dir)?
+            .unwrap_or_else(|| leech2::utils::GENESIS_HASH.to_string()),
+        _ => resolve_ref(config, reference, n)?,
     };
-    let patch = leech2::patch::Patch::create(&hash)?;
+    let patch = leech2::patch::Patch::create(config, &hash)?;
 
-    let buf = leech2::wire::encode_patch(&patch)?;
-    leech2::storage::save(PATCH_FILE, &buf)?;
+    let buf = leech2::wire::encode_patch(config, &patch)?;
+    leech2::storage::save(&config.work_dir, PATCH_FILE, &buf)?;
 
     println!("{}", patch);
     Ok(())
 }
 
-fn cmd_log() -> Result<String, Box<dyn std::error::Error>> {
-    let mut hash = leech2::head::load()?;
+fn cmd_log(config: &Config) -> Result<String, Box<dyn std::error::Error>> {
+    let work_dir = &config.work_dir;
+    let mut hash = leech2::head::load(work_dir)?;
 
     if hash == GENESIS_HASH {
         return Err("no blocks exist yet".into());
@@ -197,7 +200,7 @@ fn cmd_log() -> Result<String, Box<dyn std::error::Error>> {
 
     let mut output = String::new();
     loop {
-        let block = Block::load(&hash)?;
+        let block = Block::load(work_dir, &hash)?;
 
         let timestamp = block
             .created
@@ -230,42 +233,43 @@ fn cmd_log() -> Result<String, Box<dyn std::error::Error>> {
 }
 
 fn cmd_block_show(
+    config: &Config,
     reference: Option<&str>,
     n: Option<u32>,
 ) -> Result<String, Box<dyn std::error::Error>> {
-    let hash = resolve_ref(reference, n)?;
+    let hash = resolve_ref(config, reference, n)?;
     if hash == GENESIS_HASH {
         return Err("cannot show the genesis block".into());
     }
-    let block = Block::load(&hash)?;
+    let block = Block::load(&config.work_dir, &hash)?;
     Ok(format!("block {}\n{}", hash, block))
 }
 
-fn cmd_patch_show() -> Result<String, Box<dyn std::error::Error>> {
-    let data = leech2::storage::load(PATCH_FILE)?
+fn cmd_patch_show(config: &Config) -> Result<String, Box<dyn std::error::Error>> {
+    let data = leech2::storage::load(&config.work_dir, PATCH_FILE)?
         .ok_or("no patch file found, run `lch patch create` first")?;
 
     let patch = leech2::wire::decode_patch(&data)?;
     Ok(format!("{}", patch))
 }
 
-fn cmd_patch_sql() -> Result<String, Box<dyn std::error::Error>> {
-    let data = leech2::storage::load(PATCH_FILE)?
+fn cmd_patch_sql(config: &Config) -> Result<String, Box<dyn std::error::Error>> {
+    let data = leech2::storage::load(&config.work_dir, PATCH_FILE)?
         .ok_or("no patch file found, run `lch patch create` first")?;
 
     let patch = leech2::wire::decode_patch(&data)?;
-    match leech2::sql::patch_to_sql(&patch)? {
+    match leech2::sql::patch_to_sql(config, &patch)? {
         Some(sql) => Ok(sql),
         None => Ok("-- no changes\n".to_string()),
     }
 }
 
-fn cmd_patch_applied() -> Result<(), Box<dyn std::error::Error>> {
-    let data = leech2::storage::load(PATCH_FILE)?
+fn cmd_patch_applied(config: &Config) -> Result<(), Box<dyn std::error::Error>> {
+    let data = leech2::storage::load(&config.work_dir, PATCH_FILE)?
         .ok_or("no patch file found, run `lch patch create` first")?;
 
     let patch = leech2::wire::decode_patch(&data)?;
-    leech2::reported::save(&patch.head_hash)?;
+    leech2::reported::save(&config.work_dir, &patch.head_hash)?;
 
     println!("{}", patch.head_hash);
     Ok(())
@@ -299,35 +303,35 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         return cmd_init(&work_dir);
     }
 
-    leech2::config::Config::init(&work_dir)?;
+    let config = Config::load(&work_dir)?;
 
     match &cli.command {
         Cmd::Init => unreachable!(),
         Cmd::Block { command } => match command {
-            BlockCmd::Create => cmd_block_create()?,
+            BlockCmd::Create => cmd_block_create(&config)?,
             BlockCmd::Show { reference, n } => {
-                let output = cmd_block_show(reference.as_deref(), *n)?;
+                let output = cmd_block_show(&config, reference.as_deref(), *n)?;
                 print_with_pager(&output);
             }
         },
         Cmd::Patch { command } => match command {
             PatchCmd::Create { reference, n } => {
-                cmd_patch_create(reference.as_deref(), *n)?;
+                cmd_patch_create(&config, reference.as_deref(), *n)?;
             }
             PatchCmd::Show => {
-                let output = cmd_patch_show()?;
+                let output = cmd_patch_show(&config)?;
                 print_with_pager(&output);
             }
             PatchCmd::Sql => {
-                let output = cmd_patch_sql()?;
+                let output = cmd_patch_sql(&config)?;
                 print_with_pager(&output);
             }
             PatchCmd::Applied => {
-                cmd_patch_applied()?;
+                cmd_patch_applied(&config)?;
             }
         },
         Cmd::Log => {
-            let output = cmd_log()?;
+            let output = cmd_log(&config)?;
             print_with_pager(&output);
         }
     }

@@ -26,28 +26,28 @@ fields = [
     );
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
 
-    Config::init(work_dir).unwrap();
+    let config = Config::load(work_dir).unwrap();
 
     // Before any blocks: HEAD is genesis, patch should be empty
-    assert_eq!(head::load().unwrap(), GENESIS_HASH);
-    let patch_empty = Patch::create(GENESIS_HASH).unwrap();
+    assert_eq!(head::load(work_dir).unwrap(), GENESIS_HASH);
+    let patch_empty = Patch::create(&config, GENESIS_HASH).unwrap();
     assert_eq!(patch_empty.num_blocks, 0);
     assert!(patch_empty.payload.is_none());
-    assert_eq!(sql::patch_to_sql(&patch_empty).unwrap(), None);
+    assert_eq!(sql::patch_to_sql(&config, &patch_empty).unwrap(), None);
 
     // Create genesis block
-    let hash = Block::create().unwrap();
+    let hash = Block::create(&config).unwrap();
     assert_ne!(hash, GENESIS_HASH);
-    assert_eq!(head::load().unwrap(), hash);
+    assert_eq!(head::load(work_dir).unwrap(), hash);
 
     // Create patch from genesis
-    let patch = Patch::create(GENESIS_HASH).unwrap();
+    let patch = Patch::create(&config, GENESIS_HASH).unwrap();
     assert_eq!(patch.num_blocks, 1);
     assert_eq!(patch.head_hash, hash);
     assert!(patch.head_created.is_some());
 
     // Verify SQL output
-    let sql = sql::patch_to_sql(&patch).unwrap().unwrap();
+    let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
     assert!(sql.starts_with("BEGIN;\n"));
     assert!(sql.ends_with("COMMIT;\n"));
 
@@ -62,11 +62,11 @@ fields = [
     );
 
     // Wire roundtrip
-    common::assert_wire_roundtrip(&patch);
+    common::assert_wire_roundtrip(&config, &patch);
 
     // No-op patch: last_known == HEAD, should return empty payload
-    let patch_noop = Patch::create(&hash).unwrap();
+    let patch_noop = Patch::create(&config, &hash).unwrap();
     assert_eq!(patch_noop.num_blocks, 0);
     assert!(patch_noop.payload.is_none());
-    assert_eq!(sql::patch_to_sql(&patch_noop).unwrap(), None);
+    assert_eq!(sql::patch_to_sql(&config, &patch_noop).unwrap(), None);
 }

@@ -1,17 +1,16 @@
 use prost::Message;
 
-use crate::config;
+use crate::config::Config;
 use crate::proto::patch::Patch;
 
 /// Zstd frame magic number (little-endian).
 const ZSTD_MAGIC: [u8; 4] = [0x28, 0xB5, 0x2F, 0xFD];
 
 /// Encode a Patch to protobuf, optionally compressing with zstd.
-pub fn encode_patch(patch: &Patch) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+pub fn encode_patch(config: &Config, patch: &Patch) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     let mut buf = Vec::new();
     patch.encode(&mut buf)?;
 
-    let config = config::Config::get()?;
     if !config.compression.enable {
         log::info!(
             "Patch encoded: {} bytes protobuf (compression disabled)",

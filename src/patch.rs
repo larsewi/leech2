@@ -1,11 +1,13 @@
 pub use crate::proto::patch::Patch;
 
 use std::fmt;
+use std::path::Path;
 
 use prost::Message;
 use prost_types::Timestamp;
 
 use crate::block::Block;
+use crate::config::Config;
 use crate::head;
 use crate::proto::patch::Deltas;
 use crate::proto::patch::patch::Payload;
@@ -43,10 +45,10 @@ impl fmt::Display for Patch {
     }
 }
 
-pub fn resolve_hash_prefix(prefix: &str) -> Result<String, Box<dyn std::error::Error>> {
-    let config = crate::config::Config::get()?;
-    let work_dir = &config.work_dir;
-
+pub fn resolve_hash_prefix(
+    work_dir: &Path,
+    prefix: &str,
+) -> Result<String, Box<dyn std::error::Error>> {
     let mut matches: Vec<String> = Vec::new();
 
     if GENESIS_HASH.starts_with(prefix) {
@@ -79,6 +81,7 @@ pub fn resolve_hash_prefix(prefix: &str) -> Result<String, Box<dyn std::error::E
 }
 
 fn consolidate(
+    work_dir: &Path,
     head_block: Block,
     last_known_hash: &str,
 ) -> Result<(u32, Vec<crate::proto::delta::Delta>), Box<dyn std::error::Error>> {
@@ -87,7 +90,7 @@ fn consolidate(
     let mut num_blocks: u32 = 1;
 
     while current_hash != GENESIS_HASH && !current_hash.starts_with(last_known_hash) {
-        let block = Block::load(&current_hash)?;
+        let block = Block::load(work_dir, &current_hash)?;
         let parent_hash = block.parent.clone();
         current_block = block.merge(current_block)?;
         num_blocks += 1;
@@ -106,17 +109,18 @@ fn consolidate(
 }
 
 fn try_consolidate(
+    work_dir: &Path,
     head_hash: &str,
     last_known_hash: &str,
 ) -> Result<ConsolidateResult, Box<dyn std::error::Error>> {
-    let block = Block::load(head_hash)?;
+    let block = Block::load(work_dir, head_hash)?;
     let head_created = block.created;
 
     if head_hash.starts_with(last_known_hash) {
         return Ok((head_created, 0, None));
     }
 
-    let (num_blocks, mut deltas) = consolidate(block, last_known_hash)?;
+    let (num_blocks, mut deltas) = consolidate(work_dir, block, last_known_hash)?;
 
     // Strip data the receiver doesn't need — patches are fully consolidated
     // so the receiver only needs keys + changed values.
@@ -147,7 +151,7 @@ fn try_consolidate(
     }
 
     let deltas_payload = Deltas { items: deltas };
-    let state = state::State::load()?;
+    let state = state::State::load(work_dir)?;
     let proto_state = state.map(crate::proto::state::State::from);
 
     let payload = match proto_state {
@@ -162,10 +166,14 @@ fn try_consolidate(
 }
 
 impl Patch {
-    pub fn create(last_known_hash: &str) -> Result<Patch, Box<dyn std::error::Error>> {
-        resolve_hash_prefix(last_known_hash)?;
+    pub fn create(
+        config: &Config,
+        last_known_hash: &str,
+    ) -> Result<Patch, Box<dyn std::error::Error>> {
+        let work_dir = &config.work_dir;
+        resolve_hash_prefix(work_dir, last_known_hash)?;
 
-        let head_hash = head::load()?;
+        let head_hash = head::load(work_dir)?;
 
         if head_hash == GENESIS_HASH {
             let patch = Patch {
@@ -178,20 +186,20 @@ impl Patch {
             return Ok(patch);
         }
 
-        let (head_created, num_blocks, payload) = match try_consolidate(&head_hash, last_known_hash)
-        {
-            Ok((head_created, num_blocks, payload)) => (head_created, num_blocks, payload),
-            Err(e) => {
-                log::warn!("Consolidation failed, falling back to full state: {}", e);
-                let state = state::State::load()?
-                    .ok_or("Consolidation failed and no STATE file found for fallback")?;
-                (
-                    None,
-                    0,
-                    Some(Payload::State(crate::proto::state::State::from(state))),
-                )
-            }
-        };
+        let (head_created, num_blocks, payload) =
+            match try_consolidate(work_dir, &head_hash, last_known_hash) {
+                Ok((head_created, num_blocks, payload)) => (head_created, num_blocks, payload),
+                Err(e) => {
+                    log::warn!("Consolidation failed, falling back to full state: {}", e);
+                    let state = state::State::load(work_dir)?
+                        .ok_or("Consolidation failed and no STATE file found for fallback")?;
+                    (
+                        None,
+                        0,
+                        Some(Payload::State(crate::proto::state::State::from(state))),
+                    )
+                }
+            };
 
         let patch = Patch {
             head_hash,

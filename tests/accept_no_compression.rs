@@ -32,11 +32,11 @@ fields = [
     );
 
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
-    Config::init(work_dir).unwrap();
-    Block::create().unwrap();
+    let config = Config::load(work_dir).unwrap();
+    Block::create(&config).unwrap();
 
-    let patch = Patch::create(GENESIS_HASH).unwrap();
-    let encoded = wire::encode_patch(&patch).unwrap();
+    let patch = Patch::create(&config, GENESIS_HASH).unwrap();
+    let encoded = wire::encode_patch(&config, &patch).unwrap();
 
     // Encoded bytes should NOT start with zstd magic (compression disabled)
     assert!(
@@ -46,7 +46,7 @@ fields = [
 
     // Decode should still work (auto-detects uncompressed)
     let decoded = wire::decode_patch(&encoded).unwrap();
-    let sql_before = sql::patch_to_sql(&patch).unwrap();
-    let sql_after = sql::patch_to_sql(&decoded).unwrap();
+    let sql_before = sql::patch_to_sql(&config, &patch).unwrap();
+    let sql_after = sql::patch_to_sql(&config, &decoded).unwrap();
     assert_eq!(sql_before, sql_after);
 }

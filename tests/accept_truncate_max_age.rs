@@ -27,15 +27,15 @@ fields = [
     );
 
     common::write_csv(work_dir, "users.csv", "1,Alice\n");
-    Config::init(work_dir).unwrap();
-    let hash1 = Block::create().unwrap();
+    let config = Config::load(work_dir).unwrap();
+    let hash1 = Block::create(&config).unwrap();
 
     // Wait for the first block to become older than 1s
     std::thread::sleep(std::time::Duration::from_secs(2));
 
     // Create second block — truncation should remove hash1 (older than 1s)
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
-    let hash2 = Block::create().unwrap();
+    let hash2 = Block::create(&config).unwrap();
 
     assert!(
         !work_dir.join(&hash1).exists(),
@@ -45,7 +45,7 @@ fields = [
 
     // Create two more blocks quickly — both should be preserved (within 1s window)
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n3,Charlie\n");
-    let hash3 = Block::create().unwrap();
+    let hash3 = Block::create(&config).unwrap();
 
     assert!(
         work_dir.join(&hash2).exists(),

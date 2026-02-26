@@ -18,7 +18,7 @@ block chain for change history.
 src/
   lib.rs        C FFI entry points
   main.rs       CLI (lch binary)
-  config.rs     TOML/JSON config parsing, global OnceLock
+  config.rs     TOML/JSON config parsing
   table.rs      CSV loading, in-memory table (HashMap<pk, values>)
   state.rs      Snapshot of all tables, protobuf persistence
   entry.rs      Entry type (primary key + value) Display impl
@@ -42,7 +42,7 @@ tests/          Acceptance tests
 
 ### Core data model
 
-- **Config** (`src/config.rs`) -- TOML/JSON config defining tables, their CSV source files, field names, and primary keys. Stored in a global `OnceLock`.
+- **Config** (`src/config.rs`) -- TOML/JSON config defining tables, their CSV source files, field names, and primary keys. Returned by `Config::load()` and passed by reference to functions that need it.
 - **Table** (`src/table.rs`) -- In-memory representation of a CSV table. Records stored as `HashMap<Vec<String>, Vec<String>>` (primary key -> subsidiary columns). Fields are reordered so primary key columns come first.
 - **State** (`src/state.rs`) -- Snapshot of all tables at a point in time. Serialized to protobuf and persisted as `STATE` file.
 - **Delta** (`src/delta.rs`) -- Diff between two states for a single table: inserts, deletes, and updates. Contains the merge logic implementing 15 rules (see [DELTA_MERGING_RULES.md](DELTA_MERGING_RULES.md)).
@@ -54,7 +54,7 @@ tests/          Acceptance tests
 ### Work directory layout
 
 All leech2 state lives in a single directory (`.leech2/` when using the CLI,
-or any path passed to `lch_init`). It contains:
+or any path passed to `lch_init()`). It contains:
 
 | File                           | Description                                                          |
 |--------------------------------|----------------------------------------------------------------------|

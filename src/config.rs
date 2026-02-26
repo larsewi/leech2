@@ -2,7 +2,6 @@ use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
 use std::time::Duration;
 
 enum ConfigFormat {
@@ -94,16 +93,8 @@ impl TableConfig {
     }
 }
 
-static CONFIG: OnceLock<Config> = OnceLock::new();
-
 impl Config {
-    pub fn get() -> Result<&'static Config, String> {
-        CONFIG
-            .get()
-            .ok_or_else(|| "config not initialized".to_string())
-    }
-
-    pub fn init(work_dir: &Path) -> Result<(), String> {
+    pub fn load(work_dir: &Path) -> Result<Config, String> {
         let toml_path = work_dir.join("config.toml");
         let json_path = work_dir.join("config.json");
 
@@ -159,9 +150,7 @@ impl Config {
         }
 
         log::info!("Initialized config with {} tables", config.tables.len());
-        CONFIG
-            .set(config)
-            .map_err(|_| "config already initialized".to_string())
+        Ok(config)
     }
 }
 
