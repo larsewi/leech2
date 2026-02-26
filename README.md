@@ -124,27 +124,6 @@ and blocks older than the last reported position (see `lch_patch_applied`).
 - Each table must have at least one field marked `primary-key = true`
 - Field names within a table must be unique
 
-## CLI
-
-```
-lch [-C <dir>] <command>
-
-Commands:
-  init                        Initialize .leech2/ with example config and CSV
-  block create                Snapshot CSVs and create a new block
-  block show [REF|-n N]       Display a block's contents
-  patch create [REF|-n N]     Build a patch from REF (or N blocks back) to HEAD
-  patch show                  Display the last generated patch
-  patch sql                   Convert the last patch to SQL
-  patch applied               Mark the current patch as applied (updates REPORTED)
-  log                         List all blocks from HEAD to genesis
-```
-
-`REF` can be a full SHA-1 hash or an unambiguous prefix. When `patch create`
-is called without `REF` or `-n`, it defaults to the REPORTED hash (or GENESIS
-if no patch has been reported yet). Output is paged through `$PAGER` (defaults
-to `less`).
-
 ## C API
 
 ```c
