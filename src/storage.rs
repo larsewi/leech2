@@ -6,14 +6,14 @@ use fs2::FileExt;
 
 use crate::config;
 
-/// Acquires a lock on a separate `<name>.lock` file for inter-process synchronization.
+/// Acquires a lock on a separate `.<name>.lock` file for inter-process synchronization.
 /// Returns the lock file handle; the lock is released when the handle is dropped.
 fn acquire_lock(
     dir: &Path,
     name: &str,
     exclusive: bool,
 ) -> Result<File, Box<dyn std::error::Error>> {
-    let lock_path = dir.join(format!("{}.lock", name));
+    let lock_path = dir.join(format!(".{}.lock", name));
     let lock_file = File::create(&lock_path)
         .map_err(|e| format!("Failed to open lock file '{}': {}", lock_path.display(), e))?;
     if exclusive {
@@ -79,7 +79,7 @@ pub fn remove(name: &str) -> Result<(), Box<dyn std::error::Error>> {
         .map_err(|e| format!("Failed to remove file '{}': {}", path.display(), e))?;
 
     // Best-effort cleanup of the lock file after removing the data file.
-    let lock_path = work_dir.join(format!("{}.lock", name));
+    let lock_path = work_dir.join(format!(".{}.lock", name));
     // _lock is dropped here first, then we try to clean up
     drop(_lock);
     let _ = fs::remove_file(&lock_path);

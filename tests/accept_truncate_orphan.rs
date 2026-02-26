@@ -29,7 +29,7 @@ fields = [
 
     // Add a fake orphaned 40-hex file and a stale lock file
     let orphan_hash = "aa00000000000000000000000000000000000000";
-    let stale_lock = format!("{}.lock", orphan_hash);
+    let stale_lock = format!(".{}.lock", orphan_hash);
     std::fs::write(work_dir.join(orphan_hash), b"fake").unwrap();
     std::fs::write(work_dir.join(&stale_lock), b"").unwrap();
     assert!(work_dir.join(orphan_hash).exists());
