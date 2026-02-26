@@ -164,59 +164,41 @@ functions accept this handle as their first parameter and return `0` on
 success, `-1` on error. Call `lch_deinit()` to free the handle when done.
 Errors are logged via `env_logger` (set `RUST_LOG=debug` for detailed output).
 
-### Lifecycle
-
-```
- 1. Initialize      lch_init(work_dir)
-                     Parses config, returns an opaque handle.
-
- 2. Create block    lch_block_create(config)
-                     Reads CSVs -> computes new state -> diffs against
-                     previous state -> writes block + STATE + HEAD.
-                     Runs history truncation afterwards.
-
- 3. Create patch    lch_patch_create(config, last_known_hash)
-                     Walks the chain from HEAD to the given hash,
-                     merging deltas. Returns the encoded patch.
-
- 4. Generate SQL    lch_patch_to_sql(config, buf, len)
-                     Decodes the patch and produces SQL:
-                     - Delta payload: DELETE + INSERT + UPDATE statements
-                     - State payload: TRUNCATE + INSERT statements
-                     All wrapped in BEGIN/COMMIT.
-
- 5. Report patch    lch_patch_applied(config, buf, len, reported)
-                     Frees the patch buffer. If reported=1, also
-                     updates the REPORTED file so truncation knows
-                     which blocks are safe to remove.
-
- 6. Cleanup         lch_deinit(config)
-                     Frees the config handle.
-```
-
 ### Example
 
 ```c
+/* Parses config, returns an opaque handle */
 lch_config_t *config = lch_init("/path/to/.leech2");
-if (config == NULL) { /* handle error */ }
 
-// ... modify CSVs ...
-
+/* Reads CSVs -> computes new state -> diffs against
+ * previous state -> writes block + STATE + HEAD.
+ * Runs history truncation afterwards. */
 lch_block_create(config);
 
+/* Walks the chain from HEAD to the given hash, merging deltas.
+ * Returns the encoded patch. */
 uint8_t *buf;
 size_t len;
 lch_patch_create(config, "0000000000000000000000000000000000000000", &buf, &len);
 
+/* Decodes the patch and produces SQL:
+ * - Delta payload: DELETE + INSERT + UPDATE statements
+ * - State payload: TRUNCATE + INSERT statements
+ * All wrapped in BEGIN/COMMIT. */
 char *sql;
 lch_patch_to_sql(config, buf, len, &sql);
 printf("%s", sql);
 lch_free_sql(sql);
 
-// Send patch to hub, then free buffer + update REPORTED
+/* Send patch to hub */
 int ok = hub_send(buf, len);
+
+/* Frees the patch buffer. If reported=1, also
+ * updates the REPORTED file so truncation knows
+ * which blocks are safe to remove. */
 lch_patch_applied(config, buf, len, ok);
 
+/* Frees the config handle. */
 lch_deinit(config);
 ```
 
