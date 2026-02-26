@@ -1,15 +1,12 @@
 # TODO
 
-## Lock files should be prefixed with dot to make files hidden
+## Only use pager in CLI if output cannot fit terminal window
 
-## Add a command in CLI for reporting applied patches
+## Add macros for LCH_SUCCESS, LCH_FAILURE in FFI header
+Reason being that we may want more return values in the future.
 
-## Get rid of init function, do init lazily
-Does this mean we can split up multiple acceptance tests in a single file?
-
-## Investigate how to package leech2
-
-## Create a SVG with logo for use in README
+## lch_patch_create FFI function should accept NULL as hash
+This should cause it to use REPORTED or fallback to genisis
 
 ## Add host identifier to SQL query to show which host the data comes from
 
@@ -17,3 +14,5 @@ Does this mean we can split up multiple acceptance tests in a single file?
 
 ## There should be a way to filter records. E.g. they may contain sensitive data
 Find out how to do this without ruining the delta merging rules
+
+## Investigate how to package leech2
