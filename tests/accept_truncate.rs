@@ -167,7 +167,7 @@ fields = [
 
     // --- Test orphan from old HEAD ---
     // Manually reset HEAD to GENESIS, making all current blocks orphans
-    head::save(work_dir, GENESIS_HASH).unwrap();
+    head::store(work_dir, GENESIS_HASH).unwrap();
 
     // Create a new block — truncation should remove the now-orphaned blocks
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n3,Charlie\n");

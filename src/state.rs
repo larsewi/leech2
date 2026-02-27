@@ -85,11 +85,11 @@ impl State {
         Ok(state)
     }
 
-    pub fn save(&self, work_dir: &Path) -> Result<()> {
+    pub fn store(&self, work_dir: &Path) -> Result<()> {
         let proto_state = crate::proto::state::State::from(self.clone());
         let mut buf = Vec::new();
         proto_state.encode(&mut buf)?;
-        storage::save(work_dir, STATE_FILE, &buf)?;
+        storage::store(work_dir, STATE_FILE, &buf)?;
         log::info!(
             "Updated previous state to current state with {} tables",
             self.tables.len()

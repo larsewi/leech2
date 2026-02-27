@@ -16,8 +16,8 @@ pub fn load(work_dir: &Path) -> Result<String> {
     Ok(hash)
 }
 
-pub fn save(work_dir: &Path, hash: &str) -> Result<()> {
-    storage::save(work_dir, HEAD_FILE, hash.as_bytes())?;
+pub fn store(work_dir: &Path, hash: &str) -> Result<()> {
+    storage::store(work_dir, HEAD_FILE, hash.as_bytes())?;
     log::info!("Updated head to '{:.7}...'", hash);
     Ok(())
 }

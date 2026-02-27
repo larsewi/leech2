@@ -12,7 +12,10 @@ fn test_missing_config_file() {
     let result = Config::load(tmp.path());
     assert!(result.is_err());
     assert!(
-        result.unwrap_err().to_string().contains("no config file found"),
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("no config file found"),
         "should report missing config"
     );
 }
@@ -58,7 +61,10 @@ fields = [
     let result = Config::load(tmp.path());
     assert!(result.is_err());
     assert!(
-        result.unwrap_err().to_string().contains("duplicate field name"),
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("duplicate field name"),
         "should report duplicate field"
     );
 }
@@ -70,7 +76,10 @@ fn test_config_invalid_toml_syntax() {
     let result = Config::load(tmp.path());
     assert!(result.is_err());
     assert!(
-        result.unwrap_err().to_string().contains("failed to parse config"),
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("failed to parse config"),
         "should report parse failure"
     );
 }
@@ -82,7 +91,10 @@ fn test_config_invalid_json_syntax() {
     let result = Config::load(tmp.path());
     assert!(result.is_err());
     assert!(
-        result.unwrap_err().to_string().contains("failed to parse config"),
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("failed to parse config"),
         "should report parse failure"
     );
 }

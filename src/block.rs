@@ -33,7 +33,7 @@ impl fmt::Display for Block {
 impl Block {
     pub fn load(work_dir: &Path, hash: &str) -> Result<Block> {
         let data = storage::load(work_dir, hash)?
-            .with_context(|| format!("Block '{:.7}...' not found", hash))?;
+            .with_context(|| format!("Failed to load block '{:.7}...'", hash))?;
         let block = Block::decode(data.as_slice())
             .with_context(|| format!("Failed to decode block '{:.7}...'", hash))?;
         log::info!("Loaded block '{:.7}...'", hash);
@@ -42,10 +42,12 @@ impl Block {
 
     pub fn create(config: &Config) -> Result<String> {
         let work_dir = &config.work_dir;
-        let previous_state = state::State::load(work_dir)?;
-        let current_state = state::State::compute(config)?;
+        let previous_state =
+            state::State::load(work_dir).context("Failed to load previous state")?;
+        let current_state =
+            state::State::compute(config).context("Failed to compute current state")?;
 
-        let parent = head::load(work_dir)?;
+        let parent_hash = head::load(work_dir).context("Failed to load head of chain")?;
         let created = Some(std::time::SystemTime::now().into());
 
         let deltas = delta::Delta::compute(previous_state, &current_state);
@@ -55,21 +57,26 @@ impl Block {
             .collect();
 
         let block = Block {
-            parent,
+            parent: parent_hash,
             created,
             payload,
         };
         log::debug!("{}", block);
 
-        let mut buf = Vec::new();
-        block.encode(&mut buf)?;
-        let hash = utils::compute_hash(&buf);
-        storage::save(work_dir, &hash, &buf)?;
+        let mut encoded = Vec::new();
+        block
+            .encode(&mut encoded)
+            .context("Failed to encode block")?;
+        let hash = utils::compute_hash(&encoded);
+        storage::store(work_dir, &hash, &encoded)
+            .with_context(|| format!("Failed to store block {:.7}", hash))?;
 
         log::info!("Created block '{:.7}...'", hash);
 
-        current_state.save(work_dir)?;
-        head::save(work_dir, &hash)?;
+        current_state
+            .store(work_dir)
+            .context("Failed to store current state")?;
+        head::store(work_dir, &hash).context("Failed to update head of state")?;
 
         if let Err(e) = truncate::run(config) {
             log::warn!("Truncation failed (non-fatal): {}", e);
@@ -78,19 +85,25 @@ impl Block {
         Ok(hash)
     }
 
-    pub fn merge(mut self, mut other: Block) -> Result<Block> {
-        for other_delta in other.payload.drain(..) {
-            if let Some(self_delta) = self.payload.iter_mut().find(|d| d.name == other_delta.name) {
-                let mut self_domain: delta::Delta = std::mem::take(self_delta).into();
-                let other_domain: delta::Delta = other_delta.into();
-                self_domain.merge(other_domain)?;
-                *self_delta = self_domain.into();
+    pub fn merge(mut parent: Self, mut child: Block) -> Result<Block> {
+        for child_delta in child.payload.drain(..) {
+            if let Some(parent_delta) = parent
+                .payload
+                .iter_mut()
+                .find(|d| d.name == child_delta.name)
+            {
+                let mut parent_domain: delta::Delta = std::mem::take(parent_delta).into();
+                let child_domain: delta::Delta = child_delta.into();
+                parent_domain
+                    .merge(child_domain)
+                    .context("Failed to merge deltas")?;
+                *parent_delta = parent_domain.into();
             } else {
-                self.payload.push(other_delta);
+                parent.payload.push(child_delta);
             }
         }
 
-        Ok(self)
+        Ok(parent)
     }
 }
 

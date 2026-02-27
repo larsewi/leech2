@@ -21,7 +21,7 @@ fn acquire_lock(dir: &Path, name: &str, exclusive: bool) -> Result<File> {
 }
 
 /// Saves data to a file in the work directory using a separate lock file and atomic rename.
-pub fn save(work_dir: &Path, name: &str, data: &[u8]) -> Result<()> {
+pub fn store(work_dir: &Path, name: &str, data: &[u8]) -> Result<()> {
     fs::create_dir_all(work_dir)
         .with_context(|| format!("Failed to create work directory '{}'", work_dir.display()))?;
 

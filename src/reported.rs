@@ -21,7 +21,7 @@ pub fn load(work_dir: &Path) -> Result<Option<String>> {
 }
 
 pub fn save(work_dir: &Path, hash: &str) -> Result<()> {
-    storage::save(work_dir, REPORTED_FILE, hash.as_bytes())?;
+    storage::store(work_dir, REPORTED_FILE, hash.as_bytes())?;
     log::info!("Updated reported to '{:.7}...'", hash);
     Ok(())
 }

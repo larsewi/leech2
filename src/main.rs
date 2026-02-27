@@ -176,7 +176,7 @@ fn cmd_patch_create(config: &Config, reference: Option<&str>, n: Option<u32>) ->
     let patch = leech2::patch::Patch::create(config, &hash)?;
 
     let buf = leech2::wire::encode_patch(config, &patch)?;
-    leech2::storage::save(&config.work_dir, PATCH_FILE, &buf)?;
+    leech2::storage::store(&config.work_dir, PATCH_FILE, &buf)?;
 
     println!("{}", patch);
     Ok(())
