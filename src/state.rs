@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::path::Path;
 
+use anyhow::Result;
 use prost::Message;
 
 use crate::config::Config;
@@ -54,7 +55,7 @@ impl fmt::Display for crate::proto::state::State {
 }
 
 impl State {
-    pub fn load(work_dir: &Path) -> Result<Option<Self>, Box<dyn std::error::Error>> {
+    pub fn load(work_dir: &Path) -> Result<Option<Self>> {
         let Some(data) = storage::load(work_dir, STATE_FILE)? else {
             log::info!("No previous state found");
             return Ok(None);
@@ -70,7 +71,7 @@ impl State {
         Ok(Some(state))
     }
 
-    pub fn compute(config: &Config) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn compute(config: &Config) -> Result<Self> {
         let mut tables: HashMap<String, Table> = HashMap::new();
 
         for (name, table_config) in &config.tables {
@@ -84,7 +85,7 @@ impl State {
         Ok(state)
     }
 
-    pub fn save(&self, work_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn save(&self, work_dir: &Path) -> Result<()> {
         let proto_state = crate::proto::state::State::from(self.clone());
         let mut buf = Vec::new();
         proto_state.encode(&mut buf)?;

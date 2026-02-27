@@ -2,36 +2,28 @@ use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::Path;
 
+use anyhow::{Context, Result};
 use fs2::FileExt;
 
 /// Acquires a lock on a separate `.<name>.lock` file for inter-process synchronization.
 /// Returns the lock file handle; the lock is released when the handle is dropped.
-fn acquire_lock(
-    dir: &Path,
-    name: &str,
-    exclusive: bool,
-) -> Result<File, Box<dyn std::error::Error>> {
+fn acquire_lock(dir: &Path, name: &str, exclusive: bool) -> Result<File> {
     let lock_path = dir.join(format!(".{}.lock", name));
     let lock_file = File::create(&lock_path)
-        .map_err(|e| format!("Failed to open lock file '{}': {}", lock_path.display(), e))?;
+        .with_context(|| format!("Failed to open lock file '{}'", lock_path.display()))?;
     if exclusive {
         lock_file.lock_exclusive()
     } else {
         lock_file.lock_shared()
     }
-    .map_err(|e| format!("Failed to acquire lock on '{}': {}", lock_path.display(), e))?;
+    .with_context(|| format!("Failed to acquire lock on '{}'", lock_path.display()))?;
     Ok(lock_file)
 }
 
 /// Saves data to a file in the work directory using a separate lock file and atomic rename.
-pub fn save(work_dir: &Path, name: &str, data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
-    fs::create_dir_all(work_dir).map_err(|e| {
-        format!(
-            "Failed to create work directory '{}': {}",
-            work_dir.display(),
-            e
-        )
-    })?;
+pub fn save(work_dir: &Path, name: &str, data: &[u8]) -> Result<()> {
+    fs::create_dir_all(work_dir)
+        .with_context(|| format!("Failed to create work directory '{}'", work_dir.display()))?;
 
     let _lock = acquire_lock(work_dir, name, true)?;
 
@@ -40,15 +32,14 @@ pub fn save(work_dir: &Path, name: &str, data: &[u8]) -> Result<(), Box<dyn std:
     let path = work_dir.join(name);
 
     File::create(&tmp_path)
-        .map_err(|e| format!("Failed to create temp file '{}': {}", tmp_path.display(), e))?
+        .with_context(|| format!("Failed to create temp file '{}'", tmp_path.display()))?
         .write_all(data)
-        .map_err(|e| format!("Failed to write to '{}': {}", tmp_path.display(), e))?;
-    fs::rename(&tmp_path, &path).map_err(|e| {
+        .with_context(|| format!("Failed to write to '{}'", tmp_path.display()))?;
+    fs::rename(&tmp_path, &path).with_context(|| {
         format!(
-            "Failed to rename '{}' to '{}': {}",
+            "Failed to rename '{}' to '{}'",
             tmp_path.display(),
-            path.display(),
-            e
+            path.display()
         )
     })?;
 
@@ -58,7 +49,7 @@ pub fn save(work_dir: &Path, name: &str, data: &[u8]) -> Result<(), Box<dyn std:
 }
 
 /// Removes a file from the work directory using an exclusive lock.
-pub fn remove(work_dir: &Path, name: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub fn remove(work_dir: &Path, name: &str) -> Result<()> {
     let path = work_dir.join(name);
 
     if !path.exists() {
@@ -72,7 +63,7 @@ pub fn remove(work_dir: &Path, name: &str) -> Result<(), Box<dyn std::error::Err
     let _lock = acquire_lock(work_dir, name, true)?;
 
     fs::remove_file(&path)
-        .map_err(|e| format!("Failed to remove file '{}': {}", path.display(), e))?;
+        .with_context(|| format!("Failed to remove file '{}'", path.display()))?;
 
     // Best-effort cleanup of the lock file after removing the data file.
     let lock_path = work_dir.join(format!(".{}.lock", name));
@@ -85,7 +76,7 @@ pub fn remove(work_dir: &Path, name: &str) -> Result<(), Box<dyn std::error::Err
 }
 
 /// Loads data from a file in the work directory with a shared lock.
-pub fn load(work_dir: &Path, name: &str) -> Result<Option<Vec<u8>>, Box<dyn std::error::Error>> {
+pub fn load(work_dir: &Path, name: &str) -> Result<Option<Vec<u8>>> {
     let path = work_dir.join(name);
     if !path.exists() {
         log::debug!("File '{}' does not exist", path.display());
@@ -96,9 +87,9 @@ pub fn load(work_dir: &Path, name: &str) -> Result<Option<Vec<u8>>, Box<dyn std:
 
     let mut data = Vec::new();
     File::open(&path)
-        .map_err(|e| format!("Failed to open file '{}': {}", path.display(), e))?
+        .with_context(|| format!("Failed to open file '{}'", path.display()))?
         .read_to_end(&mut data)
-        .map_err(|e| format!("Failed to read from '{}': {}", path.display(), e))?;
+        .with_context(|| format!("Failed to read from '{}'", path.display()))?;
 
     // _lock dropped here, releasing shared lock.
     log::debug!("Loaded {} bytes from '{}'", data.len(), path.display());

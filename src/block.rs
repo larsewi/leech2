@@ -1,6 +1,7 @@
 use std::fmt;
 use std::path::Path;
 
+use anyhow::{Context, Result};
 use prost::Message;
 
 use crate::config::Config;
@@ -30,16 +31,16 @@ impl fmt::Display for Block {
 }
 
 impl Block {
-    pub fn load(work_dir: &Path, hash: &str) -> Result<Block, Box<dyn std::error::Error>> {
+    pub fn load(work_dir: &Path, hash: &str) -> Result<Block> {
         let data = storage::load(work_dir, hash)?
-            .ok_or_else(|| format!("Block '{:.7}...' not found", hash))?;
+            .with_context(|| format!("Block '{:.7}...' not found", hash))?;
         let block = Block::decode(data.as_slice())
-            .map_err(|e| format!("Failed to decode block '{:.7}...': {}", hash, e))?;
+            .with_context(|| format!("Failed to decode block '{:.7}...'", hash))?;
         log::info!("Loaded block '{:.7}...'", hash);
         Ok(block)
     }
 
-    pub fn create(config: &Config) -> Result<String, Box<dyn std::error::Error>> {
+    pub fn create(config: &Config) -> Result<String> {
         let work_dir = &config.work_dir;
         let previous_state = state::State::load(work_dir)?;
         let current_state = state::State::compute(config)?;
@@ -77,7 +78,7 @@ impl Block {
         Ok(hash)
     }
 
-    pub fn merge(mut self, mut other: Block) -> Result<Block, Box<dyn std::error::Error>> {
+    pub fn merge(mut self, mut other: Block) -> Result<Block> {
         for other_delta in other.payload.drain(..) {
             if let Some(self_delta) = self.payload.iter_mut().find(|d| d.name == other_delta.name) {
                 let mut self_domain: delta::Delta = std::mem::take(self_delta).into();

@@ -1,3 +1,4 @@
+use anyhow::Result;
 use prost::Message;
 
 use crate::config::Config;
@@ -7,7 +8,7 @@ use crate::proto::patch::Patch;
 const ZSTD_MAGIC: [u8; 4] = [0x28, 0xB5, 0x2F, 0xFD];
 
 /// Encode a Patch to protobuf, optionally compressing with zstd.
-pub fn encode_patch(config: &Config, patch: &Patch) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+pub fn encode_patch(config: &Config, patch: &Patch) -> Result<Vec<u8>> {
     let mut buf = Vec::new();
     patch.encode(&mut buf)?;
 
@@ -37,7 +38,7 @@ pub fn encode_patch(config: &Config, patch: &Patch) -> Result<Vec<u8>, Box<dyn s
 ///
 /// If the data starts with the zstd frame magic number, it is decompressed
 /// first. Otherwise, it is treated as raw protobuf.
-pub fn decode_patch(data: &[u8]) -> Result<Patch, Box<dyn std::error::Error>> {
+pub fn decode_patch(data: &[u8]) -> Result<Patch> {
     let bytes = if data.starts_with(&ZSTD_MAGIC) {
         zstd::decode_all(data)?
     } else {

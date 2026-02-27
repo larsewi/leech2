@@ -4,6 +4,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use anyhow::{Context, Result, bail};
+
 enum ConfigFormat {
     Toml,
     Json,
@@ -94,7 +96,7 @@ impl TableConfig {
 }
 
 impl Config {
-    pub fn load(work_dir: &Path) -> Result<Config, String> {
+    pub fn load(work_dir: &Path) -> Result<Config> {
         let toml_path = work_dir.join("config.toml");
         let json_path = work_dir.join("config.json");
 
@@ -103,37 +105,32 @@ impl Config {
         } else if json_path.exists() {
             (json_path, ConfigFormat::Json)
         } else {
-            return Err("no config file found (expected config.toml or config.json)".to_string());
+            bail!("no config file found (expected config.toml or config.json)");
         };
 
         log::debug!("Parsing config from file '{}'...", path.display());
-        let content =
-            fs::read_to_string(&path).map_err(|e| format!("failed to read config file: {}", e))?;
+        let content = fs::read_to_string(&path).context("failed to read config file")?;
         let mut config: Config = match format {
-            ConfigFormat::Toml => {
-                toml::from_str(&content).map_err(|e| format!("failed to parse config: {}", e))?
+            ConfigFormat::Toml => toml::from_str(&content).context("failed to parse config")?,
+            ConfigFormat::Json => {
+                serde_json::from_str(&content).context("failed to parse config")?
             }
-            ConfigFormat::Json => serde_json::from_str(&content)
-                .map_err(|e| format!("failed to parse config: {}", e))?,
         };
         config.work_dir = work_dir.to_path_buf();
 
         for (name, table) in &config.tables {
             let pk_count = table.fields.iter().filter(|f| f.primary_key).count();
             if pk_count == 0 {
-                return Err(format!(
+                bail!(
                     "table '{}': at least one field must be marked as primary-key",
                     name
-                ));
+                );
             }
 
             let mut seen = HashSet::new();
             for field in &table.fields {
                 if !seen.insert(&field.name) {
-                    return Err(format!(
-                        "table '{}': duplicate field name '{}'",
-                        name, field.name
-                    ));
+                    bail!("table '{}': duplicate field name '{}'", name, field.name);
                 }
             }
         }
@@ -142,10 +139,10 @@ impl Config {
             if let Some(max_blocks) = truncate.max_blocks
                 && max_blocks < 1
             {
-                return Err("truncate.max-blocks must be >= 1".to_string());
+                bail!("truncate.max-blocks must be >= 1");
             }
             if let Some(ref max_age) = truncate.max_age {
-                parse_duration(max_age).map_err(|e| format!("truncate.max-age: {}", e))?;
+                parse_duration(max_age).context("truncate.max-age")?;
             }
         }
 
@@ -161,15 +158,15 @@ const SECONDS_PER_WEEK: u64 = 7 * SECONDS_PER_DAY;
 
 /// Parse a duration string like "30s", "12h", "7d", "2w" into a `Duration`.
 /// Supported suffixes: `s` (seconds), `m` (minutes), `h` (hours), `d` (days), `w` (weeks).
-pub fn parse_duration(s: &str) -> Result<Duration, String> {
+pub fn parse_duration(s: &str) -> Result<Duration> {
     if s.is_empty() {
-        return Err("empty duration string".to_string());
+        bail!("empty duration string");
     }
 
     let (num_str, suffix) = s.split_at(s.len() - 1);
     let value: u64 = num_str
         .parse()
-        .map_err(|_| format!("invalid duration '{}'", s))?;
+        .map_err(|_| anyhow::anyhow!("invalid duration '{}'", s))?;
 
     let seconds = match suffix {
         "s" => value,
@@ -177,7 +174,7 @@ pub fn parse_duration(s: &str) -> Result<Duration, String> {
         "h" => value * SECONDS_PER_HOUR,
         "d" => value * SECONDS_PER_DAY,
         "w" => value * SECONDS_PER_WEEK,
-        _ => return Err(format!("invalid duration suffix '{}' in '{}'", suffix, s)),
+        _ => bail!("invalid duration suffix '{}' in '{}'", suffix, s),
     };
 
     Ok(Duration::from_secs(seconds))

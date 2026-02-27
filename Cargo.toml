@@ -11,6 +11,7 @@ name = "lch"
 path = "src/main.rs"
 
 [dependencies]
+anyhow = "1.0.102"
 chrono = "0.4.43"
 clap = { version = "4", features = ["derive"] }
 csv = "1.3"

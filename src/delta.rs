@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::fmt;
 
+use anyhow::{Result, bail};
+
 use crate::entry::Entry;
 use crate::state::State;
 use crate::table::Table;
@@ -209,13 +211,14 @@ impl Delta {
     /// Merge another delta (Child) into this delta (Parent), producing a single
     /// delta that represents the combined effect of both. See
     /// DELTA_MERGING_RULES.md for the full specification of the 15 rules.
-    pub fn merge(&mut self, other: Delta) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn merge(&mut self, other: Delta) -> Result<()> {
         if self.fields != other.fields {
-            return Err(format!(
+            bail!(
                 "cannot merge deltas for table '{}': field mismatch ({:?} vs {:?})",
-                self.name, self.fields, other.fields
-            )
-            .into());
+                self.name,
+                self.fields,
+                other.fields
+            );
         }
 
         for (key, val) in other.inserts {
@@ -230,15 +233,11 @@ impl Delta {
         Ok(())
     }
 
-    fn merge_insert(
-        &mut self,
-        key: Vec<String>,
-        val: Vec<String>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    fn merge_insert(&mut self, key: Vec<String>, val: Vec<String>) -> Result<()> {
         if self.inserts.contains_key(&key) {
             // Rule 5: double insert → error
             log::debug!("Rule 5: key {:?} inserted in both blocks", key);
-            return Err(format!("Conflict: key {:?} inserted in both blocks", key).into());
+            bail!("Conflict: key {:?} inserted in both blocks", key);
         } else if let Some(del_val) = self.deletes.remove(&key) {
             if del_val == val {
                 // Rule 9a: delete then insert with same value → cancels out
@@ -254,11 +253,10 @@ impl Delta {
                 "Rule 13: key {:?} updated in parent, inserted in current",
                 key
             );
-            return Err(format!(
+            bail!(
                 "Conflict: key {:?} updated in parent, inserted in current",
                 key
-            )
-            .into());
+            );
         } else {
             // Rule 1: pass through
             log::debug!("Rule 1: insert passes through for key {:?}", key);
@@ -267,18 +265,14 @@ impl Delta {
         Ok(())
     }
 
-    fn merge_delete(
-        &mut self,
-        key: Vec<String>,
-        val: Vec<String>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    fn merge_delete(&mut self, key: Vec<String>, val: Vec<String>) -> Result<()> {
         if self.inserts.remove(&key).is_some() {
             // Rule 6: insert then delete → cancels out
             log::debug!("Rule 6: insert + delete cancel out for key {:?}", key);
         } else if self.deletes.contains_key(&key) {
             // Rule 10: double delete → error
             log::debug!("Rule 10: key {:?} deleted in both blocks", key);
-            return Err(format!("Conflict: key {:?} deleted in both blocks", key).into());
+            bail!("Conflict: key {:?} deleted in both blocks", key);
         } else if let Some((old, new_val)) = self.updates.remove(&key) {
             if val == new_val {
                 // Rule 14a: update then delete, values match → delete(old)
@@ -292,11 +286,12 @@ impl Delta {
                     new_val,
                     val
                 );
-                return Err(format!(
+                bail!(
                     "Conflict: key {:?} updated to {:?} in parent, but deleted with {:?}",
-                    key, new_val, val
-                )
-                .into());
+                    key,
+                    new_val,
+                    val
+                );
             }
         } else {
             // Rule 2: pass through
@@ -311,7 +306,7 @@ impl Delta {
         key: Vec<String>,
         other_old: Vec<String>,
         other_new: Vec<String>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<()> {
         if let Some(insert_val) = self.inserts.get_mut(&key) {
             // Rule 7: insert then update → insert(new_val)
             log::debug!("Rule 7: insert + update becomes insert for key {:?}", key);
@@ -322,11 +317,10 @@ impl Delta {
                 "Rule 11: key {:?} deleted in parent, updated in current",
                 key
             );
-            return Err(format!(
+            bail!(
                 "Conflict: key {:?} deleted in parent, updated in current",
                 key
-            )
-            .into());
+            );
         } else if let Some(update) = self.updates.get_mut(&key) {
             // Rule 15: update then update → update(old1 → new2)
             // Merge sparse-expanded updates: only touch positions that actually

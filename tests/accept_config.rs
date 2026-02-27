@@ -12,7 +12,7 @@ fn test_missing_config_file() {
     let result = Config::load(tmp.path());
     assert!(result.is_err());
     assert!(
-        result.unwrap_err().contains("no config file found"),
+        result.unwrap_err().to_string().contains("no config file found"),
         "should report missing config"
     );
 }
@@ -35,7 +35,7 @@ fields = [
     let result = Config::load(tmp.path());
     assert!(result.is_err());
     assert!(
-        result.unwrap_err().contains("primary-key"),
+        result.unwrap_err().to_string().contains("primary-key"),
         "should report missing primary key"
     );
 }
@@ -58,7 +58,7 @@ fields = [
     let result = Config::load(tmp.path());
     assert!(result.is_err());
     assert!(
-        result.unwrap_err().contains("duplicate field name"),
+        result.unwrap_err().to_string().contains("duplicate field name"),
         "should report duplicate field"
     );
 }
@@ -70,7 +70,7 @@ fn test_config_invalid_toml_syntax() {
     let result = Config::load(tmp.path());
     assert!(result.is_err());
     assert!(
-        result.unwrap_err().contains("failed to parse config"),
+        result.unwrap_err().to_string().contains("failed to parse config"),
         "should report parse failure"
     );
 }
@@ -82,7 +82,7 @@ fn test_config_invalid_json_syntax() {
     let result = Config::load(tmp.path());
     assert!(result.is_err());
     assert!(
-        result.unwrap_err().contains("failed to parse config"),
+        result.unwrap_err().to_string().contains("failed to parse config"),
         "should report parse failure"
     );
 }
@@ -109,7 +109,7 @@ fields = [
     let result = Config::load(tmp.path());
     assert!(result.is_err());
     assert!(
-        result.unwrap_err().contains("max-blocks"),
+        result.unwrap_err().to_string().contains("max-blocks"),
         "should report invalid max-blocks"
     );
 }
@@ -136,7 +136,7 @@ fields = [
     let result = Config::load(tmp.path());
     assert!(result.is_err());
     assert!(
-        result.unwrap_err().contains("max-age"),
+        result.unwrap_err().to_string().contains("max-age"),
         "should report invalid max-age"
     );
 }

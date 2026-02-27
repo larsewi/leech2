@@ -3,6 +3,7 @@ pub use crate::proto::patch::Patch;
 use std::fmt;
 use std::path::Path;
 
+use anyhow::{Context, Result, bail};
 use prost::Message;
 use prost_types::Timestamp;
 
@@ -45,10 +46,7 @@ impl fmt::Display for Patch {
     }
 }
 
-pub fn resolve_hash_prefix(
-    work_dir: &Path,
-    prefix: &str,
-) -> Result<String, Box<dyn std::error::Error>> {
+pub fn resolve_hash_prefix(work_dir: &Path, prefix: &str) -> Result<String> {
     let mut matches: Vec<String> = Vec::new();
 
     if GENESIS_HASH.starts_with(prefix) {
@@ -70,13 +68,14 @@ pub fn resolve_hash_prefix(
     }
 
     match matches.as_slice() {
-        [] => Err(format!("no block found matching prefix '{}'", prefix).into()),
+        [] => bail!("no block found matching prefix '{}'", prefix),
         [single] => Ok(single.clone()),
-        [first, second, ..] => Err(format!(
+        [first, second, ..] => bail!(
             "ambiguous hash prefix '{}': matches {} and {}",
-            prefix, first, second
-        )
-        .into()),
+            prefix,
+            first,
+            second
+        ),
     }
 }
 
@@ -84,7 +83,7 @@ fn consolidate(
     work_dir: &Path,
     head_block: Block,
     last_known_hash: &str,
-) -> Result<(u32, Vec<crate::proto::delta::Delta>), Box<dyn std::error::Error>> {
+) -> Result<(u32, Vec<crate::proto::delta::Delta>)> {
     let mut current_hash = head_block.parent.clone();
     let mut current_block = head_block;
     let mut num_blocks: u32 = 1;
@@ -98,11 +97,10 @@ fn consolidate(
     }
 
     if !current_hash.starts_with(last_known_hash) {
-        return Err(format!(
+        bail!(
             "Block starting with '{}' not found in chain",
             last_known_hash
-        )
-        .into());
+        );
     }
 
     Ok((num_blocks, current_block.payload))
@@ -112,7 +110,7 @@ fn try_consolidate(
     work_dir: &Path,
     head_hash: &str,
     last_known_hash: &str,
-) -> Result<ConsolidateResult, Box<dyn std::error::Error>> {
+) -> Result<ConsolidateResult> {
     let block = Block::load(work_dir, head_hash)?;
     let head_created = block.created;
 
@@ -166,10 +164,7 @@ fn try_consolidate(
 }
 
 impl Patch {
-    pub fn create(
-        config: &Config,
-        last_known_hash: &str,
-    ) -> Result<Patch, Box<dyn std::error::Error>> {
+    pub fn create(config: &Config, last_known_hash: &str) -> Result<Patch> {
         let work_dir = &config.work_dir;
         resolve_hash_prefix(work_dir, last_known_hash)?;
 
@@ -192,7 +187,7 @@ impl Patch {
                 Err(e) => {
                     log::warn!("Consolidation failed, falling back to full state: {}", e);
                     let state = state::State::load(work_dir)?
-                        .ok_or("Consolidation failed and no STATE file found for fallback")?;
+                        .context("Consolidation failed and no STATE file found for fallback")?;
                     (
                         None,
                         0,

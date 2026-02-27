@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 
+use anyhow::{Context, Result, bail};
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime};
 
 use crate::config::Config;
@@ -20,7 +21,7 @@ pub enum SqlType {
 }
 
 impl SqlType {
-    pub fn from_config(type_str: &str, format: Option<&str>) -> Result<Self, String> {
+    pub fn from_config(type_str: &str, format: Option<&str>) -> Result<Self> {
         match type_str.to_uppercase().as_str() {
             "TEXT" => Ok(SqlType::Text),
             "INTEGER" => Ok(SqlType::Integer),
@@ -32,10 +33,10 @@ impl SqlType {
             "DATETIME" => Ok(SqlType::DateTime(
                 format.unwrap_or("%Y-%m-%d %H:%M:%S").to_string(),
             )),
-            other => Err(format!(
+            other => bail!(
                 "unknown field type '{}'; valid types are: TEXT, INTEGER, FLOAT, BOOLEAN, BINARY, DATE, TIME, DATETIME",
                 other
-            )),
+            ),
         }
     }
 }
@@ -50,11 +51,11 @@ struct TableSchema {
 }
 
 impl TableSchema {
-    fn resolve(config: &Config, table_name: &str) -> Result<Self, Box<dyn std::error::Error>> {
+    fn resolve(config: &Config, table_name: &str) -> Result<Self> {
         let tc = config
             .tables
             .get(table_name)
-            .ok_or_else(|| format!("table '{}' not found in config", table_name))?;
+            .with_context(|| format!("table '{}' not found in config", table_name))?;
 
         let type_map: std::collections::HashMap<&str, (&str, Option<&str>)> = tc
             .fields
@@ -77,8 +78,8 @@ impl TableSchema {
                 .get(name.as_str())
                 .copied()
                 .unwrap_or(("TEXT", None));
-            let sql_type = SqlType::from_config(type_str, fmt)
-                .map_err(|e| format!("field '{}': {}", name, e))?;
+            let sql_type =
+                SqlType::from_config(type_str, fmt).with_context(|| format!("field '{}'", name))?;
             fields.push((name.clone(), sql_type));
         }
         for name in &field_names {
@@ -88,7 +89,7 @@ impl TableSchema {
                     .copied()
                     .unwrap_or(("TEXT", None));
                 let sql_type = SqlType::from_config(type_str, fmt)
-                    .map_err(|e| format!("field '{}': {}", name, e))?;
+                    .with_context(|| format!("field '{}'", name))?;
                 fields.push((name.clone(), sql_type));
             }
         }
@@ -115,7 +116,7 @@ fn quote_ident(name: &str) -> String {
 }
 
 /// Format a value as a SQL literal based on its type.
-pub fn quote_literal(s: &str, sql_type: &SqlType) -> Result<String, Box<dyn std::error::Error>> {
+pub fn quote_literal(s: &str, sql_type: &SqlType) -> Result<String> {
     match sql_type {
         SqlType::Text => Ok(format!("'{}'", s.replace('\'', "''"))),
         SqlType::Integer => {
@@ -129,25 +130,25 @@ pub fn quote_literal(s: &str, sql_type: &SqlType) -> Result<String, Box<dyn std:
         SqlType::Boolean => match s.to_lowercase().as_str() {
             "true" | "1" | "t" | "yes" => Ok("TRUE".to_string()),
             "false" | "0" | "f" | "no" => Ok("FALSE".to_string()),
-            _ => Err(format!("invalid boolean value: '{}'", s).into()),
+            _ => bail!("invalid boolean value: '{}'", s),
         },
         SqlType::Binary => {
             if !s.len().is_multiple_of(2) {
-                return Err(format!("invalid hex: odd length ({})", s.len()).into());
+                bail!("invalid hex: odd length ({})", s.len());
             }
             if !s.bytes().all(|b| b.is_ascii_hexdigit()) {
-                return Err("invalid hex: contains non-hex characters".into());
+                bail!("invalid hex: contains non-hex characters");
             }
             Ok(format!("'\\x{}'", s))
         }
         SqlType::Date(fmt) => {
             NaiveDate::parse_from_str(s, fmt)
-                .map_err(|e| format!("invalid date '{}' for format '{}': {}", s, fmt, e))?;
+                .with_context(|| format!("invalid date '{}' for format '{}'", s, fmt))?;
             Ok(format!("'{}'", s.replace('\'', "''")))
         }
         SqlType::Time(fmt) => {
             NaiveTime::parse_from_str(s, fmt)
-                .map_err(|e| format!("invalid time '{}' for format '{}': {}", s, fmt, e))?;
+                .with_context(|| format!("invalid time '{}' for format '{}'", s, fmt))?;
             Ok(format!("'{}'", s.replace('\'', "''")))
         }
         SqlType::DateTime(fmt) => {
@@ -159,48 +160,42 @@ pub fn quote_literal(s: &str, sql_type: &SqlType) -> Result<String, Box<dyn std:
             {
                 return Ok(format!("'{}'", s.replace('\'', "''")));
             }
-            Err(format!(
+            bail!(
                 "invalid datetime '{}' for format '{}': could not parse as datetime or unix epoch",
-                s, fmt
+                s,
+                fmt
             )
-            .into())
         }
     }
 }
 
 /// Convert key + value slices into a list of SQL literal strings.
-fn format_row(
-    key: &[String],
-    value: &[String],
-    schema: &TableSchema,
-) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+fn format_row(key: &[String], value: &[String], schema: &TableSchema) -> Result<Vec<String>> {
     let pk_types = schema.pk_types();
     let sub_types = schema.sub_types();
 
     if key.len() != pk_types.len() {
-        return Err(format!(
+        bail!(
             "PK field count mismatch: got {} values, expected {}",
             key.len(),
             pk_types.len()
-        )
-        .into());
+        );
     }
     if value.len() != sub_types.len() {
-        return Err(format!(
+        bail!(
             "subsidiary field count mismatch: got {} values, expected {}",
             value.len(),
             sub_types.len()
-        )
-        .into());
+        );
     }
 
     let mut literals = Vec::with_capacity(key.len() + value.len());
     for (val, (name, sql_type)) in key.iter().zip(pk_types) {
-        let lit = quote_literal(val, sql_type).map_err(|e| format!("field '{}': {}", name, e))?;
+        let lit = quote_literal(val, sql_type).with_context(|| format!("field '{}'", name))?;
         literals.push(lit);
     }
     for (val, (name, sql_type)) in value.iter().zip(sub_types) {
-        let lit = quote_literal(val, sql_type).map_err(|e| format!("field '{}': {}", name, e))?;
+        let lit = quote_literal(val, sql_type).with_context(|| format!("field '{}'", name))?;
         literals.push(lit);
     }
     Ok(literals)
@@ -211,7 +206,7 @@ fn delta_to_sql(
     config: &Config,
     delta: &crate::proto::delta::Delta,
     out: &mut String,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<()> {
     let schema = TableSchema::resolve(config, &delta.name)?;
     let table = quote_ident(&schema.table_name);
 
@@ -223,10 +218,10 @@ fn delta_to_sql(
             .zip(schema.pk_types())
             .map(|(val, (name, sql_type))| {
                 let lit =
-                    quote_literal(val, sql_type).map_err(|e| format!("field '{}': {}", name, e))?;
+                    quote_literal(val, sql_type).with_context(|| format!("field '{}'", name))?;
                 Ok(format!("{} = {}", quote_ident(name), lit))
             })
-            .collect::<Result<Vec<_>, Box<dyn std::error::Error>>>()?;
+            .collect::<Result<Vec<_>>>()?;
 
         out.push_str(&format!(
             "DELETE FROM {} WHERE {};\n",
@@ -265,10 +260,10 @@ fn delta_to_sql(
             .map(|(idx, val)| {
                 let (name, sql_type) = &sub_types[*idx as usize];
                 let lit =
-                    quote_literal(val, sql_type).map_err(|e| format!("field '{}': {}", name, e))?;
+                    quote_literal(val, sql_type).with_context(|| format!("field '{}'", name))?;
                 Ok(format!("{} = {}", quote_ident(name), lit))
             })
-            .collect::<Result<Vec<_>, Box<dyn std::error::Error>>>()?;
+            .collect::<Result<Vec<_>>>()?;
 
         let where_parts: Vec<String> = update
             .key
@@ -276,10 +271,10 @@ fn delta_to_sql(
             .zip(schema.pk_types())
             .map(|(val, (name, sql_type))| {
                 let lit =
-                    quote_literal(val, sql_type).map_err(|e| format!("field '{}': {}", name, e))?;
+                    quote_literal(val, sql_type).with_context(|| format!("field '{}'", name))?;
                 Ok(format!("{} = {}", quote_ident(name), lit))
             })
-            .collect::<Result<Vec<_>, Box<dyn std::error::Error>>>()?;
+            .collect::<Result<Vec<_>>>()?;
 
         out.push_str(&format!(
             "UPDATE {} SET {} WHERE {};\n",
@@ -297,7 +292,7 @@ fn state_to_sql(
     config: &Config,
     state: &crate::proto::state::State,
     out: &mut String,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<()> {
     for (table_name, table) in &state.tables {
         let schema = TableSchema::resolve(config, table_name)?;
         let quoted_table = quote_ident(table_name);
@@ -330,10 +325,7 @@ fn state_to_sql(
 /// Convert a decoded patch to SQL statements.
 ///
 /// Returns a SQL string wrapped in BEGIN/COMMIT.
-pub fn patch_to_sql(
-    config: &Config,
-    patch: &Patch,
-) -> Result<Option<String>, Box<dyn std::error::Error>> {
+pub fn patch_to_sql(config: &Config, patch: &Patch) -> Result<Option<String>> {
     log::info!("Converting patch to SQL: {}", patch);
 
     match &patch.payload {

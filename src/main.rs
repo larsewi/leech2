@@ -2,6 +2,7 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Command as ProcessCommand, ExitCode, Stdio};
 
+use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
 use leech2::block::Block;
 use leech2::config::Config;
@@ -78,24 +79,20 @@ fn work_dir(cli: &Cli) -> PathBuf {
     base.join(LEECH2_DIR)
 }
 
-fn resolve_ref(
-    config: &Config,
-    reference: Option<&str>,
-    n: Option<u32>,
-) -> Result<String, Box<dyn std::error::Error>> {
+fn resolve_ref(config: &Config, reference: Option<&str>, n: Option<u32>) -> Result<String> {
     match (reference, n) {
-        (Some(_), Some(_)) => Err("cannot specify both a hash prefix and -n".into()),
+        (Some(_), Some(_)) => bail!("cannot specify both a hash prefix and -n"),
         (Some(r), None) => leech2::patch::resolve_hash_prefix(&config.work_dir, r),
         (None, Some(n)) => walk_back(&config.work_dir, n),
         (None, None) => leech2::head::load(&config.work_dir),
     }
 }
 
-fn walk_back(work_dir: &std::path::Path, n: u32) -> Result<String, Box<dyn std::error::Error>> {
+fn walk_back(work_dir: &std::path::Path, n: u32) -> Result<String> {
     let mut hash = leech2::head::load(work_dir)?;
     for i in 0..n {
         if hash == GENESIS_HASH {
-            return Err(format!("only {} block(s) in chain, cannot go back {}", i, n).into());
+            bail!("only {} block(s) in chain, cannot go back {}", i, n);
         }
         let block = Block::load(work_dir, &hash)?;
         hash = block.parent;
@@ -103,13 +100,12 @@ fn walk_back(work_dir: &std::path::Path, n: u32) -> Result<String, Box<dyn std::
     Ok(hash)
 }
 
-fn cmd_init(work_dir: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
+fn cmd_init(work_dir: &std::path::Path) -> Result<()> {
     if work_dir.join("config.toml").exists() {
-        return Err(format!(
+        bail!(
             "already initialized: {} exists",
             work_dir.join("config.toml").display()
-        )
-        .into());
+        );
     }
 
     std::fs::create_dir_all(work_dir)?;
@@ -165,17 +161,13 @@ type = "TEXT"
     Ok(())
 }
 
-fn cmd_block_create(config: &Config) -> Result<(), Box<dyn std::error::Error>> {
+fn cmd_block_create(config: &Config) -> Result<()> {
     let hash = Block::create(config)?;
     println!("{}", hash);
     Ok(())
 }
 
-fn cmd_patch_create(
-    config: &Config,
-    reference: Option<&str>,
-    n: Option<u32>,
-) -> Result<(), Box<dyn std::error::Error>> {
+fn cmd_patch_create(config: &Config, reference: Option<&str>, n: Option<u32>) -> Result<()> {
     let hash = match (reference, n) {
         (None, None) => leech2::reported::load(&config.work_dir)?
             .unwrap_or_else(|| leech2::utils::GENESIS_HASH.to_string()),
@@ -190,12 +182,12 @@ fn cmd_patch_create(
     Ok(())
 }
 
-fn cmd_log(config: &Config) -> Result<String, Box<dyn std::error::Error>> {
+fn cmd_log(config: &Config) -> Result<String> {
     let work_dir = &config.work_dir;
     let mut hash = leech2::head::load(work_dir)?;
 
     if hash == GENESIS_HASH {
-        return Err("no blocks exist yet".into());
+        bail!("no blocks exist yet");
     }
 
     let mut output = String::new();
@@ -232,30 +224,26 @@ fn cmd_log(config: &Config) -> Result<String, Box<dyn std::error::Error>> {
     Ok(output)
 }
 
-fn cmd_block_show(
-    config: &Config,
-    reference: Option<&str>,
-    n: Option<u32>,
-) -> Result<String, Box<dyn std::error::Error>> {
+fn cmd_block_show(config: &Config, reference: Option<&str>, n: Option<u32>) -> Result<String> {
     let hash = resolve_ref(config, reference, n)?;
     if hash == GENESIS_HASH {
-        return Err("cannot show the genesis block".into());
+        bail!("cannot show the genesis block");
     }
     let block = Block::load(&config.work_dir, &hash)?;
     Ok(format!("block {}\n{}", hash, block))
 }
 
-fn cmd_patch_show(config: &Config) -> Result<String, Box<dyn std::error::Error>> {
+fn cmd_patch_show(config: &Config) -> Result<String> {
     let data = leech2::storage::load(&config.work_dir, PATCH_FILE)?
-        .ok_or("no patch file found, run `lch patch create` first")?;
+        .context("no patch file found, run `lch patch create` first")?;
 
     let patch = leech2::wire::decode_patch(&data)?;
     Ok(format!("{}", patch))
 }
 
-fn cmd_patch_sql(config: &Config) -> Result<String, Box<dyn std::error::Error>> {
+fn cmd_patch_sql(config: &Config) -> Result<String> {
     let data = leech2::storage::load(&config.work_dir, PATCH_FILE)?
-        .ok_or("no patch file found, run `lch patch create` first")?;
+        .context("no patch file found, run `lch patch create` first")?;
 
     let patch = leech2::wire::decode_patch(&data)?;
     match leech2::sql::patch_to_sql(config, &patch)? {
@@ -264,9 +252,9 @@ fn cmd_patch_sql(config: &Config) -> Result<String, Box<dyn std::error::Error>> 
     }
 }
 
-fn cmd_patch_applied(config: &Config) -> Result<(), Box<dyn std::error::Error>> {
+fn cmd_patch_applied(config: &Config) -> Result<()> {
     let data = leech2::storage::load(&config.work_dir, PATCH_FILE)?
-        .ok_or("no patch file found, run `lch patch create` first")?;
+        .context("no patch file found, run `lch patch create` first")?;
 
     let patch = leech2::wire::decode_patch(&data)?;
     leech2::reported::save(&config.work_dir, &patch.head_hash)?;
@@ -296,7 +284,7 @@ fn print_with_pager(content: &str) {
     let _ = child.wait();
 }
 
-fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
+fn run(cli: Cli) -> Result<()> {
     let work_dir = work_dir(&cli);
 
     if let Cmd::Init = &cli.command {
@@ -345,7 +333,7 @@ fn main() -> ExitCode {
     let cli = Cli::parse();
 
     if let Err(e) = run(cli) {
-        eprintln!("error: {}", e);
+        eprintln!("error: {:#}", e);
         return ExitCode::FAILURE;
     }
 

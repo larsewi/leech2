@@ -2,6 +2,8 @@ use std::collections::HashSet;
 use std::path::Path;
 use std::time::SystemTime;
 
+use anyhow::Result;
+
 use crate::block::Block;
 use crate::config::{Config, parse_duration};
 use crate::head;
@@ -17,9 +19,7 @@ struct ChainEntry {
 /// Returns `(block_hashes, stale_lock_files)` by scanning the work directory.
 /// Block hashes are 40-hex-char filenames. Stale lock files are `.<40-hex>.lock`
 /// files whose corresponding block is not on disk.
-fn scan_work_dir(
-    work_dir: &Path,
-) -> Result<(HashSet<String>, Vec<String>), Box<dyn std::error::Error>> {
+fn scan_work_dir(work_dir: &Path) -> Result<(HashSet<String>, Vec<String>)> {
     let mut blocks = HashSet::new();
     let mut lock_files = Vec::new();
 
@@ -52,7 +52,7 @@ fn scan_work_dir(
     Ok((blocks, lock_files))
 }
 
-pub fn run(config: &Config) -> Result<(), Box<dyn std::error::Error>> {
+pub fn run(config: &Config) -> Result<()> {
     let work_dir = &config.work_dir;
     let head_hash = head::load(work_dir)?;
 

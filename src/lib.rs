@@ -75,7 +75,7 @@ pub unsafe extern "C" fn lch_block_create(config: *const config::Config) -> i32 
     match block::Block::create(config) {
         Ok(_) => 0,
         Err(e) => {
-            log::error!("lch_block_create(): {}", e);
+            log::error!("lch_block_create(): {:#}", e);
             -1
         }
     }
@@ -120,7 +120,7 @@ pub unsafe extern "C" fn lch_patch_create(
     let p = match patch::Patch::create(config, hash) {
         Ok(p) => p,
         Err(e) => {
-            log::error!("lch_patch_create(): {}", e);
+            log::error!("lch_patch_create(): {:#}", e);
             return -1;
         }
     };
@@ -128,7 +128,7 @@ pub unsafe extern "C" fn lch_patch_create(
     let buf = match wire::encode_patch(config, &p) {
         Ok(buf) => buf,
         Err(e) => {
-            log::error!("lch_patch_create(): Failed to encode patch: {}", e);
+            log::error!("lch_patch_create(): Failed to encode patch: {:#}", e);
             return -1;
         }
     };
@@ -177,7 +177,7 @@ pub unsafe extern "C" fn lch_patch_to_sql(
     let patch = match wire::decode_patch(data) {
         Ok(p) => p,
         Err(e) => {
-            log::error!("lch_patch_to_sql(): Failed to decode patch: {}", e);
+            log::error!("lch_patch_to_sql(): Failed to decode patch: {:#}", e);
             return -1;
         }
     };
@@ -189,7 +189,7 @@ pub unsafe extern "C" fn lch_patch_to_sql(
             return 0;
         }
         Err(e) => {
-            log::error!("lch_patch_to_sql(): {}", e);
+            log::error!("lch_patch_to_sql(): {:#}", e);
             return -1;
         }
     };
@@ -197,7 +197,7 @@ pub unsafe extern "C" fn lch_patch_to_sql(
     let cstr = match CString::new(sql) {
         Ok(s) => s,
         Err(e) => {
-            log::error!("lch_patch_to_sql(): Failed to create CString: {}", e);
+            log::error!("lch_patch_to_sql(): Failed to create CString: {:#}", e);
             return -1;
         }
     };
@@ -257,13 +257,13 @@ pub unsafe extern "C" fn lch_patch_applied(
         let patch = match wire::decode_patch(&data) {
             Ok(p) => p,
             Err(e) => {
-                log::error!("lch_patch_applied(): Failed to decode patch: {}", e);
+                log::error!("lch_patch_applied(): Failed to decode patch: {:#}", e);
                 return -1; // data is dropped here, freeing the buffer
             }
         };
 
         if let Err(e) = self::reported::save(&config.work_dir, &patch.head_hash) {
-            log::error!("lch_patch_applied(): Failed to save REPORTED: {}", e);
+            log::error!("lch_patch_applied(): Failed to save REPORTED: {:#}", e);
             return -1; // data is dropped here, freeing the buffer
         }
     }

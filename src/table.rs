@@ -3,6 +3,8 @@ use std::fmt;
 use std::fs::File;
 use std::path::Path;
 
+use anyhow::{Context, Result};
+
 use crate::config::TableConfig;
 use crate::entry::Entry;
 
@@ -61,14 +63,10 @@ impl fmt::Display for crate::proto::table::Table {
 
 impl Table {
     /// Loads a table from a CSV file.
-    pub fn load(
-        work_dir: &Path,
-        name: &str,
-        config: &TableConfig,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn load(work_dir: &Path, name: &str, config: &TableConfig) -> Result<Self> {
         let path = work_dir.join(&config.source);
         let file =
-            File::open(&path).map_err(|e| format!("failed to open '{}': {}", path.display(), e))?;
+            File::open(&path).with_context(|| format!("failed to open '{}'", path.display()))?;
         let reader = csv::ReaderBuilder::new()
             .has_headers(config.header)
             .from_reader(file);
@@ -85,10 +83,7 @@ impl Table {
         Ok(table)
     }
 
-    fn parse_csv(
-        config: &TableConfig,
-        reader: csv::Reader<File>,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
+    fn parse_csv(config: &TableConfig, reader: csv::Reader<File>) -> Result<Self> {
         let field_names = config.field_names();
         let primary_key = config.primary_key();
 
@@ -118,13 +113,12 @@ impl Table {
             let record = record?;
 
             if record.len() != expected_len {
-                return Err(format!(
+                anyhow::bail!(
                     "row {}: expected {} fields but got {}",
                     row_num + 1,
                     expected_len,
                     record.len()
-                )
-                .into());
+                );
             }
 
             let primary_key: Vec<String> = primary_indices
