@@ -4,10 +4,10 @@
   <img src="logo.svg" alt="Leech Logo" width="120"/>
 </p>
 
-leech2 tracks changes to CSV-backed database tables using a git-like
-content-addressable block chain. It computes deltas between CSV snapshots,
-stores them as linked blocks, and can produce consolidated patches that convert
-into SQL statements for replaying changes on a target database.
+leech2 tracks changes to tables using a git-like content-addressable block
+chain. It computes deltas between table snapshots, stores them as linked blocks,
+and can produce consolidated patches that convert into SQL statements for
+replaying changes on a target database.
 
 leech2 ships as both a Rust library with a C-compatible FFI (`libleech2.so`)
 and a CLI tool (`lch`).
@@ -56,7 +56,14 @@ lch patch applied
 
 ## Configuration
 
-Config can be `config.toml` or `config.json`. TOML example:
+Config can be `config.toml` or `config.json`.
+
+### Tables
+
+- Each table must have at least one field marked `primary-key = true`
+- Field names within a table must be unique
+- The type field maps table enties to the correct SQL database types
+- Some type fields require a format specifier
 
 ```toml
 [tables.employees]
@@ -78,8 +85,6 @@ type = "DATE"
 format = "%Y-%m-%d"
 ```
 
-### Field types
-
 | Type       | SQL literal             | Notes                                        |
 |------------|-------------------------|----------------------------------------------|
 | `TEXT`     | `'value'`               | Single quotes, escaped                       |
@@ -93,8 +98,8 @@ format = "%Y-%m-%d"
 
 ### Compression
 
-Patches are compressed with zstd by default. An optional `[compression]`
-section controls this:
+Patches are compressed with zstd by default. An optional `[compression]` section
+controls this:
 
 ```toml
 [compression]
@@ -118,11 +123,6 @@ Both fields are optional and independent. Supported duration suffixes: `s`
 
 Truncation always removes orphaned blocks (on disk but not reachable from HEAD)
 and blocks older than the last reported position (see `lch_patch_applied`).
-
-### Validation
-
-- Each table must have at least one field marked `primary-key = true`
-- Field names within a table must be unique
 
 ## C API
 
