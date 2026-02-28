@@ -20,10 +20,9 @@ pub struct TruncateConfig {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(default)]
 pub struct CompressionConfig {
-    #[serde(default = "default_compression_enable")]
     pub enable: bool,
-    #[serde(default)]
     pub level: i32,
 }
 
@@ -34,10 +33,6 @@ impl Default for CompressionConfig {
             level: 0,
         }
     }
-}
-
-fn default_compression_enable() -> bool {
-    true
 }
 
 #[derive(Debug, Deserialize)]
@@ -85,14 +80,6 @@ impl TableConfig {
             .map(|f| f.name.clone())
             .collect()
     }
-
-    pub fn field_types(&self) -> Vec<String> {
-        self.fields.iter().map(|f| f.field_type.clone()).collect()
-    }
-
-    pub fn field_formats(&self) -> Vec<Option<String>> {
-        self.fields.iter().map(|f| f.format.clone()).collect()
-    }
 }
 
 impl Config {
@@ -119,8 +106,12 @@ impl Config {
         config.work_dir = work_dir.to_path_buf();
 
         for (name, table) in &config.tables {
-            let pk_count = table.fields.iter().filter(|f| f.primary_key).count();
-            if pk_count == 0 {
+            let num_primary_keys = table
+                .fields
+                .iter()
+                .filter(|field| field.primary_key)
+                .count();
+            if num_primary_keys == 0 {
                 bail!(
                     "table '{}': at least one field must be marked as primary-key",
                     name
@@ -130,7 +121,11 @@ impl Config {
             let mut seen = HashSet::new();
             for field in &table.fields {
                 if !seen.insert(&field.name) {
-                    bail!("table '{}': duplicate field name '{}'", name, field.name);
+                    bail!(
+                        "table '{}': found duplicate field name '{}'",
+                        name,
+                        field.name
+                    );
                 }
             }
         }
@@ -163,8 +158,8 @@ pub fn parse_duration(s: &str) -> Result<Duration> {
         bail!("empty duration string");
     }
 
-    let (num_str, suffix) = s.split_at(s.len() - 1);
-    let value: u64 = num_str
+    let (number, suffix) = s.split_at(s.len() - 1);
+    let value: u64 = number
         .parse()
         .map_err(|_| anyhow::anyhow!("invalid duration '{}'", s))?;
 
