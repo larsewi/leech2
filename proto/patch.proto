@@ -7,11 +7,6 @@ import "host.proto";
 import "state.proto";
 import "google/protobuf/timestamp.proto";
 
-// Wrapper for a list of deltas (oneof cannot contain repeated fields directly).
-message Deltas {
-  repeated delta.Delta items = 1;
-}
-
 // Patch represents the merged diff between two blocks in the chain.
 message Patch {
   // The hash of the most recent block in the chain (HEAD).
@@ -25,7 +20,7 @@ message Patch {
   // The payload is either merged deltas or a full state snapshot (fallback).
   oneof payload {
     // Merged deltas representing the combined changes between the two blocks.
-    Deltas deltas = 5;
+    delta.Deltas deltas = 5;
     // Full state snapshot, used when delta merging fails due to conflicts.
     state.State state = 6;
   }

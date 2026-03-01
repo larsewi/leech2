@@ -5,6 +5,11 @@ package delta;
 import "entry.proto";
 import "update.proto";
 
+// Wrapper for a list of deltas (oneof cannot contain repeated fields directly).
+message Deltas {
+  repeated Delta items = 1;
+}
+
 // Delta represents the changes to a single table between two states.
 message Delta {
   // The name of the table this delta applies to.
