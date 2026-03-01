@@ -154,11 +154,12 @@ lch_config_t *config = lch_init("/path/to/.leech2");
  * Runs history truncation afterwards. */
 lch_block_create(config);
 
-/* Walks the chain from HEAD to the given hash, merging deltas.
- * Returns the encoded patch. */
+/* Walks the chain from HEAD to the last known hash, merging deltas.
+ * Returns the encoded patch. Pass NULL to use the REPORTED hash,
+ * or genesis if REPORTED does not exist. */
 uint8_t *buf;
 size_t len;
-lch_patch_create(config, "0000000000000000000000000000000000000000", &buf, &len);
+lch_patch_create(config, NULL, &buf, &len);
 
 /* Decodes the patch and produces SQL:
  * - Delta payload: DELETE + INSERT + UPDATE statements
