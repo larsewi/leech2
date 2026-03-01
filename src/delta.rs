@@ -385,11 +385,11 @@ impl Delta {
 
         // Process tables in current state
         for (table_name, current_table) in &current_state.tables {
-            let prev_table = previous_state
+            let previous_table = previous_state
                 .as_ref()
                 .and_then(|ps| ps.tables.get(table_name));
 
-            let (inserts, deletes, updates) = Self::compute_table(prev_table, current_table);
+            let (inserts, deletes, updates) = Self::compute_table(previous_table, current_table);
 
             // Skip tables with no changes
             if inserts.is_empty() && deletes.is_empty() && updates.is_empty() {
@@ -406,8 +406,8 @@ impl Delta {
         }
 
         // Tables only in previous state: all records are deletes
-        if let Some(ref previous) = previous_state {
-            for (table_name, table) in &previous.tables {
+        if let Some(ref previous_state) = previous_state {
+            for (table_name, table) in &previous_state.tables {
                 // Skip empty tables
                 if table.records.is_empty() {
                     continue;
@@ -481,10 +481,10 @@ mod tests {
     fn make_table(rows: &[(&[&str], &[&str])]) -> Table {
         let records = rows
             .iter()
-            .map(|(k, v)| {
+            .map(|(key, value)| {
                 (
-                    k.iter().map(|s| s.to_string()).collect(),
-                    v.iter().map(|s| s.to_string()).collect(),
+                    key.iter().map(|s| s.to_string()).collect(),
+                    value.iter().map(|s| s.to_string()).collect(),
                 )
             })
             .collect();
@@ -495,7 +495,7 @@ mod tests {
     }
 
     fn find_delta<'a>(deltas: &'a [Delta], name: &str) -> Option<&'a Delta> {
-        deltas.iter().find(|d| d.table_name == name)
+        deltas.iter().find(|delta| delta.table_name == name)
     }
 
     #[test]
@@ -541,8 +541,8 @@ mod tests {
 
     #[test]
     fn test_table_in_both_states_mixed_changes() {
-        let mut prev_tables = HashMap::new();
-        prev_tables.insert(
+        let mut previous_tables = HashMap::new();
+        previous_tables.insert(
             "users".to_string(),
             make_table(&[
                 (&["1"], &["alice"]),   // will be updated
@@ -550,12 +550,12 @@ mod tests {
                 (&["3"], &["charlie"]), // unchanged
             ]),
         );
-        let previous = State {
-            tables: prev_tables,
+        let previous_state = State {
+            tables: previous_tables,
         };
 
-        let mut curr_tables = HashMap::new();
-        curr_tables.insert(
+        let mut current_tables = HashMap::new();
+        current_tables.insert(
             "users".to_string(),
             make_table(&[
                 (&["1"], &["alice_updated"]), // update
@@ -563,11 +563,11 @@ mod tests {
                 (&["4"], &["dave"]),          // insert
             ]),
         );
-        let current = State {
-            tables: curr_tables,
+        let current_state = State {
+            tables: current_tables,
         };
 
-        let deltas = Delta::compute(Some(previous), &current);
+        let deltas = Delta::compute(Some(previous_state), &current_state);
 
         assert_eq!(deltas.len(), 1);
         let delta = find_delta(&deltas, "users").unwrap();
@@ -588,21 +588,21 @@ mod tests {
 
     #[test]
     fn test_multiple_tables() {
-        let mut prev_tables = HashMap::new();
-        prev_tables.insert("table_a".to_string(), make_table(&[(&["1"], &["a"])]));
-        prev_tables.insert("table_b".to_string(), make_table(&[(&["1"], &["b"])]));
-        let previous = State {
-            tables: prev_tables,
+        let mut previous_tables = HashMap::new();
+        previous_tables.insert("table_a".to_string(), make_table(&[(&["1"], &["a"])]));
+        previous_tables.insert("table_b".to_string(), make_table(&[(&["1"], &["b"])]));
+        let previous_state = State {
+            tables: previous_tables,
         };
 
-        let mut curr_tables = HashMap::new();
-        curr_tables.insert("table_b".to_string(), make_table(&[(&["2"], &["b2"])]));
-        curr_tables.insert("table_c".to_string(), make_table(&[(&["1"], &["c"])]));
-        let current = State {
-            tables: curr_tables,
+        let mut current_tables = HashMap::new();
+        current_tables.insert("table_b".to_string(), make_table(&[(&["2"], &["b2"])]));
+        current_tables.insert("table_c".to_string(), make_table(&[(&["1"], &["c"])]));
+        let current_state = State {
+            tables: current_tables,
         };
 
-        let deltas = Delta::compute(Some(previous), &current);
+        let deltas = Delta::compute(Some(previous_state), &current_state);
 
         assert_eq!(deltas.len(), 3);
 
@@ -626,46 +626,46 @@ mod tests {
 
     #[test]
     fn test_empty_states() {
-        let previous = State {
+        let previous_state = State {
             tables: HashMap::new(),
         };
-        let current = State {
+        let current_state = State {
             tables: HashMap::new(),
         };
 
-        let deltas = Delta::compute(Some(previous), &current);
+        let deltas = Delta::compute(Some(previous_state), &current_state);
         assert_eq!(deltas.len(), 0);
     }
 
     #[test]
     fn test_unchanged_table_skipped() {
-        let mut prev_tables = HashMap::new();
-        prev_tables.insert(
+        let mut previous_tables = HashMap::new();
+        previous_tables.insert(
             "unchanged".to_string(),
             make_table(&[(&["1"], &["alice"]), (&["2"], &["bob"])]),
         );
-        prev_tables.insert(
+        previous_tables.insert(
             "changed".to_string(),
             make_table(&[(&["1"], &["old_value"])]),
         );
-        let previous = State {
-            tables: prev_tables,
+        let previous_state = State {
+            tables: previous_tables,
         };
 
-        let mut curr_tables = HashMap::new();
-        curr_tables.insert(
+        let mut current_tables = HashMap::new();
+        current_tables.insert(
             "unchanged".to_string(),
             make_table(&[(&["1"], &["alice"]), (&["2"], &["bob"])]),
         );
-        curr_tables.insert(
+        current_tables.insert(
             "changed".to_string(),
             make_table(&[(&["1"], &["new_value"])]),
         );
-        let current = State {
-            tables: curr_tables,
+        let current_state = State {
+            tables: current_tables,
         };
 
-        let deltas = Delta::compute(Some(previous), &current);
+        let deltas = Delta::compute(Some(previous_state), &current_state);
 
         // Only the changed table should have a delta
         assert_eq!(deltas.len(), 1);
@@ -675,31 +675,31 @@ mod tests {
 
     #[test]
     fn test_composite_key() {
-        let mut prev_tables = HashMap::new();
-        prev_tables.insert(
+        let mut previous_tables = HashMap::new();
+        previous_tables.insert(
             "orders".to_string(),
             make_table(&[
                 (&["user1", "order1"], &["100"]),
                 (&["user1", "order2"], &["200"]),
             ]),
         );
-        let previous = State {
-            tables: prev_tables,
+        let previous_state = State {
+            tables: previous_tables,
         };
 
-        let mut curr_tables = HashMap::new();
-        curr_tables.insert(
+        let mut current_tables = HashMap::new();
+        current_tables.insert(
             "orders".to_string(),
             make_table(&[
                 (&["user1", "order1"], &["150"]), // update
                 (&["user2", "order1"], &["300"]), // insert (different user)
             ]),
         );
-        let current = State {
-            tables: curr_tables,
+        let current_state = State {
+            tables: current_tables,
         };
 
-        let deltas = Delta::compute(Some(previous), &current);
+        let deltas = Delta::compute(Some(previous_state), &current_state);
 
         let delta = find_delta(&deltas, "orders").unwrap();
         assert_eq!(delta.inserts.len(), 1);
@@ -712,8 +712,8 @@ mod tests {
 
     // ---- Merge tests ----
 
-    fn make_val(val: &[&str]) -> Vec<String> {
-        val.iter().map(|s| s.to_string()).collect()
+    fn make_value(value: &[&str]) -> Vec<String> {
+        value.iter().map(|s| s.to_string()).collect()
     }
 
     fn empty_delta() -> Delta {
@@ -726,362 +726,404 @@ mod tests {
         }
     }
 
-    // Rule 1: current insert, no parent → insert passes through
+    // Rule 1: child insert, no parent → insert passes through
     #[test]
     fn test_merge_rule1_current_insert_only() {
-        let mut parent = empty_delta();
-        let mut current = empty_delta();
-        current
+        let mut parent_delta = empty_delta();
+        let mut child_delta = empty_delta();
+        child_delta
             .inserts
-            .insert(make_key(&["3"]), make_val(&["Charlie"]));
+            .insert(make_key(&["3"]), make_value(&["Charlie"]));
 
-        Delta::merge(&mut parent, current).unwrap();
+        Delta::merge(&mut parent_delta, child_delta).unwrap();
 
-        assert_eq!(parent.inserts.len(), 1);
-        assert_eq!(parent.inserts[&make_key(&["3"])], make_val(&["Charlie"]));
-        assert!(parent.deletes.is_empty());
-        assert!(parent.updates.is_empty());
+        assert_eq!(parent_delta.inserts.len(), 1);
+        assert_eq!(
+            parent_delta.inserts[&make_key(&["3"])],
+            make_value(&["Charlie"])
+        );
+        assert!(parent_delta.deletes.is_empty());
+        assert!(parent_delta.updates.is_empty());
     }
 
-    // Rule 2: current delete, no parent → delete passes through
+    // Rule 2: child delete, no parent → delete passes through
     #[test]
     fn test_merge_rule2_current_delete_only() {
-        let mut parent = empty_delta();
-        let mut current = empty_delta();
-        current.deletes.insert(make_key(&["2"]), make_val(&["Bob"]));
+        let mut parent_delta = empty_delta();
+        let mut child_delta = empty_delta();
+        child_delta
+            .deletes
+            .insert(make_key(&["2"]), make_value(&["Bob"]));
 
-        Delta::merge(&mut parent, current).unwrap();
+        Delta::merge(&mut parent_delta, child_delta).unwrap();
 
-        assert_eq!(parent.deletes.len(), 1);
-        assert_eq!(parent.deletes[&make_key(&["2"])], make_val(&["Bob"]));
-        assert!(parent.inserts.is_empty());
-        assert!(parent.updates.is_empty());
+        assert_eq!(parent_delta.deletes.len(), 1);
+        assert_eq!(
+            parent_delta.deletes[&make_key(&["2"])],
+            make_value(&["Bob"])
+        );
+        assert!(parent_delta.inserts.is_empty());
+        assert!(parent_delta.updates.is_empty());
     }
 
-    // Rule 3: current update, no parent → update passes through
+    // Rule 3: child update, no parent → update passes through
     #[test]
     fn test_merge_rule3_current_update_only() {
-        let mut parent = empty_delta();
-        let mut current = empty_delta();
-        current.updates.insert(
+        let mut parent_delta = empty_delta();
+        let mut child_delta = empty_delta();
+        child_delta.updates.insert(
             make_key(&["1"]),
-            (make_val(&["Alice"]), make_val(&["Alicia"])),
+            (make_value(&["Alice"]), make_value(&["Alicia"])),
         );
 
-        Delta::merge(&mut parent, current).unwrap();
+        Delta::merge(&mut parent_delta, child_delta).unwrap();
 
-        assert_eq!(parent.updates.len(), 1);
-        let (old, new) = &parent.updates[&make_key(&["1"])];
-        assert_eq!(old, &make_val(&["Alice"]));
-        assert_eq!(new, &make_val(&["Alicia"]));
-        assert!(parent.inserts.is_empty());
-        assert!(parent.deletes.is_empty());
+        assert_eq!(parent_delta.updates.len(), 1);
+        let (old_value, new_value) = &parent_delta.updates[&make_key(&["1"])];
+        assert_eq!(old_value, &make_value(&["Alice"]));
+        assert_eq!(new_value, &make_value(&["Alicia"]));
+        assert!(parent_delta.inserts.is_empty());
+        assert!(parent_delta.deletes.is_empty());
     }
 
-    // Rule 4: parent insert, no current → insert stays
+    // Rule 4: parent insert, no child → insert stays
     #[test]
     fn test_merge_rule4_parent_insert_only() {
-        let mut parent = empty_delta();
-        parent
+        let mut parent_delta = empty_delta();
+        parent_delta
             .inserts
-            .insert(make_key(&["3"]), make_val(&["Charlie"]));
-        let current = empty_delta();
+            .insert(make_key(&["3"]), make_value(&["Charlie"]));
+        let child_delta = empty_delta();
 
-        Delta::merge(&mut parent, current).unwrap();
+        Delta::merge(&mut parent_delta, child_delta).unwrap();
 
-        assert_eq!(parent.inserts.len(), 1);
-        assert_eq!(parent.inserts[&make_key(&["3"])], make_val(&["Charlie"]));
+        assert_eq!(parent_delta.inserts.len(), 1);
+        assert_eq!(
+            parent_delta.inserts[&make_key(&["3"])],
+            make_value(&["Charlie"])
+        );
     }
 
     // Rule 5: insert in both → error
     #[test]
     fn test_merge_rule5_double_insert_error() {
-        let mut parent = empty_delta();
-        parent
+        let mut parent_delta = empty_delta();
+        parent_delta
             .inserts
-            .insert(make_key(&["3"]), make_val(&["Charlie"]));
-        let mut current = empty_delta();
-        current
+            .insert(make_key(&["3"]), make_value(&["Charlie"]));
+        let mut child_delta = empty_delta();
+        child_delta
             .inserts
-            .insert(make_key(&["3"]), make_val(&["Charles"]));
+            .insert(make_key(&["3"]), make_value(&["Charles"]));
 
-        let result = Delta::merge(&mut parent, current);
-        assert!(result.is_err());
+        let merged_delta = Delta::merge(&mut parent_delta, child_delta);
+        assert!(merged_delta.is_err());
     }
 
     // Rule 6: insert then delete → cancels out
     #[test]
     fn test_merge_rule6_insert_then_delete_cancels() {
-        let mut parent = empty_delta();
-        parent
+        let mut parent_delta = empty_delta();
+        parent_delta
             .inserts
-            .insert(make_key(&["3"]), make_val(&["Charlie"]));
-        let mut current = empty_delta();
-        current
+            .insert(make_key(&["3"]), make_value(&["Charlie"]));
+        let mut child_delta = empty_delta();
+        child_delta
             .deletes
-            .insert(make_key(&["3"]), make_val(&["Charles"]));
+            .insert(make_key(&["3"]), make_value(&["Charles"]));
 
-        Delta::merge(&mut parent, current).unwrap();
+        Delta::merge(&mut parent_delta, child_delta).unwrap();
 
-        assert!(parent.inserts.is_empty());
-        assert!(parent.deletes.is_empty());
-        assert!(parent.updates.is_empty());
+        assert!(parent_delta.inserts.is_empty());
+        assert!(parent_delta.deletes.is_empty());
+        assert!(parent_delta.updates.is_empty());
     }
 
     // Rule 7: insert then update → insert with new value
     #[test]
     fn test_merge_rule7_insert_then_update() {
-        let mut parent = empty_delta();
-        parent
+        let mut parent_delta = empty_delta();
+        parent_delta
             .inserts
-            .insert(make_key(&["3"]), make_val(&["Charlie"]));
-        let mut current = empty_delta();
-        current.updates.insert(
+            .insert(make_key(&["3"]), make_value(&["Charlie"]));
+        let mut child_delta = empty_delta();
+        child_delta.updates.insert(
             make_key(&["3"]),
-            (make_val(&["Charlie"]), make_val(&["Charles"])),
+            (make_value(&["Charlie"]), make_value(&["Charles"])),
         );
 
-        Delta::merge(&mut parent, current).unwrap();
+        Delta::merge(&mut parent_delta, child_delta).unwrap();
 
-        assert_eq!(parent.inserts.len(), 1);
-        assert_eq!(parent.inserts[&make_key(&["3"])], make_val(&["Charles"]));
-        assert!(parent.deletes.is_empty());
-        assert!(parent.updates.is_empty());
+        assert_eq!(parent_delta.inserts.len(), 1);
+        assert_eq!(
+            parent_delta.inserts[&make_key(&["3"])],
+            make_value(&["Charles"])
+        );
+        assert!(parent_delta.deletes.is_empty());
+        assert!(parent_delta.updates.is_empty());
     }
 
     // Rule 8: parent delete, no current → delete stays
     #[test]
     fn test_merge_rule8_parent_delete_only() {
-        let mut parent = empty_delta();
-        parent.deletes.insert(make_key(&["2"]), make_val(&["Bob"]));
-        let current = empty_delta();
+        let mut parent_delta = empty_delta();
+        parent_delta
+            .deletes
+            .insert(make_key(&["2"]), make_value(&["Bob"]));
+        let child_delta = empty_delta();
 
-        Delta::merge(&mut parent, current).unwrap();
+        Delta::merge(&mut parent_delta, child_delta).unwrap();
 
-        assert_eq!(parent.deletes.len(), 1);
-        assert_eq!(parent.deletes[&make_key(&["2"])], make_val(&["Bob"]));
+        assert_eq!(parent_delta.deletes.len(), 1);
+        assert_eq!(
+            parent_delta.deletes[&make_key(&["2"])],
+            make_value(&["Bob"])
+        );
     }
 
     // Rule 9a: delete then insert with same value → cancels out
     #[test]
     fn test_merge_rule9a_delete_then_insert_same_cancels() {
-        let mut parent = empty_delta();
-        parent.deletes.insert(make_key(&["2"]), make_val(&["Bob"]));
-        let mut current = empty_delta();
-        current.inserts.insert(make_key(&["2"]), make_val(&["Bob"]));
+        let mut parent_delta = empty_delta();
+        parent_delta
+            .deletes
+            .insert(make_key(&["2"]), make_value(&["Bob"]));
+        let mut child_delta = empty_delta();
+        child_delta
+            .inserts
+            .insert(make_key(&["2"]), make_value(&["Bob"]));
 
-        Delta::merge(&mut parent, current).unwrap();
+        Delta::merge(&mut parent_delta, child_delta).unwrap();
 
-        assert!(parent.inserts.is_empty());
-        assert!(parent.deletes.is_empty());
-        assert!(parent.updates.is_empty());
+        assert!(parent_delta.inserts.is_empty());
+        assert!(parent_delta.deletes.is_empty());
+        assert!(parent_delta.updates.is_empty());
     }
 
     // Rule 9b: delete then insert with different value → update
     #[test]
     fn test_merge_rule9b_delete_then_insert_different_becomes_update() {
-        let mut parent = empty_delta();
-        parent.deletes.insert(make_key(&["2"]), make_val(&["Bob"]));
-        let mut current = empty_delta();
-        current
+        let mut parent_delta = empty_delta();
+        parent_delta
+            .deletes
+            .insert(make_key(&["2"]), make_value(&["Bob"]));
+        let mut child_delta = empty_delta();
+        child_delta
             .inserts
-            .insert(make_key(&["2"]), make_val(&["Robert"]));
+            .insert(make_key(&["2"]), make_value(&["Robert"]));
 
-        Delta::merge(&mut parent, current).unwrap();
+        Delta::merge(&mut parent_delta, child_delta).unwrap();
 
-        assert!(parent.inserts.is_empty());
-        assert!(parent.deletes.is_empty());
-        assert_eq!(parent.updates.len(), 1);
-        let (old, new) = &parent.updates[&make_key(&["2"])];
-        assert_eq!(old, &make_val(&["Bob"]));
-        assert_eq!(new, &make_val(&["Robert"]));
+        assert!(parent_delta.inserts.is_empty());
+        assert!(parent_delta.deletes.is_empty());
+        assert_eq!(parent_delta.updates.len(), 1);
+        let (old_value, new_value) = &parent_delta.updates[&make_key(&["2"])];
+        assert_eq!(old_value, &make_value(&["Bob"]));
+        assert_eq!(new_value, &make_value(&["Robert"]));
     }
 
     // Rule 10: double delete → error
     #[test]
     fn test_merge_rule10_double_delete_error() {
-        let mut parent = empty_delta();
-        parent.deletes.insert(make_key(&["2"]), make_val(&["Bob"]));
-        let mut current = empty_delta();
-        current.deletes.insert(make_key(&["2"]), make_val(&["Bob"]));
+        let mut parent_delta = empty_delta();
+        parent_delta
+            .deletes
+            .insert(make_key(&["2"]), make_value(&["Bob"]));
+        let mut current_child = empty_delta();
+        current_child
+            .deletes
+            .insert(make_key(&["2"]), make_value(&["Bob"]));
 
-        let result = Delta::merge(&mut parent, current);
-        assert!(result.is_err());
+        let merged_delta = Delta::merge(&mut parent_delta, current_child);
+        assert!(merged_delta.is_err());
     }
 
     // Rule 11: delete then update → error
     #[test]
     fn test_merge_rule11_delete_then_update_error() {
-        let mut parent = empty_delta();
-        parent.deletes.insert(make_key(&["2"]), make_val(&["Bob"]));
-        let mut current = empty_delta();
-        current.updates.insert(
+        let mut parent_delta = empty_delta();
+        parent_delta
+            .deletes
+            .insert(make_key(&["2"]), make_value(&["Bob"]));
+        let mut child_delta = empty_delta();
+        child_delta.updates.insert(
             make_key(&["2"]),
-            (make_val(&["Bob"]), make_val(&["Robert"])),
+            (make_value(&["Bob"]), make_value(&["Robert"])),
         );
 
-        let result = Delta::merge(&mut parent, current);
-        assert!(result.is_err());
+        let merged_delta = Delta::merge(&mut parent_delta, child_delta);
+        assert!(merged_delta.is_err());
     }
 
     // Rule 12: parent update, no current → update stays
     #[test]
     fn test_merge_rule12_parent_update_only() {
-        let mut parent = empty_delta();
-        parent.updates.insert(
+        let mut parent_delta = empty_delta();
+        parent_delta.updates.insert(
             make_key(&["1"]),
-            (make_val(&["Alice"]), make_val(&["Alicia"])),
+            (make_value(&["Alice"]), make_value(&["Alicia"])),
         );
-        let current = empty_delta();
+        let child_delta = empty_delta();
 
-        Delta::merge(&mut parent, current).unwrap();
+        Delta::merge(&mut parent_delta, child_delta).unwrap();
 
-        assert_eq!(parent.updates.len(), 1);
-        let (old, new) = &parent.updates[&make_key(&["1"])];
-        assert_eq!(old, &make_val(&["Alice"]));
-        assert_eq!(new, &make_val(&["Alicia"]));
+        assert_eq!(parent_delta.updates.len(), 1);
+        let (old_value, new_value) = &parent_delta.updates[&make_key(&["1"])];
+        assert_eq!(old_value, &make_value(&["Alice"]));
+        assert_eq!(new_value, &make_value(&["Alicia"]));
     }
 
     // Rule 13: update then insert → error
     #[test]
     fn test_merge_rule13_update_then_insert_error() {
-        let mut parent = empty_delta();
-        parent.updates.insert(
+        let mut parent_delta = empty_delta();
+        parent_delta.updates.insert(
             make_key(&["1"]),
-            (make_val(&["Alice"]), make_val(&["Alicia"])),
+            (make_value(&["Alice"]), make_value(&["Alicia"])),
         );
-        let mut current = empty_delta();
-        current
+        let mut child_delta = empty_delta();
+        child_delta
             .inserts
-            .insert(make_key(&["1"]), make_val(&["Alice"]));
+            .insert(make_key(&["1"]), make_value(&["Alice"]));
 
-        let result = Delta::merge(&mut parent, current);
-        assert!(result.is_err());
+        let merged_delta = Delta::merge(&mut parent_delta, child_delta);
+        assert!(merged_delta.is_err());
     }
 
     // Rule 14a: update then delete with matching value → delete(old)
     #[test]
     fn test_merge_rule14a_update_then_delete_matching() {
-        let mut parent = empty_delta();
-        parent.updates.insert(
+        let mut parent_delta = empty_delta();
+        parent_delta.updates.insert(
             make_key(&["1"]),
-            (make_val(&["Alice"]), make_val(&["Alicia"])),
+            (make_value(&["Alice"]), make_value(&["Alicia"])),
         );
-        let mut current = empty_delta();
-        current
+        let mut child_delta = empty_delta();
+        child_delta
             .deletes
-            .insert(make_key(&["1"]), make_val(&["Alicia"]));
+            .insert(make_key(&["1"]), make_value(&["Alicia"]));
 
-        Delta::merge(&mut parent, current).unwrap();
+        Delta::merge(&mut parent_delta, child_delta).unwrap();
 
-        assert!(parent.inserts.is_empty());
-        assert!(parent.updates.is_empty());
-        assert_eq!(parent.deletes.len(), 1);
-        assert_eq!(parent.deletes[&make_key(&["1"])], make_val(&["Alice"]));
+        assert!(parent_delta.inserts.is_empty());
+        assert!(parent_delta.updates.is_empty());
+        assert_eq!(parent_delta.deletes.len(), 1);
+        assert_eq!(
+            parent_delta.deletes[&make_key(&["1"])],
+            make_value(&["Alice"])
+        );
     }
 
     // Rule 14b: update then delete with mismatched value → error
     #[test]
     fn test_merge_rule14b_update_then_delete_mismatch_error() {
-        let mut parent = empty_delta();
-        parent.updates.insert(
+        let mut parent_delta = empty_delta();
+        parent_delta.updates.insert(
             make_key(&["1"]),
-            (make_val(&["Alice"]), make_val(&["Alicia"])),
+            (make_value(&["Alice"]), make_value(&["Alicia"])),
         );
-        let mut current = empty_delta();
-        current
+        let mut child_delta = empty_delta();
+        child_delta
             .deletes
-            .insert(make_key(&["1"]), make_val(&["Alice"]));
+            .insert(make_key(&["1"]), make_value(&["Alice"]));
 
-        let result = Delta::merge(&mut parent, current);
-        assert!(result.is_err());
+        let merged_delta = Delta::merge(&mut parent_delta, child_delta);
+        assert!(merged_delta.is_err());
     }
 
     // Rule 15: update then update → update(old1 → new2)
     #[test]
     fn test_merge_rule15_update_then_update() {
-        let mut parent = empty_delta();
-        parent.updates.insert(
+        let mut parent_delta = empty_delta();
+        parent_delta.updates.insert(
             make_key(&["1"]),
-            (make_val(&["Alice"]), make_val(&["Alicia"])),
+            (make_value(&["Alice"]), make_value(&["Alicia"])),
         );
-        let mut current = empty_delta();
-        current.updates.insert(
+        let mut child_delta = empty_delta();
+        child_delta.updates.insert(
             make_key(&["1"]),
-            (make_val(&["Alicia"]), make_val(&["Ali"])),
+            (make_value(&["Alicia"]), make_value(&["Ali"])),
         );
 
-        Delta::merge(&mut parent, current).unwrap();
+        Delta::merge(&mut parent_delta, child_delta).unwrap();
 
-        assert_eq!(parent.updates.len(), 1);
-        let (old, new) = &parent.updates[&make_key(&["1"])];
-        assert_eq!(old, &make_val(&["Alice"]));
-        assert_eq!(new, &make_val(&["Ali"]));
-        assert!(parent.inserts.is_empty());
-        assert!(parent.deletes.is_empty());
+        assert_eq!(parent_delta.updates.len(), 1);
+        let (old_value, new_value) = &parent_delta.updates[&make_key(&["1"])];
+        assert_eq!(old_value, &make_value(&["Alice"]));
+        assert_eq!(new_value, &make_value(&["Ali"]));
+        assert!(parent_delta.inserts.is_empty());
+        assert!(parent_delta.deletes.is_empty());
     }
 
     // Test merging with multiple keys exercising different rules simultaneously
     #[test]
     fn test_merge_multiple_keys_mixed_rules() {
-        let mut parent = empty_delta();
-        parent
+        let mut parent_delta = empty_delta();
+        parent_delta
             .inserts
-            .insert(make_key(&["3"]), make_val(&["Charlie"])); // will be updated (rule 7)
-        parent.deletes.insert(make_key(&["2"]), make_val(&["Bob"])); // will be re-inserted different (rule 9b)
-        parent.updates.insert(
+            .insert(make_key(&["3"]), make_value(&["Charlie"])); // will be updated (rule 7)
+        parent_delta
+            .deletes
+            .insert(make_key(&["2"]), make_value(&["Bob"])); // will be re-inserted different (rule 9b)
+        parent_delta.updates.insert(
             make_key(&["1"]),
-            (make_val(&["Alice"]), make_val(&["Alicia"])),
+            (make_value(&["Alice"]), make_value(&["Alicia"])),
         ); // will be updated again (rule 15)
 
-        let mut current = empty_delta();
-        current.updates.insert(
+        let mut current_delta = empty_delta();
+        current_delta.updates.insert(
             make_key(&["3"]),
-            (make_val(&["Charlie"]), make_val(&["Charles"])),
+            (make_value(&["Charlie"]), make_value(&["Charles"])),
         ); // rule 7
-        current
+        current_delta
             .inserts
-            .insert(make_key(&["2"]), make_val(&["Robert"])); // rule 9b
-        current.updates.insert(
+            .insert(make_key(&["2"]), make_value(&["Robert"])); // rule 9b
+        current_delta.updates.insert(
             make_key(&["1"]),
-            (make_val(&["Alicia"]), make_val(&["Ali"])),
+            (make_value(&["Alicia"]), make_value(&["Ali"])),
         ); // rule 15
-        current
+        current_delta
             .inserts
-            .insert(make_key(&["4"]), make_val(&["Dave"])); // rule 1
+            .insert(make_key(&["4"]), make_value(&["Dave"])); // rule 1
 
-        Delta::merge(&mut parent, current).unwrap();
+        Delta::merge(&mut parent_delta, current_delta).unwrap();
 
         // Rule 7: insert(3, Charlie) + update(3, Charlie→Charles) = insert(3, Charles)
-        assert_eq!(parent.inserts.len(), 2);
-        assert_eq!(parent.inserts[&make_key(&["3"])], make_val(&["Charles"]));
+        assert_eq!(parent_delta.inserts.len(), 2);
+        assert_eq!(
+            parent_delta.inserts[&make_key(&["3"])],
+            make_value(&["Charles"])
+        );
         // Rule 1: insert(4, Dave) passes through
-        assert_eq!(parent.inserts[&make_key(&["4"])], make_val(&["Dave"]));
+        assert_eq!(
+            parent_delta.inserts[&make_key(&["4"])],
+            make_value(&["Dave"])
+        );
 
         // Rule 9b: delete(2, Bob) + insert(2, Robert) = update(2, Bob→Robert)
         // Rule 15: update(1, Alice→Alicia) + update(1, Alicia→Ali) = update(1, Alice→Ali)
-        assert_eq!(parent.updates.len(), 2);
-        let (old, new) = &parent.updates[&make_key(&["2"])];
-        assert_eq!(old, &make_val(&["Bob"]));
-        assert_eq!(new, &make_val(&["Robert"]));
-        let (old, new) = &parent.updates[&make_key(&["1"])];
-        assert_eq!(old, &make_val(&["Alice"]));
-        assert_eq!(new, &make_val(&["Ali"]));
+        assert_eq!(parent_delta.updates.len(), 2);
+        let (old_value, new_value) = &parent_delta.updates[&make_key(&["2"])];
+        assert_eq!(old_value, &make_value(&["Bob"]));
+        assert_eq!(new_value, &make_value(&["Robert"]));
+        let (old_value, new_value) = &parent_delta.updates[&make_key(&["1"])];
+        assert_eq!(old_value, &make_value(&["Alice"]));
+        assert_eq!(new_value, &make_value(&["Ali"]));
 
-        assert!(parent.deletes.is_empty());
+        assert!(parent_delta.deletes.is_empty());
     }
 
     // Merge with mismatched field names → error
     #[test]
     fn test_merge_field_mismatch_error() {
-        let mut parent = Delta {
+        let mut parent_delta = Delta {
             table_name: "t".to_string(),
             column_names: vec!["id".to_string(), "name".to_string()],
             inserts: HashMap::new(),
             deletes: HashMap::new(),
             updates: HashMap::new(),
         };
-        let other = Delta {
+        let child_delta = Delta {
             table_name: "t".to_string(),
             column_names: vec!["id".to_string(), "email".to_string()],
             inserts: HashMap::new(),
@@ -1089,10 +1131,13 @@ mod tests {
             updates: HashMap::new(),
         };
 
-        let result = Delta::merge(&mut parent, other);
-        assert!(result.is_err());
+        let merged_delta = Delta::merge(&mut parent_delta, child_delta);
+        assert!(merged_delta.is_err());
         assert!(
-            result.unwrap_err().to_string().contains("field mismatch"),
+            merged_delta
+                .unwrap_err()
+                .to_string()
+                .contains("field mismatch"),
             "error should mention field mismatch"
         );
     }
@@ -1100,20 +1145,23 @@ mod tests {
     // Test merging with composite keys
     #[test]
     fn test_merge_composite_keys() {
-        let mut parent = empty_delta();
-        parent
+        let mut parent_delta = empty_delta();
+        parent_delta
             .inserts
-            .insert(make_key(&["u1", "o1"]), make_val(&["100"]));
-        let mut current = empty_delta();
-        current.updates.insert(
+            .insert(make_key(&["u1", "o1"]), make_value(&["100"]));
+        let mut child_delta = empty_delta();
+        child_delta.updates.insert(
             make_key(&["u1", "o1"]),
-            (make_val(&["100"]), make_val(&["150"])),
+            (make_value(&["100"]), make_value(&["150"])),
         );
 
-        Delta::merge(&mut parent, current).unwrap();
+        Delta::merge(&mut parent_delta, child_delta).unwrap();
 
-        assert_eq!(parent.inserts.len(), 1);
-        assert_eq!(parent.inserts[&make_key(&["u1", "o1"])], make_val(&["150"]));
-        assert!(parent.updates.is_empty());
+        assert_eq!(parent_delta.inserts.len(), 1);
+        assert_eq!(
+            parent_delta.inserts[&make_key(&["u1", "o1"])],
+            make_value(&["150"])
+        );
+        assert!(parent_delta.updates.is_empty());
     }
 }
