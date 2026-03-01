@@ -85,9 +85,9 @@ impl Block {
         Ok(hash)
     }
 
-    pub fn merge(mut parent: Self, mut child: Block) -> Result<Block> {
+    pub fn merge(mut self, mut child: Block) -> Result<Block> {
         for child_delta in child.payload.drain(..) {
-            if let Some(parent_delta) = parent
+            if let Some(parent_delta) = self
                 .payload
                 .iter_mut()
                 .find(|d| d.table_name == child_delta.table_name)
@@ -99,11 +99,11 @@ impl Block {
                     .context("Failed to merge deltas")?;
                 *parent_delta = parent_domain.into();
             } else {
-                parent.payload.push(child_delta);
+                self.payload.push(child_delta);
             }
         }
 
-        Ok(parent)
+        Ok(self)
     }
 }
 

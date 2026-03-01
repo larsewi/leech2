@@ -91,7 +91,7 @@ fn consolidate(
     while current_hash != GENESIS_HASH && !current_hash.starts_with(last_known_hash) {
         let block = Block::load(work_dir, &current_hash)?;
         let parent_hash = block.parent.clone();
-        current_block = Block::merge(block, current_block)?;
+        current_block = block.merge(current_block)?;
         num_blocks += 1;
         current_hash = parent_hash;
     }
