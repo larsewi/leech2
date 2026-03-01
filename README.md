@@ -106,9 +106,9 @@ agents' data is preserved.
 
 ```toml
 [host]
-name = "host"       # column name in the target database
-type = "TEXT"        # SQL type (default: TEXT)
-value = "agent-1"   # the identifier value
+name = "host"      # column name in the target database
+type = "TEXT"      # SQL type (default: TEXT)
+value = "agent-1"  # the identifier value
 ```
 
 The `type` field accepts the same values as table field types (TEXT, INTEGER,
@@ -122,7 +122,7 @@ controls this:
 ```toml
 [compression]
 enable = true  # enable zstd compression (default: true)
-level = 3      # zstd level (default: 0)
+level = 3      # zstd level (default: zstd default)
 ```
 
 ### History truncation
