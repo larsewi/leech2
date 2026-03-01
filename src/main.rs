@@ -192,7 +192,10 @@ fn cmd_log(config: &Config) -> Result<String> {
 
     let mut output = String::new();
     loop {
-        let block = Block::load(work_dir, &hash)?;
+        let block = match Block::load(work_dir, &hash) {
+            Ok(block) => block,
+            Err(_) => break, // block was truncated, end of reachable chain
+        };
 
         let timestamp = block
             .created
