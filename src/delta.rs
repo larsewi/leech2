@@ -34,7 +34,7 @@ pub struct Delta {
     /// The name of the table this delta applies to.
     pub table_name: String,
     /// The names of all columns, primary key columns first.
-    pub fields: Vec<String>,
+    pub column_names: Vec<String>,
     /// Entries that were added (key -> value).
     pub inserts: HashMap<Vec<String>, Vec<String>>,
     /// Entries that were removed (key -> value).
@@ -53,7 +53,7 @@ impl From<crate::proto::delta::Delta> for Delta {
             .or_else(|| proto.deletes.first().map(|e| e.key.len()))
             .or_else(|| proto.updates.first().map(|u| u.key.len()))
             .unwrap_or(0);
-        let num_sub = proto.fields.len().saturating_sub(num_pk);
+        let num_sub = proto.column_names.len().saturating_sub(num_pk);
 
         let inserts = proto
             .inserts
@@ -76,7 +76,7 @@ impl From<crate::proto::delta::Delta> for Delta {
             .collect();
         Delta {
             table_name: proto.table_name,
-            fields: proto.fields,
+            column_names: proto.column_names,
             inserts,
             deletes,
             updates,
@@ -108,7 +108,7 @@ impl From<Delta> for crate::proto::delta::Delta {
             .collect();
         crate::proto::delta::Delta {
             table_name: delta.table_name,
-            fields: delta.fields,
+            column_names: delta.column_names,
             inserts,
             deletes,
             updates,
@@ -126,7 +126,7 @@ impl crate::proto::delta::Delta {
             .or_else(|| self.deletes.first().map(|e| e.key.len()))
             .or_else(|| self.updates.first().map(|u| u.key.len()))
             .unwrap_or(0);
-        self.fields.len().saturating_sub(num_pk)
+        self.column_names.len().saturating_sub(num_pk)
     }
 }
 
@@ -134,7 +134,12 @@ impl fmt::Display for crate::proto::delta::Delta {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let num_sub = self.num_sub();
 
-        write!(f, "'{}' [{}]", self.table_name, self.fields.join(", "))?;
+        write!(
+            f,
+            "'{}' [{}]",
+            self.table_name,
+            self.column_names.join(", ")
+        )?;
         if !self.inserts.is_empty() {
             write!(f, "\n  Inserts ({}):", self.inserts.len())?;
             for entry in &self.inserts {
@@ -216,12 +221,12 @@ impl Delta {
     /// delta that represents the combined effect of both. See
     /// DELTA_MERGING_RULES.md for the full specification of the 15 rules.
     pub fn merge(&mut self, other: Delta) -> Result<()> {
-        if self.fields != other.fields {
+        if self.column_names != other.column_names {
             bail!(
                 "cannot merge deltas for table '{}': field mismatch ({:?} vs {:?})",
                 self.table_name,
-                self.fields,
-                other.fields
+                self.column_names,
+                other.column_names
             );
         }
 
@@ -366,7 +371,7 @@ impl Delta {
 
             deltas.push(Delta {
                 table_name: table_name.clone(),
-                fields: current_table.fields.clone(),
+                column_names: current_table.fields.clone(),
                 inserts,
                 deletes,
                 updates,
@@ -388,7 +393,7 @@ impl Delta {
 
                 deltas.push(Delta {
                     table_name: table_name.clone(),
-                    fields: table.fields.clone(),
+                    column_names: table.fields.clone(),
                     inserts: HashMap::new(),
                     deletes: table.records.clone(),
                     updates: HashMap::new(),
@@ -687,7 +692,7 @@ mod tests {
     fn empty_delta() -> Delta {
         Delta {
             table_name: "t".to_string(),
-            fields: vec![],
+            column_names: vec![],
             inserts: HashMap::new(),
             deletes: HashMap::new(),
             updates: HashMap::new(),
@@ -1044,14 +1049,14 @@ mod tests {
     fn test_merge_field_mismatch_error() {
         let mut parent = Delta {
             table_name: "t".to_string(),
-            fields: vec!["id".to_string(), "name".to_string()],
+            column_names: vec!["id".to_string(), "name".to_string()],
             inserts: HashMap::new(),
             deletes: HashMap::new(),
             updates: HashMap::new(),
         };
         let other = Delta {
             table_name: "t".to_string(),
-            fields: vec!["id".to_string(), "email".to_string()],
+            column_names: vec!["id".to_string(), "email".to_string()],
             inserts: HashMap::new(),
             deletes: HashMap::new(),
             updates: HashMap::new(),
