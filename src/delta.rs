@@ -183,6 +183,11 @@ impl crate::proto::delta::Delta {
         Ok(())
     }
 
+    /// Format update entries. Updates come in two wire formats:
+    /// - **Full** (blocks): `changed_indices` is empty and all `num_sub`
+    ///   columns are present in `new_value`/`old_value` positionally.
+    /// - **Sparse** (patches): only the columns listed in `changed_indices`
+    ///   appear in `new_value`/`old_value`; unchanged columns show as `"_"`.
     fn fmt_updates(&self, f: &mut fmt::Formatter<'_>, num_sub: usize) -> fmt::Result {
         if !self.updates.is_empty() {
             write!(f, "\n  Updates ({}):", self.updates.len())?;
