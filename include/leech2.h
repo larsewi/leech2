@@ -7,7 +7,7 @@
  *
  * All functions (except lch_init, lch_deinit, and lch_free_sql) return
  * LCH_SUCCESS on success and LCH_FAILURE on error. Errors are logged via
- * env_logger; set the RUST_LOG environment variable (e.g. RUST_LOG=debug)
+ * env_logger; set the LEECH2_LOG environment variable (e.g. LEECH2_LOG=debug)
  * for detailed output.
  */
 

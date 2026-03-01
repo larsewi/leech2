@@ -24,7 +24,7 @@ pub mod wire;
 /// The caller must free the returned handle with `lch_deinit`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn lch_init(work_dir: *const c_char) -> *mut config::Config {
-    let _ = env_logger::try_init();
+    let _ = env_logger::Builder::from_env(env_logger::Env::new().filter("LEECH2_LOG")).try_init();
 
     if work_dir.is_null() {
         log::error!("lch_init(): Bad argument: work directory cannot be NULL");

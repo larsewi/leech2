@@ -345,7 +345,7 @@ fn run(cli: Cli) -> Result<()> {
 }
 
 fn main() -> ExitCode {
-    env_logger::init();
+    env_logger::Builder::from_env(env_logger::Env::new().filter("LEECH2_LOG")).init();
 
     let cli = Cli::parse();
 
