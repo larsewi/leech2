@@ -122,7 +122,7 @@ Both fields are optional and independent. Supported duration suffixes: `s`
 (seconds), `m` (minutes), `h` (hours), `d` (days), `w` (weeks).
 
 Truncation always removes orphaned blocks (on disk but not reachable from HEAD)
-and blocks older than the last reported position (see `lch_patch_applied`).
+and blocks older than the last reported position (see `lch_patch_free`).
 
 ## C API
 
@@ -142,8 +142,8 @@ lch_patch_to_sql(config, buf, len, &sql);
 printf("%s", sql);
 lch_free_sql(sql);
 
-int ok = hub_send(buf, len);
-lch_patch_applied(config, buf, len, ok);
+int flags = hub_send(buf, len) ? LCH_PATCH_APPLIED : 0;
+lch_patch_free(config, buf, len, flags);
 
 lch_deinit(config);
 ```

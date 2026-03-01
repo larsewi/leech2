@@ -17,8 +17,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define LCH_SUCCESS  0
-#define LCH_FAILURE -1
+#define LCH_SUCCESS       0
+#define LCH_FAILURE      -1
+
+#define LCH_PATCH_APPLIED 1
 
 /**
  * Opaque configuration handle.
@@ -105,24 +107,23 @@ extern int lch_patch_create(const lch_config_t *config, const char *hash, uint8_
 extern int lch_patch_to_sql(const lch_config_t *config, const uint8_t *buf, size_t len, char **sql);
 
 /**
- * Mark a patch as applied and free its buffer.
+ * Free a patch buffer and optionally mark it as applied.
  *
  * Always frees the buffer pointed to by @p buf, regardless of errors or the
- * value of @p reported. After this call, @p buf is invalid and must not be
- * used.
+ * value of @p flags. After this call, @p buf is invalid and must not be used.
  *
- * If @p reported is non-zero, the REPORTED file is updated with the patch's
- * head hash so that future truncation knows which blocks are safe to remove.
+ * If LCH_PATCH_APPLIED is set in @p flags, the REPORTED file is updated with
+ * the patch's head hash so that future truncation knows which blocks are safe
+ * to remove.
  *
- * @param config    Valid config handle (must not be NULL).
- * @param buf       Patch buffer previously returned by lch_patch_create(),
- *                  or NULL.
- * @param len       Length of @p buf in bytes.
- * @param reported  Non-zero if the patch was successfully sent to the hub;
- *                  zero otherwise.
+ * @param config  Valid config handle (must not be NULL).
+ * @param buf     Patch buffer previously returned by lch_patch_create(),
+ *                or NULL.
+ * @param len     Length of @p buf in bytes.
+ * @param flags   Bitmask of flags (e.g. LCH_PATCH_APPLIED).
  * @return LCH_SUCCESS on success, LCH_FAILURE on error (the buffer is still freed).
  */
-extern int lch_patch_applied(const lch_config_t *config, uint8_t *buf, size_t len, int reported);
+extern int lch_patch_free(const lch_config_t *config, uint8_t *buf, size_t len, int flags);
 
 /**
  * Free an SQL string returned by lch_patch_to_sql().

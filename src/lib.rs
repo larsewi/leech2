@@ -230,16 +230,18 @@ pub unsafe extern "C" fn lch_free_sql(ptr: *mut c_char) {
 /// # Safety
 /// `config` must be a valid, non-null pointer returned by `lch_init`.
 /// `buf` must be a valid pointer to `len` bytes, previously returned by `lch_patch_create`.
-/// The buffer is always freed regardless of the `reported` flag or any errors.
+/// The buffer is always freed regardless of the `flags` value or any errors.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn lch_patch_applied(
+pub unsafe extern "C" fn lch_patch_free(
     config: *const config::Config,
     buf: *mut u8,
     len: usize,
-    reported: i32,
+    flags: i32,
 ) -> i32 {
+    const LCH_PATCH_APPLIED: i32 = 1;
+
     if config.is_null() {
-        log::error!("lch_patch_applied(): Bad argument: config cannot be NULL");
+        log::error!("lch_patch_free(): Bad argument: config cannot be NULL");
         // Still free the buffer even on argument errors
         if !buf.is_null() {
             unsafe {
@@ -260,17 +262,17 @@ pub unsafe extern "C" fn lch_patch_applied(
         unsafe { Box::from_raw(std::ptr::slice_from_raw_parts_mut(buf, len)) }.into_vec()
     };
 
-    if reported != 0 {
+    if flags & LCH_PATCH_APPLIED != 0 {
         let patch = match wire::decode_patch(&data) {
             Ok(p) => p,
             Err(e) => {
-                log::error!("lch_patch_applied(): Failed to decode patch: {:#}", e);
+                log::error!("lch_patch_free(): Failed to decode patch: {:#}", e);
                 return -1; // data is dropped here, freeing the buffer
             }
         };
 
         if let Err(e) = self::reported::save(&config.work_dir, &patch.head_hash) {
-            log::error!("lch_patch_applied(): Failed to save REPORTED: {:#}", e);
+            log::error!("lch_patch_free(): Failed to save REPORTED: {:#}", e);
             return -1; // data is dropped here, freeing the buffer
         }
     }
