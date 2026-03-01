@@ -200,7 +200,11 @@ fn cmd_log(config: &Config) -> Result<String> {
             .map(format_timestamp)
             .unwrap_or_else(|| "N/A".to_string());
 
-        let table_names: Vec<&str> = block.payload.iter().map(|d| d.name.as_str()).collect();
+        let table_names: Vec<&str> = block
+            .payload
+            .iter()
+            .map(|d| d.table_name.as_str())
+            .collect();
         let tables_str = if table_names.is_empty() {
             "no changes".to_string()
         } else {

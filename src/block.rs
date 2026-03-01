@@ -90,7 +90,7 @@ impl Block {
             if let Some(parent_delta) = parent
                 .payload
                 .iter_mut()
-                .find(|d| d.name == child_delta.name)
+                .find(|d| d.table_name == child_delta.table_name)
             {
                 let mut parent_domain: delta::Delta = std::mem::take(parent_delta).into();
                 let child_domain: delta::Delta = child_delta.into();

@@ -32,7 +32,7 @@ fn expand_sparse(
 #[derive(Debug, Clone, PartialEq)]
 pub struct Delta {
     /// The name of the table this delta applies to.
-    pub name: String,
+    pub table_name: String,
     /// The names of all columns, primary key columns first.
     pub fields: Vec<String>,
     /// Entries that were added (key -> value).
@@ -75,7 +75,7 @@ impl From<crate::proto::delta::Delta> for Delta {
             })
             .collect();
         Delta {
-            name: proto.name,
+            table_name: proto.table_name,
             fields: proto.fields,
             inserts,
             deletes,
@@ -107,7 +107,7 @@ impl From<Delta> for crate::proto::delta::Delta {
             })
             .collect();
         crate::proto::delta::Delta {
-            name: delta.name,
+            table_name: delta.table_name,
             fields: delta.fields,
             inserts,
             deletes,
@@ -134,7 +134,7 @@ impl fmt::Display for crate::proto::delta::Delta {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let num_sub = self.num_sub();
 
-        write!(f, "'{}' [{}]", self.name, self.fields.join(", "))?;
+        write!(f, "'{}' [{}]", self.table_name, self.fields.join(", "))?;
         if !self.inserts.is_empty() {
             write!(f, "\n  Inserts ({}):", self.inserts.len())?;
             for entry in &self.inserts {
@@ -219,7 +219,7 @@ impl Delta {
         if self.fields != other.fields {
             bail!(
                 "cannot merge deltas for table '{}': field mismatch ({:?} vs {:?})",
-                self.name,
+                self.table_name,
                 self.fields,
                 other.fields
             );
@@ -365,7 +365,7 @@ impl Delta {
             }
 
             deltas.push(Delta {
-                name: table_name.clone(),
+                table_name: table_name.clone(),
                 fields: current_table.fields.clone(),
                 inserts,
                 deletes,
@@ -387,7 +387,7 @@ impl Delta {
                 }
 
                 deltas.push(Delta {
-                    name: table_name.clone(),
+                    table_name: table_name.clone(),
                     fields: table.fields.clone(),
                     inserts: HashMap::new(),
                     deletes: table.records.clone(),
@@ -463,7 +463,7 @@ mod tests {
     }
 
     fn find_delta<'a>(deltas: &'a [Delta], name: &str) -> Option<&'a Delta> {
-        deltas.iter().find(|d| d.name == name)
+        deltas.iter().find(|d| d.table_name == name)
     }
 
     #[test]
@@ -686,7 +686,7 @@ mod tests {
 
     fn empty_delta() -> Delta {
         Delta {
-            name: "t".to_string(),
+            table_name: "t".to_string(),
             fields: vec![],
             inserts: HashMap::new(),
             deletes: HashMap::new(),
@@ -1043,14 +1043,14 @@ mod tests {
     #[test]
     fn test_merge_field_mismatch_error() {
         let mut parent = Delta {
-            name: "t".to_string(),
+            table_name: "t".to_string(),
             fields: vec!["id".to_string(), "name".to_string()],
             inserts: HashMap::new(),
             deletes: HashMap::new(),
             updates: HashMap::new(),
         };
         let other = Delta {
-            name: "t".to_string(),
+            table_name: "t".to_string(),
             fields: vec!["id".to_string(), "email".to_string()],
             inserts: HashMap::new(),
             deletes: HashMap::new(),

@@ -207,7 +207,7 @@ fn delta_to_sql(
     delta: &crate::proto::delta::Delta,
     out: &mut String,
 ) -> Result<()> {
-    let schema = TableSchema::resolve(config, &delta.name)?;
+    let schema = TableSchema::resolve(config, &delta.table_name)?;
     let table = quote_ident(&schema.table_name);
 
     // DELETEs
