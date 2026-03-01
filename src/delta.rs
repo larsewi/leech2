@@ -112,6 +112,19 @@ impl From<Delta> for crate::proto::delta::Delta {
     }
 }
 
+/// Format a single column value for update display.
+///
+/// When `old` is provided and differs from `new`, shows `"old -> new"`.
+/// When `old` equals `new`, shows `"_"` (unchanged). When there is no
+/// old value, shows just `new`.
+fn fmt_update_col(new: &str, old: Option<&str>) -> String {
+    match old {
+        Some(old) if old != new => format!("{} -> {}", old, new),
+        Some(_) => "_".to_string(),
+        None => new.to_string(),
+    }
+}
+
 impl crate::proto::delta::Delta {
     /// Number of subsidiary (non-key) columns.
     ///
@@ -182,17 +195,10 @@ impl crate::proto::delta::Delta {
                     (0..num_sub)
                         .map(|i| {
                             let new = update.new_value.get(i).map(|s| s.as_str()).unwrap_or("?");
-                            if has_old {
-                                let old =
-                                    update.old_value.get(i).map(|s| s.as_str()).unwrap_or("?");
-                                if old != new {
-                                    format!("{} -> {}", old, new)
-                                } else {
-                                    "_".to_string()
-                                }
-                            } else {
-                                new.to_string()
-                            }
+                            let old = has_old.then(|| {
+                                update.old_value.get(i).map(|s| s.as_str()).unwrap_or("?")
+                            });
+                            fmt_update_col(new, old)
                         })
                         .collect()
                 } else {
@@ -205,12 +211,9 @@ impl crate::proto::delta::Delta {
                         .map(|i| {
                             if changed.contains(&i) {
                                 let new = new_iter.next().map(|s| s.as_str()).unwrap_or("?");
-                                if has_old {
-                                    let old = old_iter.next().map(|s| s.as_str()).unwrap_or("?");
-                                    format!("{} -> {}", old, new)
-                                } else {
-                                    new.to_string()
-                                }
+                                let old = has_old
+                                    .then(|| old_iter.next().map(|s| s.as_str()).unwrap_or("?"));
+                                fmt_update_col(new, old)
                             } else {
                                 "_".to_string()
                             }
