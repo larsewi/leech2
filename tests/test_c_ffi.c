@@ -19,7 +19,7 @@ int main(int argc, char *argv[]) {
   }
 
   int ret = lch_block_create(config);
-  if (ret != 0) {
+  if (ret == LCH_FAILURE) {
     fprintf(stderr, "lch_block_create failed\n");
     lch_deinit(config);
     return EXIT_FAILURE;
@@ -28,7 +28,7 @@ int main(int argc, char *argv[]) {
   uint8_t *buf = NULL;
   size_t len = 0;
   ret = lch_patch_create(config, NULL, &buf, &len);
-  if (ret != 0) {
+  if (ret == LCH_FAILURE) {
     fprintf(stderr, "lch_patch_create failed\n");
     lch_deinit(config);
     return EXIT_FAILURE;
@@ -36,7 +36,7 @@ int main(int argc, char *argv[]) {
 
   char *sql = NULL;
   ret = lch_patch_to_sql(config, buf, len, &sql);
-  if (ret != 0) {
+  if (ret == LCH_FAILURE) {
     fprintf(stderr, "lch_patch_to_sql failed\n");
     lch_patch_applied(config, buf, len, 0);
     lch_deinit(config);
