@@ -45,15 +45,7 @@ pub struct Delta {
 
 impl From<crate::proto::delta::Delta> for Delta {
     fn from(proto: crate::proto::delta::Delta) -> Self {
-        // Determine subsidiary column count from fields and key length.
-        let num_pk = proto
-            .inserts
-            .first()
-            .map(|e| e.key.len())
-            .or_else(|| proto.deletes.first().map(|e| e.key.len()))
-            .or_else(|| proto.updates.first().map(|u| u.key.len()))
-            .unwrap_or(0);
-        let num_sub = proto.column_names.len().saturating_sub(num_pk);
+        let num_sub = proto.num_sub();
 
         let inserts = proto
             .inserts
@@ -117,15 +109,23 @@ impl From<Delta> for crate::proto::delta::Delta {
 }
 
 impl crate::proto::delta::Delta {
-    /// Number of subsidiary (non-key) fields.
+    /// Number of subsidiary (non-key) columns.
+    ///
+    /// The proto format stores keys and values separately, but `column_names`
+    /// lists all columns together (PK first, then subsidiary). This method
+    /// determines the PK count from the first available entry's key length
+    /// (trying inserts, then deletes, then updates; defaulting to 0 if the
+    /// delta is empty) and subtracts it from the total column count.
     fn num_sub(&self) -> usize {
-        let num_pk = self
-            .inserts
-            .first()
-            .map(|e| e.key.len())
-            .or_else(|| self.deletes.first().map(|e| e.key.len()))
-            .or_else(|| self.updates.first().map(|u| u.key.len()))
-            .unwrap_or(0);
+        let num_pk = if let Some(entry) = self.inserts.first() {
+            entry.key.len()
+        } else if let Some(entry) = self.deletes.first() {
+            entry.key.len()
+        } else if let Some(update) = self.updates.first() {
+            update.key.len()
+        } else {
+            0
+        };
         self.column_names.len().saturating_sub(num_pk)
     }
 }
