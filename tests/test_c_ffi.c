@@ -5,8 +5,6 @@
 
 #include <leech2.h>
 
-#define GENESIS_HASH "0000000000000000000000000000000000000000"
-
 int main(int argc, char *argv[]) {
   if (argc < 2) {
     fprintf(stderr, "Usage: %s <work_dir>\n", argv[0]);
@@ -29,7 +27,7 @@ int main(int argc, char *argv[]) {
 
   uint8_t *buf = NULL;
   size_t len = 0;
-  ret = lch_patch_create(config, GENESIS_HASH, &buf, &len);
+  ret = lch_patch_create(config, NULL, &buf, &len);
   if (ret != 0) {
     fprintf(stderr, "lch_patch_create failed\n");
     lch_deinit(config);
