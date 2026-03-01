@@ -199,9 +199,17 @@ impl crate::proto::delta::Delta {
                     // Full format (blocks): compare old and new positionally.
                     (0..num_sub)
                         .map(|i| {
-                            let new = update.new_value.get(i).map(|s| s.as_str()).unwrap_or("?");
+                            let new = update
+                                .new_value
+                                .get(i)
+                                .map(|s| s.as_str())
+                                .unwrap_or("<missing>");
                             let old = has_old.then(|| {
-                                update.old_value.get(i).map(|s| s.as_str()).unwrap_or("?")
+                                update
+                                    .old_value
+                                    .get(i)
+                                    .map(|s| s.as_str())
+                                    .unwrap_or("<missing>")
                             });
                             fmt_update_col(new, old)
                         })
@@ -215,9 +223,11 @@ impl crate::proto::delta::Delta {
                     (0..num_sub as u32)
                         .map(|i| {
                             if changed.contains(&i) {
-                                let new = new_iter.next().map(|s| s.as_str()).unwrap_or("?");
-                                let old = has_old
-                                    .then(|| old_iter.next().map(|s| s.as_str()).unwrap_or("?"));
+                                let new =
+                                    new_iter.next().map(|s| s.as_str()).unwrap_or("<missing>");
+                                let old = has_old.then(|| {
+                                    old_iter.next().map(|s| s.as_str()).unwrap_or("<missing>")
+                                });
                                 fmt_update_col(new, old)
                             } else {
                                 "_".to_string()
