@@ -13,13 +13,17 @@ type UpdateMap = HashMap<Vec<String>, (Vec<String>, Vec<String>)>;
 
 /// Expand sparse values back to a full-length vector.
 /// Positions not in `changed_indices` are filled with empty strings.
-fn expand_sparse(changed_indices: &[u32], sparse_values: &[String], num_sub: usize) -> Vec<String> {
+fn expand_sparse(
+    changed_indices: &[u32],
+    sparse_values: &[String],
+    num_values: usize,
+) -> Vec<String> {
     if changed_indices.is_empty() {
         return sparse_values.to_vec();
     }
-    let mut full = vec![String::new(); num_sub];
-    for (idx, val) in changed_indices.iter().zip(sparse_values.iter()) {
-        full[*idx as usize] = val.clone();
+    let mut full = vec![String::new(); num_values];
+    for (index, value) in changed_indices.iter().zip(sparse_values.iter()) {
+        full[*index as usize] = value.clone();
     }
     full
 }
