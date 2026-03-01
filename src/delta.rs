@@ -47,7 +47,9 @@ impl TryFrom<crate::proto::delta::Delta> for Delta {
     type Error = anyhow::Error;
 
     fn try_from(proto: crate::proto::delta::Delta) -> Result<Self> {
-        let num_sub = proto.num_sub().map_err(|e| anyhow::anyhow!("{}", e))?;
+        let num_sub = proto
+            .num_sub()
+            .map_err(|e| anyhow::anyhow!("corrupt delta '{}': {}", proto.table_name, e))?;
 
         let inserts = proto
             .inserts
@@ -130,29 +132,15 @@ impl crate::proto::delta::Delta {
         };
         if self.column_names.len() < num_pk {
             return Err(format!(
-                "corrupt delta '{}': column_names has {} entries but primary key has {} fields",
-                self.table_name,
+                "column_names has {} entries but primary key has {}",
                 self.column_names.len(),
                 num_pk
             ));
         }
         Ok(self.column_names.len() - num_pk)
     }
-}
 
-impl fmt::Display for crate::proto::delta::Delta {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let num_sub = match self.num_sub() {
-            Ok(n) => n,
-            Err(e) => return write!(f, "<corrupt delta: {}>", e),
-        };
-
-        write!(
-            f,
-            "'{}' [{}]",
-            self.table_name,
-            self.column_names.join(", ")
-        )?;
+    fn fmt_inserts(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if !self.inserts.is_empty() {
             write!(f, "\n  Inserts ({}):", self.inserts.len())?;
             for entry in &self.inserts {
@@ -164,6 +152,10 @@ impl fmt::Display for crate::proto::delta::Delta {
                 )?;
             }
         }
+        Ok(())
+    }
+
+    fn fmt_deletes(&self, f: &mut fmt::Formatter<'_>, num_sub: usize) -> fmt::Result {
         if !self.deletes.is_empty() {
             write!(f, "\n  Deletes ({}):", self.deletes.len())?;
             for entry in &self.deletes {
@@ -175,6 +167,10 @@ impl fmt::Display for crate::proto::delta::Delta {
                 write!(f, "\n    ({}) {}", entry.key.join(", "), vals)?;
             }
         }
+        Ok(())
+    }
+
+    fn fmt_updates(&self, f: &mut fmt::Formatter<'_>, num_sub: usize) -> fmt::Result {
         if !self.updates.is_empty() {
             write!(f, "\n  Updates ({}):", self.updates.len())?;
             for update in &self.updates {
@@ -225,6 +221,25 @@ impl fmt::Display for crate::proto::delta::Delta {
                 write!(f, "\n    ({}) {}", update.key.join(", "), cols.join(", "))?;
             }
         }
+        Ok(())
+    }
+}
+
+impl fmt::Display for crate::proto::delta::Delta {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "'{}' [{}]",
+            self.table_name,
+            self.column_names.join(", ")
+        )?;
+        let num_sub = match self.num_sub() {
+            Ok(n) => n,
+            Err(e) => return write!(f, " <corrupt delta: {}>", e),
+        };
+        self.fmt_inserts(f)?;
+        self.fmt_deletes(f, num_sub)?;
+        self.fmt_updates(f, num_sub)?;
         Ok(())
     }
 }
