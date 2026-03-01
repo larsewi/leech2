@@ -94,7 +94,8 @@ impl Block {
             {
                 let mut parent_domain: delta::Delta = std::mem::take(parent_delta).try_into()?;
                 let child_domain: delta::Delta = child_delta.try_into()?;
-                delta::Delta::merge(&mut parent_domain, child_domain)
+                parent_domain
+                    .merge(child_domain)
                     .context("Failed to merge deltas")?;
                 *parent_delta = parent_domain.into();
             } else {
