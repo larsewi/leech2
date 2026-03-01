@@ -1,4 +1,4 @@
-use std::io::Write;
+use std::io::{IsTerminal, Write};
 use std::path::PathBuf;
 use std::process::{Command as ProcessCommand, ExitCode, Stdio};
 
@@ -271,6 +271,16 @@ fn cmd_patch_applied(config: &Config) -> Result<()> {
 }
 
 fn print_with_pager(content: &str) {
+    let use_pager = std::io::stdout().is_terminal()
+        && terminal_size::terminal_size()
+            .map(|(_, h)| content.lines().count() > h.0 as usize)
+            .unwrap_or(false);
+
+    if !use_pager {
+        println!("{}", content);
+        return;
+    }
+
     let pager_cmd = std::env::var("PAGER").unwrap_or_else(|_| "less".to_string());
 
     let mut child = match ProcessCommand::new(&pager_cmd)
