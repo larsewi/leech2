@@ -92,8 +92,8 @@ impl Block {
                 .iter_mut()
                 .find(|d| d.table_name == child_delta.table_name)
             {
-                let mut parent_domain: delta::Delta = std::mem::take(parent_delta).into();
-                let child_domain: delta::Delta = child_delta.into();
+                let mut parent_domain: delta::Delta = std::mem::take(parent_delta).try_into()?;
+                let child_domain: delta::Delta = child_delta.try_into()?;
                 parent_domain
                     .merge(child_domain)
                     .context("Failed to merge deltas")?;

@@ -43,9 +43,11 @@ pub struct Delta {
     pub updates: HashMap<Vec<String>, (Vec<String>, Vec<String>)>,
 }
 
-impl From<crate::proto::delta::Delta> for Delta {
-    fn from(proto: crate::proto::delta::Delta) -> Self {
-        let num_sub = proto.num_sub();
+impl TryFrom<crate::proto::delta::Delta> for Delta {
+    type Error = anyhow::Error;
+
+    fn try_from(proto: crate::proto::delta::Delta) -> Result<Self> {
+        let num_sub = proto.num_sub().map_err(|e| anyhow::anyhow!("{}", e))?;
 
         let inserts = proto
             .inserts
@@ -66,13 +68,13 @@ impl From<crate::proto::delta::Delta> for Delta {
                 (u.key, (old_value, new_value))
             })
             .collect();
-        Delta {
+        Ok(Delta {
             table_name: proto.table_name,
             column_names: proto.column_names,
             inserts,
             deletes,
             updates,
-        }
+        })
     }
 }
 
@@ -116,7 +118,7 @@ impl crate::proto::delta::Delta {
     /// determines the PK count from the first available entry's key length
     /// (trying inserts, then deletes, then updates; defaulting to 0 if the
     /// delta is empty) and subtracts it from the total column count.
-    fn num_sub(&self) -> usize {
+    fn num_sub(&self) -> Result<usize, String> {
         let num_pk = if let Some(entry) = self.inserts.first() {
             entry.key.len()
         } else if let Some(entry) = self.deletes.first() {
@@ -126,13 +128,24 @@ impl crate::proto::delta::Delta {
         } else {
             0
         };
-        self.column_names.len().saturating_sub(num_pk)
+        if self.column_names.len() < num_pk {
+            return Err(format!(
+                "corrupt delta '{}': column_names has {} entries but primary key has {} fields",
+                self.table_name,
+                self.column_names.len(),
+                num_pk
+            ));
+        }
+        Ok(self.column_names.len() - num_pk)
     }
 }
 
 impl fmt::Display for crate::proto::delta::Delta {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let num_sub = self.num_sub();
+        let num_sub = match self.num_sub() {
+            Ok(n) => n,
+            Err(e) => return write!(f, "<corrupt delta: {}>", e),
+        };
 
         write!(
             f,
