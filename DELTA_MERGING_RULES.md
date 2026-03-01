@@ -181,24 +181,24 @@ not matter for the result.
 
 ## Quick reference
 
-| Rule | Parent   | Current  | Result              |
-|------|----------|----------|---------------------|
-|   1  |          | insert   | insert              |
-|   2  |          | delete   | delete              |
-|   3  |          | update   | update              |
-|   4  | insert   |          | insert              |
-|   5  | insert   | insert   | **error**           |
-|   6  | insert   | delete   | *(cancels out)*     |
-|   7  | insert   | update   | insert (new val)    |
-|   8  | delete   |          | delete              |
-|  9a  | delete   | insert=  | *(cancels out)*     |
-|  9b  | delete   | insert≠  | update (old → new)  |
-|  10  | delete   | delete   | **error**           |
-|  11  | delete   | update   | **error**           |
-|  12  | update   |          | update              |
-|  13  | update   | insert   | **error**           |
-|  14a | update   | delete=  | delete (old val)    |
-|  14b | update   | delete≠  | **error**           |
-|  15  | update   | update   | update (old → new)  |
+| Rule | Parent   | Current   | Result              |
+|------|----------|-----------|---------------------|
+|   1  |          | `insert`  | `insert`            |
+|   2  |          | `delete`  | `delete`            |
+|   3  |          | `update`  | `update`            |
+|   4  | `insert` |           | `insert`            |
+|   5  | `insert` | `insert`  | **error**           |
+|   6  | `insert` | `delete`  | *(cancels out)*     |
+|   7  | `insert` | `update`  | `insert(new val)`   |
+|   8  | `delete` |           | `delete`            |
+|  9a  | `delete` | `insert=` | *(cancels out)*     |
+|  9b  | `delete` | `insert≠` | `update(old → new)` |
+|  10  | `delete` | `delete`  | **error**           |
+|  11  | `delete` | `update`  | **error**           |
+|  12  | `update` |           | `update`            |
+|  13  | `update` | `insert`  | **error**           |
+|  14a | `update` | `delete=` | `delete(old)`       |
+|  14b | `update` | `delete≠` | **error**           |
+|  15  | `update` | `update`  | `update(old → new)` |
 
 `=` means values match, `≠` means values differ.
