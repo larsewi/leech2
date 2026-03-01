@@ -83,7 +83,8 @@ pub unsafe extern "C" fn lch_block_create(config: *const config::Config) -> i32 
 
 /// # Safety
 /// `config` must be a valid, non-null pointer returned by `lch_init`.
-/// `last_known` must be a valid, non-null, null-terminated C string.
+/// `last_known` must be a valid, null-terminated C string, or NULL.
+/// If NULL, the REPORTED hash is used; if REPORTED does not exist, genesis is used.
 /// `out` and `len` must be valid, non-null pointers.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn lch_patch_create(
@@ -97,11 +98,6 @@ pub unsafe extern "C" fn lch_patch_create(
         return -1;
     }
 
-    if last_known.is_null() {
-        log::error!("lch_patch_create(): Bad argument: block hash cannot be NULL");
-        return -1;
-    }
-
     if out.is_null() || len.is_null() {
         log::error!("lch_patch_create(): Bad argument: out and out_len cannot be NULL");
         return -1;
@@ -109,15 +105,26 @@ pub unsafe extern "C" fn lch_patch_create(
 
     let config = unsafe { &*config };
 
-    let hash = match unsafe { CStr::from_ptr(last_known) }.to_str() {
-        Ok(hash) => hash,
-        Err(e) => {
-            log::error!("lch_patch_create(): Bad argument: {e}");
-            return -1;
+    let hash = if last_known.is_null() {
+        match reported::load(&config.work_dir) {
+            Ok(Some(hash)) => hash,
+            Ok(None) => utils::GENESIS_HASH.to_string(),
+            Err(e) => {
+                log::error!("lch_patch_create(): Failed to load REPORTED: {:#}", e);
+                return -1;
+            }
+        }
+    } else {
+        match unsafe { CStr::from_ptr(last_known) }.to_str() {
+            Ok(hash) => hash.to_string(),
+            Err(e) => {
+                log::error!("lch_patch_create(): Bad argument: {e}");
+                return -1;
+            }
         }
     };
 
-    let p = match patch::Patch::create(config, hash) {
+    let p = match patch::Patch::create(config, &hash) {
         Ok(p) => p,
         Err(e) => {
             log::error!("lch_patch_create(): {:#}", e);
