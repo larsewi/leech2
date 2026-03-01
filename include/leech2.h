@@ -5,9 +5,10 @@
  * leech2 tracks CSV data sources, computes diffs between snapshots, and
  * produces SQL patches that can be applied to a downstream database.
  *
- * All functions (except lch_init, lch_deinit, and lch_free_sql) return 0 on
- * success and -1 on error. Errors are logged via env_logger; set the
- * RUST_LOG environment variable (e.g. RUST_LOG=debug) for detailed output.
+ * All functions (except lch_init, lch_deinit, and lch_free_sql) return
+ * LCH_SUCCESS on success and LCH_FAILURE on error. Errors are logged via
+ * env_logger; set the RUST_LOG environment variable (e.g. RUST_LOG=debug)
+ * for detailed output.
  */
 
 #ifndef __LEECH2_H__
@@ -15,6 +16,9 @@
 
 #include <stddef.h>
 #include <stdint.h>
+
+#define LCH_SUCCESS  0
+#define LCH_FAILURE -1
 
 /**
  * Opaque configuration handle.
@@ -54,7 +58,7 @@ extern void lch_deinit(lch_config_t *config);
  * HEAD files. History truncation is performed afterwards.
  *
  * @param config  Valid config handle (must not be NULL).
- * @return 0 on success, -1 on error.
+ * @return LCH_SUCCESS on success, LCH_FAILURE on error.
  */
 extern int lch_block_create(const lch_config_t *config);
 
@@ -75,7 +79,7 @@ extern int lch_block_create(const lch_config_t *config);
  * @param hash    Last-known block hash (null-terminated string), or NULL.
  * @param[out] buf  Receives a pointer to the encoded patch buffer.
  * @param[out] len  Receives the length of the patch buffer in bytes.
- * @return 0 on success, -1 on error.
+ * @return LCH_SUCCESS on success, LCH_FAILURE on error.
  */
 extern int lch_patch_create(const lch_config_t *config, const char *hash, uint8_t **buf, size_t *len);
 
@@ -89,14 +93,14 @@ extern int lch_patch_create(const lch_config_t *config, const char *hash, uint8_
  * - All statements are wrapped in BEGIN / COMMIT.
  *
  * If the patch contains no actionable changes, @p sql is set to NULL and the
- * function returns 0.
+ * function returns LCH_SUCCESS.
  *
  * @param config  Valid config handle (must not be NULL).
  * @param buf     Pointer to the encoded patch (must not be NULL).
  * @param len     Length of @p buf in bytes.
  * @param[out] sql  Receives a pointer to the SQL string, or NULL if the patch
  *                  is empty. Free with lch_free_sql().
- * @return 0 on success, -1 on error.
+ * @return LCH_SUCCESS on success, LCH_FAILURE on error.
  */
 extern int lch_patch_to_sql(const lch_config_t *config, const uint8_t *buf, size_t len, char **sql);
 
@@ -116,7 +120,7 @@ extern int lch_patch_to_sql(const lch_config_t *config, const uint8_t *buf, size
  * @param len       Length of @p buf in bytes.
  * @param reported  Non-zero if the patch was successfully sent to the hub;
  *                  zero otherwise.
- * @return 0 on success, -1 on error (the buffer is still freed).
+ * @return LCH_SUCCESS on success, LCH_FAILURE on error (the buffer is still freed).
  */
 extern int lch_patch_applied(const lch_config_t *config, uint8_t *buf, size_t len, int reported);
 
