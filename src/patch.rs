@@ -109,24 +109,8 @@ fn try_consolidate(
         for delete in &mut delta.deletes {
             delete.value.clear();
         }
-        // Updates: sparse-encode to changed_indices + new_value only.
         for update in &mut delta.updates {
-            let mut changed_indices = Vec::new();
-            let mut sparse_new = Vec::new();
-            for (i, (o, n)) in update
-                .old_value
-                .iter()
-                .zip(update.new_value.iter())
-                .enumerate()
-            {
-                if o != n {
-                    changed_indices.push(i as u32);
-                    sparse_new.push(n.clone());
-                }
-            }
-            update.changed_indices = changed_indices;
-            update.old_value.clear();
-            update.new_value = sparse_new;
+            update.sparse_encode();
         }
     }
 

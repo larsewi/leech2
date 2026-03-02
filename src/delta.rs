@@ -11,23 +11,6 @@ use crate::update::Update;
 type RecordMap = HashMap<Vec<String>, Vec<String>>;
 type UpdateMap = HashMap<Vec<String>, (Vec<String>, Vec<String>)>;
 
-/// Expand sparse values back to a full-length vector.
-/// Positions not in `changed_indices` are filled with empty strings.
-fn expand_sparse(
-    changed_indices: &[u32],
-    sparse_values: &[String],
-    num_values: usize,
-) -> Vec<String> {
-    if changed_indices.is_empty() {
-        return sparse_values.to_vec();
-    }
-    let mut full = vec![String::new(); num_values];
-    for (index, value) in changed_indices.iter().zip(sparse_values.iter()) {
-        full[*index as usize] = value.clone();
-    }
-    full
-}
-
 /// Delta represents the changes to a single table between two states.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Delta {
@@ -65,8 +48,8 @@ impl TryFrom<crate::proto::delta::Delta> for Delta {
             .updates
             .into_iter()
             .map(|u| {
-                let old_value = expand_sparse(&u.changed_indices, &u.old_value, num_sub);
-                let new_value = expand_sparse(&u.changed_indices, &u.new_value, num_sub);
+                let old_value = Update::expand_sparse(&u.changed_indices, &u.old_value, num_sub);
+                let new_value = Update::expand_sparse(&u.changed_indices, &u.new_value, num_sub);
                 (u.key, (old_value, new_value))
             })
             .collect();
