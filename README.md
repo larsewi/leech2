@@ -97,8 +97,13 @@ should be emitted as SQL `NULL` instead of a typed literal. This is not allowed
 on primary-key fields.
 
 ```toml
-{ name = "notes", type = "TEXT", null = "" }       # empty string → NULL
-{ name = "score", type = "NUMBER", null = "N/A" }  # "N/A" → NULL
+[tables.example]
+source = "example.csv"
+fields = [
+    { name = "id", type = "NUMBER", primary-key = true },
+    { name = "notes", type = "TEXT", null = "" },      # empty string -> NULL
+    { name = "score", type = "NUMBER", null = "N/A" }, # "N/A" -> NULL
+]
 ```
 
 ### Host identifier
