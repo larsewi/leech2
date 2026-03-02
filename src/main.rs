@@ -86,7 +86,9 @@ fn resolve_ref(
 ) -> Result<String> {
     match (reference, num_blocks) {
         (Some(_), Some(_)) => bail!("cannot specify both a hash prefix and -n"),
-        (Some(reference), None) => leech2::patch::resolve_hash_prefix(&config.work_dir, reference),
+        (Some(reference), None) => {
+            leech2::storage::resolve_hash_prefix(&config.work_dir, reference)
+        }
         (None, Some(num_blocks)) => walk_back(&config.work_dir, num_blocks),
         (None, None) => leech2::head::load(&config.work_dir),
     }

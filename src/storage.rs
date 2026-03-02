@@ -2,7 +2,9 @@ use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::Path;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
+
+use crate::utils::GENESIS_HASH;
 use fs2::FileExt;
 
 /// Acquires a lock on a separate `.<name>.lock` file for inter-process synchronization.
@@ -94,4 +96,37 @@ pub fn load(work_dir: &Path, name: &str) -> Result<Option<Vec<u8>>> {
     // _lock dropped here, releasing shared lock.
     log::debug!("Loaded {} bytes from '{}'", data.len(), path.display());
     Ok(Some(data))
+}
+
+pub fn resolve_hash_prefix(work_dir: &Path, prefix: &str) -> Result<String> {
+    let mut matches: Vec<String> = Vec::new();
+
+    if GENESIS_HASH.starts_with(prefix) {
+        matches.push(GENESIS_HASH.to_string());
+    }
+
+    for entry in std::fs::read_dir(work_dir)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else {
+            continue;
+        };
+        if name.starts_with(prefix)
+            && name.len() == 40
+            && name.chars().all(|c| c.is_ascii_hexdigit())
+        {
+            matches.push(name.to_string());
+        }
+    }
+
+    match matches.as_slice() {
+        [] => bail!("no block found matching prefix '{}'", prefix),
+        [single] => Ok(single.clone()),
+        [first, second, ..] => bail!(
+            "ambiguous hash prefix '{}': matches {} and {}",
+            prefix,
+            first,
+            second
+        ),
+    }
 }

@@ -61,39 +61,6 @@ impl fmt::Display for Patch {
     }
 }
 
-pub fn resolve_hash_prefix(work_dir: &Path, prefix: &str) -> Result<String> {
-    let mut matches: Vec<String> = Vec::new();
-
-    if GENESIS_HASH.starts_with(prefix) {
-        matches.push(GENESIS_HASH.to_string());
-    }
-
-    for entry in std::fs::read_dir(work_dir)? {
-        let entry = entry?;
-        let name = entry.file_name();
-        let Some(name) = name.to_str() else {
-            continue;
-        };
-        if name.starts_with(prefix)
-            && name.len() == 40
-            && name.chars().all(|c| c.is_ascii_hexdigit())
-        {
-            matches.push(name.to_string());
-        }
-    }
-
-    match matches.as_slice() {
-        [] => bail!("no block found matching prefix '{}'", prefix),
-        [single] => Ok(single.clone()),
-        [first, second, ..] => bail!(
-            "ambiguous hash prefix '{}': matches {} and {}",
-            prefix,
-            first,
-            second
-        ),
-    }
-}
-
 fn consolidate(
     work_dir: &Path,
     head_block: Block,
@@ -199,7 +166,7 @@ impl Patch {
     pub fn create(config: &Config, last_known_hash: &str) -> Result<Patch> {
         let work_dir = &config.work_dir;
 
-        let resolved = resolve_hash_prefix(work_dir, last_known_hash);
+        let resolved = crate::storage::resolve_hash_prefix(work_dir, last_known_hash);
 
         let head_hash = head::load(work_dir)?;
 
