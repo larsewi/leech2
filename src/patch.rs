@@ -140,18 +140,18 @@ fn full_state_patch(work_dir: &Path, head: &str, host: Option<Host>) -> Result<P
 }
 
 impl Patch {
-    pub fn create(config: &Config, last_known_hash: &str) -> Result<Patch> {
+    pub fn create(config: &Config, last_known: &str) -> Result<Patch> {
         let work_dir = &config.work_dir;
 
-        let resolved = crate::storage::resolve_hash_prefix(work_dir, last_known_hash);
+        let resolved = crate::storage::resolve_hash_prefix(work_dir, last_known);
 
-        let head_hash = head::load(work_dir)?;
+        let head = head::load(work_dir)?;
 
         let host = config.host.as_ref().map(Host::from);
 
-        if head_hash == GENESIS_HASH {
+        if head == GENESIS_HASH {
             let patch = Patch {
-                head: head_hash,
+                head,
                 created: None,
                 host,
                 num_blocks: 0,
@@ -164,33 +164,32 @@ impl Patch {
         // If the reference block can't be resolved or is genesis, produce a
         // full STATE payload (TRUNCATE + INSERT) which is always safe to apply
         // regardless of current database contents.
-        let last_known_hash = match resolved {
+        let last_known = match resolved {
             Ok(hash) if hash != GENESIS_HASH => hash,
             Ok(_) => {
                 log::info!("Reference is genesis, producing full state patch");
-                return full_state_patch(work_dir, &head_hash, host);
+                return full_state_patch(work_dir, &head, host);
             }
             Err(e) => {
                 log::warn!(
                     "Reference block not found, producing full state patch: {}",
                     e
                 );
-                return full_state_patch(work_dir, &head_hash, host);
+                return full_state_patch(work_dir, &head, host);
             }
         };
 
-        let (head_created, num_blocks, payload) =
-            match try_consolidate(work_dir, &head_hash, &last_known_hash) {
-                Ok((head_created, num_blocks, payload)) => (head_created, num_blocks, payload),
-                Err(e) => {
-                    log::warn!("Consolidation failed, falling back to full state: {}", e);
-                    return full_state_patch(work_dir, &head_hash, host);
-                }
-            };
+        let (created, num_blocks, payload) = match try_consolidate(work_dir, &head, &last_known) {
+            Ok((head_created, num_blocks, payload)) => (head_created, num_blocks, payload),
+            Err(e) => {
+                log::warn!("Consolidation failed, falling back to full state: {}", e);
+                return full_state_patch(work_dir, &head, host);
+            }
+        };
 
         let patch = Patch {
-            head: head_hash,
-            created: head_created,
+            head,
+            created,
             host,
             num_blocks,
             payload,
