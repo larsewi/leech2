@@ -271,7 +271,7 @@ pub unsafe extern "C" fn lch_patch_free(
             }
         };
 
-        if let Err(e) = self::reported::save(&config.work_dir, &patch.head_hash) {
+        if let Err(e) = self::reported::save(&config.work_dir, &patch.head) {
             log::error!("lch_patch_free(): Failed to save REPORTED: {:#}", e);
             return -1; // data is dropped here, freeing the buffer
         }

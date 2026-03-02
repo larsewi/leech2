@@ -10,9 +10,9 @@ import "google/protobuf/timestamp.proto";
 // Patch represents the merged diff between two blocks in the chain.
 message Patch {
   // The hash of the most recent block in the chain (HEAD).
-  string head_hash = 1;
+  string head = 1;
   // Timestamp when the HEAD block was created.
-  google.protobuf.Timestamp head_created = 2;
+  google.protobuf.Timestamp created = 2;
   // Optional host identifier. When set, SQL output includes this as an extra column.
   host.Host host = 3;
   // The number of blocks that were merged to produce this patch.

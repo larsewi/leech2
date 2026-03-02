@@ -202,7 +202,7 @@ fn test_json_config_file() {
 
     let patch = Patch::create(&config, GENESIS_HASH).unwrap();
     assert_eq!(patch.num_blocks, 0);
-    assert_eq!(patch.head_hash, hash);
+    assert_eq!(patch.head, hash);
 
     let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
     assert_eq!(common::count_sql(&sql, "INSERT INTO"), 2);

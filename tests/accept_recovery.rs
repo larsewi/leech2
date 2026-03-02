@@ -50,7 +50,7 @@ fn test_reported_block_truncated() {
 
     // Patch from REPORTED should fall back to STATE (TRUNCATE + INSERT)
     let patch = Patch::create(&config, &hash1).unwrap();
-    assert_eq!(patch.head_hash, hash2);
+    assert_eq!(patch.head, hash2);
     assert_eq!(patch.num_blocks, 0);
 
     let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
@@ -81,7 +81,7 @@ fn test_reported_file_deleted() {
 
     // CLI/FFI would resolve to GENESIS when REPORTED is missing
     let patch = Patch::create(&config, GENESIS_HASH).unwrap();
-    assert_eq!(patch.head_hash, hash1);
+    assert_eq!(patch.head, hash1);
     assert_eq!(patch.num_blocks, 0);
 
     let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
@@ -115,7 +115,7 @@ fn test_head_file_deleted() {
     // Block::create should ignore stale STATE and capture full CSV as inserts
     let new_hash = Block::create(&config).unwrap();
     let patch = Patch::create(&config, GENESIS_HASH).unwrap();
-    assert_eq!(patch.head_hash, new_hash);
+    assert_eq!(patch.head, new_hash);
 
     let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
     assert_eq!(common::count_sql(&sql, "TRUNCATE"), 1);
@@ -147,7 +147,7 @@ fn test_block_chain_broken() {
 
     // Patch from hash1: consolidation walks hash3 -> tries hash2 -> fails -> STATE
     let patch = Patch::create(&config, &hash1).unwrap();
-    assert_eq!(patch.head_hash, hash3);
+    assert_eq!(patch.head, hash3);
     assert_eq!(patch.num_blocks, 0);
 
     let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
@@ -178,7 +178,7 @@ fn test_state_file_deleted_with_valid_chain() {
     storage::remove(work_dir, "STATE").unwrap();
 
     let patch = Patch::create(&config, &hash1).unwrap();
-    assert_eq!(patch.head_hash, hash2);
+    assert_eq!(patch.head, hash2);
     assert_eq!(patch.num_blocks, 1);
 
     let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();

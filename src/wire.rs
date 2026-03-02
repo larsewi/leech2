@@ -74,7 +74,7 @@ mod tests {
         let result = decode_patch(b"");
         assert!(result.is_ok());
         let patch = result.unwrap();
-        assert_eq!(patch.head_hash, "");
+        assert_eq!(patch.head, "");
         assert_eq!(patch.num_blocks, 0);
         assert!(patch.payload.is_none());
     }

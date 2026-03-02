@@ -86,8 +86,8 @@ fields = [
 
     let patch = Patch::create(&config, GENESIS_HASH).unwrap();
     assert_eq!(patch.num_blocks, 0);
-    assert_eq!(patch.head_hash, hash);
-    assert!(patch.head_created.is_some());
+    assert_eq!(patch.head, hash);
+    assert!(patch.created.is_some());
 
     let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
     assert!(sql.starts_with("BEGIN;\n"));

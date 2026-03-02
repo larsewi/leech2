@@ -38,7 +38,7 @@ fields = [
     // Current state: Alicia, Charlie, Dave
     let patch_full = Patch::create(&config, GENESIS_HASH).unwrap();
     assert_eq!(patch_full.num_blocks, 0);
-    assert_eq!(patch_full.head_hash, hash2);
+    assert_eq!(patch_full.head, hash2);
 
     let sql_full = sql::patch_to_sql(&config, &patch_full).unwrap().unwrap();
     assert_eq!(common::count_sql(&sql_full, "TRUNCATE"), 1);
@@ -52,7 +52,7 @@ fields = [
     // 1 insert (Dave), 1 delete (Bob), 1 update (Alice->Alicia)
     let patch_partial = Patch::create(&config, &hash1).unwrap();
     assert_eq!(patch_partial.num_blocks, 1);
-    assert_eq!(patch_partial.head_hash, hash2);
+    assert_eq!(patch_partial.head, hash2);
 
     let sql_partial = sql::patch_to_sql(&config, &patch_partial).unwrap().unwrap();
     assert_eq!(common::count_sql(&sql_partial, "INSERT INTO"), 1);
@@ -111,7 +111,7 @@ fields = [
     // Final state: 2 rows (Alice, Charles).
     let patch_genesis = Patch::create(&config, GENESIS_HASH).unwrap();
     assert_eq!(patch_genesis.num_blocks, 0);
-    assert_eq!(patch_genesis.head_hash, hash3);
+    assert_eq!(patch_genesis.head, hash3);
 
     let sql_genesis = sql::patch_to_sql(&config, &patch_genesis).unwrap().unwrap();
     assert_eq!(common::count_sql(&sql_genesis, "TRUNCATE"), 1);

@@ -264,9 +264,9 @@ fn cmd_patch_applied(config: &Config) -> Result<()> {
         .context("no patch file found, run `lch patch create` first")?;
 
     let patch = leech2::wire::decode_patch(&data)?;
-    leech2::reported::save(&config.work_dir, &patch.head_hash)?;
+    leech2::reported::save(&config.work_dir, &patch.head)?;
 
-    println!("{}", patch.head_hash);
+    println!("{}", patch.head);
     Ok(())
 }
 

@@ -53,7 +53,7 @@ fields = [
 
     // Patch from genesis should fall back to state payload since hash1 is gone
     let patch = Patch::create(&config, GENESIS_HASH).unwrap();
-    assert_eq!(patch.head_hash, hash3);
+    assert_eq!(patch.head, hash3);
 
     // --- Under limit: create with max-blocks=2, only 2 blocks exist → both preserved ---
     // (We already have hash2 and hash3 remaining, which is exactly max-blocks=2)

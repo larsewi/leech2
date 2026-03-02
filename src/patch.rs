@@ -33,8 +33,8 @@ type ConsolidateResult = (Option<Timestamp>, u32, Option<Payload>);
 impl fmt::Display for Patch {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Patch:")?;
-        write!(f, "\n  Head: {}", self.head_hash)?;
-        match &self.head_created {
+        write!(f, "\n  Head: {}", self.head)?;
+        match &self.created {
             Some(ts) => write!(f, "\n  Created: {}", utils::format_timestamp(ts))?,
             None => write!(f, "\n  Created: N/A")?,
         }
@@ -136,8 +136,8 @@ fn full_state_patch(work_dir: &Path, head_hash: &str, host: Option<Host>) -> Res
     let state =
         state::State::load(work_dir)?.context("No STATE file found for full state patch")?;
     let patch = Patch {
-        head_hash: head_hash.to_string(),
-        head_created,
+        head: head_hash.to_string(),
+        created: head_created,
         host,
         num_blocks: 0,
         payload: Some(Payload::State(crate::proto::state::State::from(state))),
@@ -158,8 +158,8 @@ impl Patch {
 
         if head_hash == GENESIS_HASH {
             let patch = Patch {
-                head_hash,
-                head_created: None,
+                head: head_hash,
+                created: None,
                 host,
                 num_blocks: 0,
                 payload: None,
@@ -196,8 +196,8 @@ impl Patch {
             };
 
         let patch = Patch {
-            head_hash,
-            head_created,
+            head: head_hash,
+            created: head_created,
             host,
             num_blocks,
             payload,

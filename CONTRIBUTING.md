@@ -245,7 +245,7 @@ Strip: key-only deletes, sparse updates
 Compare encoded sizes: deltas vs full state
     |
     v
-Patch { head_hash, timestamp, num_blocks, payload }
+Patch { head, created, num_blocks, payload }
     |
     v
 wire::encode_patch()  -->  protobuf + optional zstd

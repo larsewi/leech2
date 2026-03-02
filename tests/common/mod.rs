@@ -58,7 +58,7 @@ pub fn assert_wire_roundtrip(config: &Config, patch: &Patch) {
     let encoded = wire::encode_patch(config, patch).unwrap();
     let decoded = wire::decode_patch(&encoded).unwrap();
 
-    assert_eq!(patch.head_hash, decoded.head_hash);
+    assert_eq!(patch.head, decoded.head);
     assert_eq!(patch.num_blocks, decoded.num_blocks);
 
     let sql_before = sql::patch_to_sql(config, patch).unwrap();
