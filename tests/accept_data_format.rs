@@ -156,3 +156,76 @@ fields = [
     common::assert_wire_roundtrip(&config, &patch_genesis);
     common::assert_wire_roundtrip(&config, &patch_partial);
 }
+
+#[test]
+fn test_null_sentinel() {
+    let tmp = tempfile::tempdir().unwrap();
+    let work_dir = tmp.path();
+
+    common::write_config(
+        work_dir,
+        "config.toml",
+        r#"
+[tables.items]
+source = "items.csv"
+fields = [
+    { name = "id", type = "NUMBER", primary-key = true },
+    { name = "name", type = "TEXT" },
+    { name = "notes", type = "TEXT", null = "" },
+    { name = "score", type = "NUMBER", null = "N/A" },
+]
+"#,
+    );
+
+    // Block 1: row with non-null values
+    common::write_csv(work_dir, "items.csv", "1,Alice,some notes,42\n");
+    let config = Config::load(work_dir).unwrap();
+    let hash1 = Block::create(&config).unwrap();
+
+    // Block 2: update to null sentinels
+    common::write_csv(work_dir, "items.csv", "1,Alice,,N/A\n");
+    let _hash2 = Block::create(&config).unwrap();
+
+    // Patch from genesis: consolidated insert should have NULLs
+    let patch = Patch::create(&config, GENESIS_HASH).unwrap();
+    let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
+    assert!(
+        sql.contains("NULL"),
+        "should contain NULL for sentinel values"
+    );
+    // name should not be NULL (no sentinel configured)
+    assert!(sql.contains("'Alice'"));
+
+    // Patch from hash1: delta should also have NULLs
+    let patch2 = Patch::create(&config, &hash1).unwrap();
+    let sql2 = sql::patch_to_sql(&config, &patch2).unwrap().unwrap();
+    assert!(sql2.contains("NULL"), "delta should contain NULL");
+
+    common::assert_wire_roundtrip(&config, &patch);
+    common::assert_wire_roundtrip(&config, &patch2);
+}
+
+#[test]
+fn test_null_on_primary_key_rejected() {
+    let tmp = tempfile::tempdir().unwrap();
+
+    common::write_config(
+        tmp.path(),
+        "config.toml",
+        r#"
+[tables.items]
+source = "items.csv"
+fields = [
+    { name = "id", type = "NUMBER", primary-key = true, null = "" },
+    { name = "name", type = "TEXT" },
+]
+"#,
+    );
+
+    let result = Config::load(tmp.path());
+    assert!(result.is_err());
+    assert!(
+        result.unwrap_err().to_string().contains("null sentinel"),
+        "should reject null on primary key"
+    );
+}

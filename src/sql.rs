@@ -29,11 +29,19 @@ impl SqlType {
     }
 }
 
+/// Per-field metadata resolved from config.
+struct FieldMeta {
+    name: String,
+    sql_type: SqlType,
+    /// If set, this CSV value is emitted as SQL `NULL` instead of a typed literal.
+    null: Option<String>,
+}
+
 /// Schema information for a single table, resolved from config.
 struct TableSchema {
     table_name: String,
-    /// All fields in order: PK first, then subsidiary. Each with its SQL type.
-    fields: Vec<(String, SqlType)>,
+    /// All fields in order: PK first, then subsidiary.
+    fields: Vec<FieldMeta>,
     /// Number of primary key fields (the first `num_pk` entries in `fields`).
     num_pk: usize,
 }
@@ -45,11 +53,8 @@ impl TableSchema {
             .get(table_name)
             .with_context(|| format!("table '{}' not found in config", table_name))?;
 
-        let type_map: std::collections::HashMap<&str, &str> = tc
-            .fields
-            .iter()
-            .map(|f| (f.name.as_str(), f.field_type.as_str()))
-            .collect();
+        let field_cfg: std::collections::HashMap<&str, &crate::config::FieldConfig> =
+            tc.fields.iter().map(|f| (f.name.as_str(), f)).collect();
 
         let pk = tc.primary_key();
         let field_names = tc.field_names();
@@ -57,17 +62,31 @@ impl TableSchema {
 
         let mut fields = Vec::new();
         for name in &pk {
-            let type_str = type_map.get(name.as_str()).copied().unwrap_or("TEXT");
+            let (type_str, null) = field_cfg
+                .get(name.as_str())
+                .map(|f| (f.field_type.as_str(), f.null.clone()))
+                .unwrap_or(("TEXT", None));
             let sql_type =
                 SqlType::from_config(type_str).with_context(|| format!("field '{}'", name))?;
-            fields.push((name.clone(), sql_type));
+            fields.push(FieldMeta {
+                name: name.clone(),
+                sql_type,
+                null,
+            });
         }
         for name in &field_names {
             if !pk_set.contains(name.as_str()) {
-                let type_str = type_map.get(name.as_str()).copied().unwrap_or("TEXT");
+                let (type_str, null) = field_cfg
+                    .get(name.as_str())
+                    .map(|f| (f.field_type.as_str(), f.null.clone()))
+                    .unwrap_or(("TEXT", None));
                 let sql_type =
                     SqlType::from_config(type_str).with_context(|| format!("field '{}'", name))?;
-                fields.push((name.clone(), sql_type));
+                fields.push(FieldMeta {
+                    name: name.clone(),
+                    sql_type,
+                    null,
+                });
             }
         }
 
@@ -78,11 +97,11 @@ impl TableSchema {
         })
     }
 
-    fn pk_types(&self) -> &[(String, SqlType)] {
+    fn pk_fields(&self) -> &[FieldMeta] {
         &self.fields[..self.num_pk]
     }
 
-    fn sub_types(&self) -> &[(String, SqlType)] {
+    fn sub_fields(&self) -> &[FieldMeta] {
         &self.fields[self.num_pk..]
     }
 }
@@ -142,33 +161,43 @@ pub fn quote_literal(s: &str, sql_type: &SqlType) -> Result<String> {
     }
 }
 
+/// Format a value as a SQL literal, emitting `NULL` if it matches the sentinel.
+fn format_value(s: &str, field: &FieldMeta) -> Result<String> {
+    if let Some(ref sentinel) = field.null
+        && s == sentinel
+    {
+        return Ok("NULL".to_string());
+    }
+    quote_literal(s, &field.sql_type)
+}
+
 /// Convert key + value slices into a list of SQL literal strings.
 fn format_row(key: &[String], value: &[String], schema: &TableSchema) -> Result<Vec<String>> {
-    let pk_types = schema.pk_types();
-    let sub_types = schema.sub_types();
+    let pk_fields = schema.pk_fields();
+    let sub_fields = schema.sub_fields();
 
-    if key.len() != pk_types.len() {
+    if key.len() != pk_fields.len() {
         bail!(
             "PK field count mismatch: got {} values, expected {}",
             key.len(),
-            pk_types.len()
+            pk_fields.len()
         );
     }
-    if value.len() != sub_types.len() {
+    if value.len() != sub_fields.len() {
         bail!(
             "subsidiary field count mismatch: got {} values, expected {}",
             value.len(),
-            sub_types.len()
+            sub_fields.len()
         );
     }
 
     let mut literals = Vec::with_capacity(key.len() + value.len());
-    for (val, (name, sql_type)) in key.iter().zip(pk_types) {
-        let lit = quote_literal(val, sql_type).with_context(|| format!("field '{}'", name))?;
+    for (val, field) in key.iter().zip(pk_fields) {
+        let lit = format_value(val, field).with_context(|| format!("field '{}'", field.name))?;
         literals.push(lit);
     }
-    for (val, (name, sql_type)) in value.iter().zip(sub_types) {
-        let lit = quote_literal(val, sql_type).with_context(|| format!("field '{}'", name))?;
+    for (val, field) in value.iter().zip(sub_fields) {
+        let lit = format_value(val, field).with_context(|| format!("field '{}'", field.name))?;
         literals.push(lit);
     }
     Ok(literals)
@@ -189,11 +218,11 @@ fn delta_to_sql(
         let mut where_parts: Vec<String> = entry
             .key
             .iter()
-            .zip(schema.pk_types())
-            .map(|(val, (name, sql_type))| {
+            .zip(schema.pk_fields())
+            .map(|(val, field)| {
                 let lit =
-                    quote_literal(val, sql_type).with_context(|| format!("field '{}'", name))?;
-                Ok(format!("{} = {}", quote_ident(name), lit))
+                    format_value(val, field).with_context(|| format!("field '{}'", field.name))?;
+                Ok(format!("{} = {}", quote_ident(&field.name), lit))
             })
             .collect::<Result<Vec<_>>>()?;
 
@@ -210,11 +239,8 @@ fn delta_to_sql(
 
     // INSERTs
     if !delta.inserts.is_empty() {
-        let mut col_parts: Vec<String> = schema
-            .fields
-            .iter()
-            .map(|(name, _)| quote_ident(name))
-            .collect();
+        let mut col_parts: Vec<String> =
+            schema.fields.iter().map(|f| quote_ident(&f.name)).collect();
 
         if let Some(h) = host {
             col_parts.insert(0, h.quoted_column());
@@ -237,27 +263,27 @@ fn delta_to_sql(
 
     // UPDATEs
     for update in &delta.updates {
-        let sub_types = schema.sub_types();
+        let sub_fields = schema.sub_fields();
         let set_parts: Vec<String> = update
             .changed_indices
             .iter()
             .zip(update.new_value.iter())
             .map(|(idx, val)| {
-                let (name, sql_type) = &sub_types[*idx as usize];
+                let field = &sub_fields[*idx as usize];
                 let lit =
-                    quote_literal(val, sql_type).with_context(|| format!("field '{}'", name))?;
-                Ok(format!("{} = {}", quote_ident(name), lit))
+                    format_value(val, field).with_context(|| format!("field '{}'", field.name))?;
+                Ok(format!("{} = {}", quote_ident(&field.name), lit))
             })
             .collect::<Result<Vec<_>>>()?;
 
         let mut where_parts: Vec<String> = update
             .key
             .iter()
-            .zip(schema.pk_types())
-            .map(|(val, (name, sql_type))| {
+            .zip(schema.pk_fields())
+            .map(|(val, field)| {
                 let lit =
-                    quote_literal(val, sql_type).with_context(|| format!("field '{}'", name))?;
-                Ok(format!("{} = {}", quote_ident(name), lit))
+                    format_value(val, field).with_context(|| format!("field '{}'", field.name))?;
+                Ok(format!("{} = {}", quote_ident(&field.name), lit))
             })
             .collect::<Result<Vec<_>>>()?;
 
@@ -297,11 +323,8 @@ fn state_to_sql(
         }
 
         if !table.entries.is_empty() {
-            let mut col_parts: Vec<String> = schema
-                .fields
-                .iter()
-                .map(|(name, _)| quote_ident(name))
-                .collect();
+            let mut col_parts: Vec<String> =
+                schema.fields.iter().map(|f| quote_ident(&f.name)).collect();
 
             if let Some(h) = host {
                 col_parts.insert(0, h.quoted_column());
@@ -431,5 +454,36 @@ mod tests {
         assert_eq!(quote_literal("f", &SqlType::Boolean).unwrap(), "FALSE");
         assert_eq!(quote_literal("no", &SqlType::Boolean).unwrap(), "FALSE");
         assert!(quote_literal("maybe", &SqlType::Boolean).is_err());
+    }
+
+    #[test]
+    fn test_format_value_null_sentinel() {
+        let field_with_null = FieldMeta {
+            name: "notes".to_string(),
+            sql_type: SqlType::Text,
+            null: Some("".to_string()),
+        };
+        // Empty string matches sentinel → NULL
+        assert_eq!(format_value("", &field_with_null).unwrap(), "NULL");
+        // Non-empty string → normal quoting
+        assert_eq!(format_value("hello", &field_with_null).unwrap(), "'hello'");
+
+        let field_no_null = FieldMeta {
+            name: "label".to_string(),
+            sql_type: SqlType::Text,
+            null: None,
+        };
+        // No sentinel → empty string is quoted normally
+        assert_eq!(format_value("", &field_no_null).unwrap(), "''");
+
+        let number_field = FieldMeta {
+            name: "count".to_string(),
+            sql_type: SqlType::Number,
+            null: Some("N/A".to_string()),
+        };
+        // "N/A" matches sentinel → NULL
+        assert_eq!(format_value("N/A", &number_field).unwrap(), "NULL");
+        // "42" does not match → normal number
+        assert_eq!(format_value("42", &number_field).unwrap(), "42");
     }
 }

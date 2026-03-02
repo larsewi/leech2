@@ -92,6 +92,15 @@ type = "NUMBER"
 | `NUMBER`  | `42` / `3.14`  | Validated as finite `f64`                    |
 | `BOOLEAN` | `TRUE`/`FALSE` | Accepts `true/false`, `1/0`, `t/f`, `yes/no` |
 
+Fields can have an optional `null` attribute that specifies which CSV value
+should be emitted as SQL `NULL` instead of a typed literal. This is not allowed
+on primary-key fields.
+
+```toml
+{ name = "notes", type = "TEXT", null = "" }       # empty string → NULL
+{ name = "score", type = "NUMBER", null = "N/A" }  # "N/A" → NULL
+```
+
 ### Host identifier
 
 An optional `[host]` section embeds a host identifier in every patch. When

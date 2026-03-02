@@ -61,6 +61,8 @@ pub struct FieldConfig {
     pub field_type: String,
     #[serde(rename = "primary-key", default)]
     pub primary_key: bool,
+    #[serde(default)]
+    pub null: Option<String>,
 }
 
 fn default_field_type() -> String {
@@ -130,6 +132,13 @@ impl Config {
                 if !seen.insert(&field.name) {
                     bail!(
                         "table '{}': found duplicate field name '{}'",
+                        name,
+                        field.name
+                    );
+                }
+                if field.primary_key && field.null.is_some() {
+                    bail!(
+                        "table '{}': primary-key field '{}' must not have a null sentinel",
                         name,
                         field.name
                     );
