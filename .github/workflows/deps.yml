@@ -5,10 +5,6 @@ on:
     - cron: "0 9 * * 1" # Every Monday at 09:00 UTC
   workflow_dispatch: # Allows manual triggering
 
-permissions:
-  contents: write
-  pull-requests: write
-
 jobs:
   update:
     runs-on: ubuntu-latest
@@ -22,6 +18,7 @@ jobs:
     - name: Create pull request
       uses: peter-evans/create-pull-request@v7
       with:
+        token: ${{ secrets.PAT }}
         commit-message: "Update Cargo dependencies"
         branch: auto/update-dependencies
         title: "Update Cargo dependencies"
