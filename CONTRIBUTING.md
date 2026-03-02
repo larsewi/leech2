@@ -47,8 +47,13 @@ the chain from `HEAD` back to a last-known hash (typically the hash stored in
 with its parent using 15 conflict-resolution rules (see
 [DELTA_MERGING_RULES.md](DELTA_MERGING_RULES.md)). Some rules handle
 non-conflicting scenarios seamlessly, while others detect unresolvable conflicts
-(e.g. double insert). If consolidation fails, the library falls back to sending
-a full state snapshot.
+(e.g. double insert).
+
+When the reference hash is genesis or can't be resolved (e.g. the block was
+truncated), the library skips consolidation entirely and produces a full state
+snapshot. This guarantees TRUNCATE + INSERT SQL that is safe to apply regardless
+of what the target database currently contains. The same fallback applies when
+consolidation fails (e.g. a block in the chain is missing).
 
 After merging, the patch is optimized: deletes are stripped down to keys only,
 and updates are sparse-encoded to include only changed columns. The library then
@@ -102,6 +107,35 @@ After every `Block::create()`, optional truncation runs to reclaim disk space.
 It removes orphaned blocks (not reachable from `HEAD`), blocks older than the
 `REPORTED` position, and blocks exceeding configured `max-blocks` or `max-age`
 limits.
+
+### Recovery from missing files
+
+Work directory files can go missing due to truncation, manual deletion, or disk
+errors. The library is designed to always produce SQL that is safe to apply,
+even when the block chain or metadata is incomplete.
+
+**Scenario/behavior:**
+* **REPORTED block truncated:** `Patch::create` can't resolve the hash → falls
+  back to full state (TRUNCATE + INSERT)
+* **REPORTED file deleted:** CLI/FFI falls back to genesis → `Patch::create`
+  produces full state
+* **HEAD file deleted:** `head::load` returns genesis → empty patch. Next
+  `Block::create` ignores the stale STATE file and captures all CSV rows as
+  inserts
+* **Block chain broken:** (middle block deleted) | Delta consolidation fails →
+  falls back to full state
+* **STATE file deleted:** (chain intact) | Delta consolidation still succeeds
+  via block chain; STATE is not needed
+
+The key invariant: when the reference point is unknown or unreliable (genesis,
+unresolvable hash, broken chain), the patch always uses a **STATE payload**
+which generates `TRUNCATE + INSERT` SQL. This avoids duplicate-key violations
+that would occur if bare `INSERT` statements were applied to a database that
+already contains rows. When a host identifier is configured, the state payload
+uses `DELETE FROM ... WHERE host = ...` instead of `TRUNCATE`, so only the
+host's own rows are replaced and other agents' data is preserved.
+
+See `tests/accept_recovery.rs` for acceptance tests covering these scenarios.
 
 ## Source layout
 
