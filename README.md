@@ -121,7 +121,7 @@ controls this:
 ```toml
 [compression]
 enable = true  # enable zstd compression (default: true)
-level = 3      # zstd level (default: zstd default)
+level = 3      # compression level (defaults to zstd default)
 ```
 
 ### History truncation
