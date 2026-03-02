@@ -79,20 +79,28 @@ fn work_dir(cli: &Cli) -> PathBuf {
     base.join(LEECH2_DIR)
 }
 
-fn resolve_ref(config: &Config, reference: Option<&str>, n: Option<u32>) -> Result<String> {
-    match (reference, n) {
+fn resolve_ref(
+    config: &Config,
+    reference: Option<&str>,
+    num_blocks: Option<u32>,
+) -> Result<String> {
+    match (reference, num_blocks) {
         (Some(_), Some(_)) => bail!("cannot specify both a hash prefix and -n"),
-        (Some(r), None) => leech2::patch::resolve_hash_prefix(&config.work_dir, r),
-        (None, Some(n)) => walk_back(&config.work_dir, n),
+        (Some(reference), None) => leech2::patch::resolve_hash_prefix(&config.work_dir, reference),
+        (None, Some(num_blocks)) => walk_back(&config.work_dir, num_blocks),
         (None, None) => leech2::head::load(&config.work_dir),
     }
 }
 
-fn walk_back(work_dir: &std::path::Path, n: u32) -> Result<String> {
+fn walk_back(work_dir: &std::path::Path, num_blocks: u32) -> Result<String> {
     let mut hash = leech2::head::load(work_dir)?;
-    for i in 0..n {
+    for i in 0..num_blocks {
         if hash == GENESIS_HASH {
-            bail!("only {} block(s) in chain, cannot go back {}", i, n);
+            bail!(
+                "only {} block(s) in chain, cannot go back {}",
+                i,
+                num_blocks
+            );
         }
         let block = Block::load(work_dir, &hash)?;
         hash = block.parent;
@@ -149,16 +157,24 @@ fn cmd_block_create(config: &Config) -> Result<()> {
     Ok(())
 }
 
-fn cmd_patch_create(config: &Config, reference: Option<&str>, n: Option<u32>) -> Result<()> {
-    let hash = match (reference, n) {
-        (None, None) => leech2::reported::load(&config.work_dir)?
-            .unwrap_or_else(|| leech2::utils::GENESIS_HASH.to_string()),
-        _ => resolve_ref(config, reference, n)?,
+fn cmd_patch_create(
+    config: &Config,
+    reference: Option<&str>,
+    num_blocks: Option<u32>,
+) -> Result<()> {
+    // When no explicit reference is given, default to the last reported hash
+    // (i.e. the hash the server already knows about) so the patch only contains
+    // new blocks. Fall back to the genesis hash if nothing has been reported yet.
+    let hash = if reference.is_none() && num_blocks.is_none() {
+        leech2::reported::load(&config.work_dir)?
+            .unwrap_or_else(|| leech2::utils::GENESIS_HASH.to_string())
+    } else {
+        resolve_ref(config, reference, num_blocks)?
     };
     let patch = leech2::patch::Patch::create(config, &hash)?;
 
-    let buf = leech2::wire::encode_patch(config, &patch)?;
-    leech2::storage::store(&config.work_dir, PATCH_FILE, &buf)?;
+    let encoded = leech2::wire::encode_patch(config, &patch)?;
+    leech2::storage::store(&config.work_dir, PATCH_FILE, &encoded)?;
 
     println!("{}", patch);
     Ok(())
@@ -252,11 +268,15 @@ fn cmd_patch_applied(config: &Config) -> Result<()> {
     Ok(())
 }
 
+/// Print `content` to stdout, piping through a pager (e.g. `less`) when the
+/// output exceeds the terminal height. Falls back to plain `println!` when
+/// stdout is not a TTY, the terminal size is unavailable, or the pager fails
+/// to launch. Honors the `PAGER` environment variable.
 fn print_with_pager(content: &str) {
-    let use_pager = std::io::stdout().is_terminal()
-        && terminal_size::terminal_size()
-            .map(|(_, h)| content.lines().count() > h.0 as usize)
-            .unwrap_or(false);
+    let is_tty = std::io::stdout().is_terminal();
+    let exceeds_height =
+        terminal_size::terminal_size().is_some_and(|(_, h)| content.lines().count() > h.0 as usize);
+    let use_pager = is_tty && exceeds_height;
 
     if !use_pager {
         println!("{}", content);
