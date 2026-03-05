@@ -41,8 +41,8 @@ pub unsafe extern "C" fn lch_init(work_dir: *const c_char) -> *mut config::Confi
 
     log::debug!("lch_init(work_dir={})", path.display());
 
-    match config::Config::load(&path) {
-        Ok(cfg) => Box::into_raw(Box::new(cfg)),
+    match crate::config::Config::load(&path) {
+        Ok(config) => Box::into_raw(Box::new(config)),
         Err(e) => {
             log::error!("lch_init(): {}", e);
             std::ptr::null_mut()
@@ -124,15 +124,15 @@ pub unsafe extern "C" fn lch_patch_create(
         }
     };
 
-    let p = match patch::Patch::create(config, &hash) {
-        Ok(p) => p,
+    let patch = match patch::Patch::create(config, &hash) {
+        Ok(patch) => patch,
         Err(e) => {
             log::error!("lch_patch_create(): {:#}", e);
             return -1;
         }
     };
 
-    let buf = match wire::encode_patch(config, &p) {
+    let buf = match wire::encode_patch(config, &patch) {
         Ok(buf) => buf,
         Err(e) => {
             log::error!("lch_patch_create(): Failed to encode patch: {:#}", e);
@@ -182,7 +182,7 @@ pub unsafe extern "C" fn lch_patch_to_sql(
     let data = unsafe { std::slice::from_raw_parts(buf, len) };
 
     let patch = match wire::decode_patch(data) {
-        Ok(p) => p,
+        Ok(patch) => patch,
         Err(e) => {
             log::error!("lch_patch_to_sql(): Failed to decode patch: {:#}", e);
             return -1;
@@ -190,7 +190,7 @@ pub unsafe extern "C" fn lch_patch_to_sql(
     };
 
     let sql = match sql::patch_to_sql(config, &patch) {
-        Ok(Some(s)) => s,
+        Ok(Some(sql)) => sql,
         Ok(None) => {
             unsafe { *out = std::ptr::null_mut() };
             return 0;
@@ -202,7 +202,7 @@ pub unsafe extern "C" fn lch_patch_to_sql(
     };
 
     let cstr = match CString::new(sql) {
-        Ok(s) => s,
+        Ok(cstr) => cstr,
         Err(e) => {
             log::error!("lch_patch_to_sql(): Failed to create CString: {:#}", e);
             return -1;

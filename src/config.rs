@@ -79,14 +79,14 @@ pub struct TableConfig {
 
 impl TableConfig {
     pub fn field_names(&self) -> Vec<String> {
-        self.fields.iter().map(|f| f.name.clone()).collect()
+        self.fields.iter().map(|field| field.name.clone()).collect()
     }
 
     pub fn primary_key(&self) -> Vec<String> {
         self.fields
             .iter()
-            .filter(|f| f.primary_key)
-            .map(|f| f.name.clone())
+            .filter(|field| field.primary_key)
+            .map(|field| field.name.clone())
             .collect()
     }
 }

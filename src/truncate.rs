@@ -63,7 +63,7 @@ pub fn run(config: &Config) -> Result<()> {
     let mut current_hash = head_hash.clone();
     while current_hash != GENESIS_HASH {
         let block = match Block::load(work_dir, &current_hash) {
-            Ok(b) => b,
+            Ok(block) => block,
             Err(_) => {
                 // Block was previously truncated — end of reachable chain
                 log::debug!(
@@ -106,7 +106,9 @@ pub fn run(config: &Config) -> Result<()> {
 
     // Precompute rule parameters
     let reported_pos = match reported::load(work_dir)? {
-        Some(ref hash) => chain.iter().position(|e| e.hash == *hash),
+        Some(ref hash) => chain
+            .iter()
+            .position(|chain_entry| chain_entry.hash == *hash),
         None => None,
     };
 

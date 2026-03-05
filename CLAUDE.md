@@ -20,6 +20,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Avoid `unwrap()`, `expect()`, and other panicking functions in production code. Use proper error handling (`?`, `ok_or_else`, pattern matching, etc.) instead. Panicking in tests is acceptable.
 - Use `anyhow` for error handling: `anyhow::Result<T>` for return types, `bail!()` for early error returns, `.context()` / `.with_context()` to add context to errors. Do not use `Box<dyn std::error::Error>`.
 - Do not include `TODO.md` when committing. It is managed manually.
+- Avoid abbreviations in variable names. Prefer descriptive names (e.g., `table_config` over `tc`).
 
 ## Architecture
 

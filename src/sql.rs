@@ -42,8 +42,8 @@ struct TableSchema {
     table_name: String,
     /// All fields in order: PK first, then subsidiary.
     fields: Vec<FieldMeta>,
-    /// Number of primary key fields (the first `num_pk` entries in `fields`).
-    num_pk: usize,
+    /// Number of primary key fields (the first `num_primary_keys` entries in `fields`).
+    num_primary_keys: usize,
 }
 
 impl TableSchema {
@@ -57,18 +57,18 @@ impl TableSchema {
             table_config
                 .fields
                 .iter()
-                .map(|f| (f.name.as_str(), f))
+                .map(|field| (field.name.as_str(), field))
                 .collect();
 
         let primary_key = table_config.primary_key();
         let field_names = table_config.field_names();
-        let pimary_key_set: HashSet<&str> = primary_key.iter().map(|s| s.as_str()).collect();
+        let primary_key_set: HashSet<&str> = primary_key.iter().map(|s| s.as_str()).collect();
 
         let mut fields = Vec::new();
         for name in &primary_key {
             let (type_str, null) = field_config
                 .get(name.as_str())
-                .map(|f| (f.field_type.as_str(), f.null.clone()))
+                .map(|field| (field.field_type.as_str(), field.null.clone()))
                 .unwrap_or(("TEXT", None));
             let sql_type =
                 SqlType::from_config(type_str).with_context(|| format!("field '{}'", name))?;
@@ -79,10 +79,10 @@ impl TableSchema {
             });
         }
         for name in &field_names {
-            if !pimary_key_set.contains(name.as_str()) {
+            if !primary_key_set.contains(name.as_str()) {
                 let (type_str, null) = field_config
                     .get(name.as_str())
-                    .map(|f| (f.field_type.as_str(), f.null.clone()))
+                    .map(|field| (field.field_type.as_str(), field.null.clone()))
                     .unwrap_or(("TEXT", None));
                 let sql_type =
                     SqlType::from_config(type_str).with_context(|| format!("field '{}'", name))?;
@@ -96,17 +96,17 @@ impl TableSchema {
 
         Ok(TableSchema {
             table_name: table_name.to_string(),
-            num_pk: primary_key.len(),
+            num_primary_keys: primary_key.len(),
             fields,
         })
     }
 
-    fn pk_fields(&self) -> &[FieldMeta] {
-        &self.fields[..self.num_pk]
+    fn primary_key_fields(&self) -> &[FieldMeta] {
+        &self.fields[..self.num_primary_keys]
     }
 
-    fn sub_fields(&self) -> &[FieldMeta] {
-        &self.fields[self.num_pk..]
+    fn subsidiary_fields(&self) -> &[FieldMeta] {
+        &self.fields[self.num_primary_keys..]
     }
 }
 
@@ -128,8 +128,8 @@ impl HostInfo {
     }
 
     fn where_clause(&self) -> Result<String> {
-        let lit = quote_literal(&self.value, &self.sql_type).context("host value")?;
-        Ok(format!("{} = {}", quote_ident(&self.name), lit))
+        let literal = quote_literal(&self.value, &self.sql_type).context("host value")?;
+        Ok(format!("{} = {}", quote_ident(&self.name), literal))
     }
 
     fn quoted_column(&self) -> String {
@@ -147,62 +147,64 @@ fn quote_ident(name: &str) -> String {
 }
 
 /// Format a value as a SQL literal based on its type.
-pub fn quote_literal(s: &str, sql_type: &SqlType) -> Result<String> {
+pub fn quote_literal(value: &str, sql_type: &SqlType) -> Result<String> {
     match sql_type {
-        SqlType::Text => Ok(format!("'{}'", s.replace('\'', "''"))),
+        SqlType::Text => Ok(format!("'{}'", value.replace('\'', "''"))),
         SqlType::Number => {
-            let v: f64 = s.parse()?;
-            if !v.is_finite() {
-                bail!("invalid number: '{}'", s);
+            let number: f64 = value.parse()?;
+            if !number.is_finite() {
+                bail!("invalid number: '{}'", value);
             }
-            Ok(s.to_string())
+            Ok(value.to_string())
         }
-        SqlType::Boolean => match s.to_lowercase().as_str() {
+        SqlType::Boolean => match value.to_lowercase().as_str() {
             "true" | "1" | "t" | "yes" => Ok("TRUE".to_string()),
             "false" | "0" | "f" | "no" => Ok("FALSE".to_string()),
-            _ => bail!("invalid boolean value: '{}'", s),
+            _ => bail!("invalid boolean value: '{}'", value),
         },
     }
 }
 
 /// Format a value as a SQL literal, emitting `NULL` if it matches the sentinel.
-fn format_value(s: &str, field: &FieldMeta) -> Result<String> {
+fn format_value(value: &str, field: &FieldMeta) -> Result<String> {
     if let Some(ref sentinel) = field.null
-        && s == sentinel
+        && value == sentinel
     {
         return Ok("NULL".to_string());
     }
-    quote_literal(s, &field.sql_type)
+    quote_literal(value, &field.sql_type)
 }
 
 /// Convert key + value slices into a list of SQL literal strings.
 fn format_row(key: &[String], value: &[String], schema: &TableSchema) -> Result<Vec<String>> {
-    let pk_fields = schema.pk_fields();
-    let sub_fields = schema.sub_fields();
+    let primary_key_fields = schema.primary_key_fields();
+    let subsidiary_fields = schema.subsidiary_fields();
 
-    if key.len() != pk_fields.len() {
+    if key.len() != primary_key_fields.len() {
         bail!(
             "PK field count mismatch: got {} values, expected {}",
             key.len(),
-            pk_fields.len()
+            primary_key_fields.len()
         );
     }
-    if value.len() != sub_fields.len() {
+    if value.len() != subsidiary_fields.len() {
         bail!(
             "subsidiary field count mismatch: got {} values, expected {}",
             value.len(),
-            sub_fields.len()
+            subsidiary_fields.len()
         );
     }
 
     let mut literals = Vec::with_capacity(key.len() + value.len());
-    for (val, field) in key.iter().zip(pk_fields) {
-        let lit = format_value(val, field).with_context(|| format!("field '{}'", field.name))?;
-        literals.push(lit);
+    for (value, field) in key.iter().zip(primary_key_fields) {
+        let literal =
+            format_value(value, field).with_context(|| format!("field '{}'", field.name))?;
+        literals.push(literal);
     }
-    for (val, field) in value.iter().zip(sub_fields) {
-        let lit = format_value(val, field).with_context(|| format!("field '{}'", field.name))?;
-        literals.push(lit);
+    for (value, field) in value.iter().zip(subsidiary_fields) {
+        let literal =
+            format_value(value, field).with_context(|| format!("field '{}'", field.name))?;
+        literals.push(literal);
     }
     Ok(literals)
 }
@@ -222,16 +224,16 @@ fn delta_to_sql(
         let mut where_parts: Vec<String> = entry
             .key
             .iter()
-            .zip(schema.pk_fields())
-            .map(|(val, field)| {
-                let lit =
-                    format_value(val, field).with_context(|| format!("field '{}'", field.name))?;
-                Ok(format!("{} = {}", quote_ident(&field.name), lit))
+            .zip(schema.primary_key_fields())
+            .map(|(value, field)| {
+                let literal = format_value(value, field)
+                    .with_context(|| format!("field '{}'", field.name))?;
+                Ok(format!("{} = {}", quote_ident(&field.name), literal))
             })
             .collect::<Result<Vec<_>>>()?;
 
-        if let Some(h) = host {
-            where_parts.push(h.where_clause()?);
+        if let Some(host_info) = host {
+            where_parts.push(host_info.where_clause()?);
         }
 
         out.push_str(&format!(
@@ -243,18 +245,21 @@ fn delta_to_sql(
 
     // INSERTs
     if !delta.inserts.is_empty() {
-        let mut col_parts: Vec<String> =
-            schema.fields.iter().map(|f| quote_ident(&f.name)).collect();
+        let mut column_parts: Vec<String> = schema
+            .fields
+            .iter()
+            .map(|field| quote_ident(&field.name))
+            .collect();
 
-        if let Some(h) = host {
-            col_parts.insert(0, h.quoted_column());
+        if let Some(host_info) = host {
+            column_parts.insert(0, host_info.quoted_column());
         }
-        let columns = col_parts.join(", ");
+        let columns = column_parts.join(", ");
 
         for entry in &delta.inserts {
             let mut literals = format_row(&entry.key, &entry.value, &schema)?;
-            if let Some(h) = host {
-                literals.insert(0, h.quoted_value()?);
+            if let Some(host_info) = host {
+                literals.insert(0, host_info.quoted_value()?);
             }
             out.push_str(&format!(
                 "INSERT INTO {} ({}) VALUES ({});\n",
@@ -267,32 +272,32 @@ fn delta_to_sql(
 
     // UPDATEs
     for update in &delta.updates {
-        let sub_fields = schema.sub_fields();
+        let subsidiary_fields = schema.subsidiary_fields();
         let set_parts: Vec<String> = update
             .changed_indices
             .iter()
             .zip(update.new_value.iter())
-            .map(|(idx, val)| {
-                let field = &sub_fields[*idx as usize];
-                let lit =
-                    format_value(val, field).with_context(|| format!("field '{}'", field.name))?;
-                Ok(format!("{} = {}", quote_ident(&field.name), lit))
+            .map(|(index, value)| {
+                let field = &subsidiary_fields[*index as usize];
+                let literal = format_value(value, field)
+                    .with_context(|| format!("field '{}'", field.name))?;
+                Ok(format!("{} = {}", quote_ident(&field.name), literal))
             })
             .collect::<Result<Vec<_>>>()?;
 
         let mut where_parts: Vec<String> = update
             .key
             .iter()
-            .zip(schema.pk_fields())
-            .map(|(val, field)| {
-                let lit =
-                    format_value(val, field).with_context(|| format!("field '{}'", field.name))?;
-                Ok(format!("{} = {}", quote_ident(&field.name), lit))
+            .zip(schema.primary_key_fields())
+            .map(|(value, field)| {
+                let literal = format_value(value, field)
+                    .with_context(|| format!("field '{}'", field.name))?;
+                Ok(format!("{} = {}", quote_ident(&field.name), literal))
             })
             .collect::<Result<Vec<_>>>()?;
 
-        if let Some(h) = host {
-            where_parts.push(h.where_clause()?);
+        if let Some(host_info) = host {
+            where_parts.push(host_info.where_clause()?);
         }
 
         out.push_str(&format!(
@@ -318,27 +323,30 @@ fn state_to_sql(
         let quoted_table = quote_ident(table_name);
 
         match host {
-            Some(h) => out.push_str(&format!(
+            Some(host_info) => out.push_str(&format!(
                 "DELETE FROM {} WHERE {};\n",
                 quoted_table,
-                h.where_clause()?
+                host_info.where_clause()?
             )),
             None => out.push_str(&format!("TRUNCATE {};\n", quoted_table)),
         }
 
         if !table.entries.is_empty() {
-            let mut col_parts: Vec<String> =
-                schema.fields.iter().map(|f| quote_ident(&f.name)).collect();
+            let mut column_parts: Vec<String> = schema
+                .fields
+                .iter()
+                .map(|field| quote_ident(&field.name))
+                .collect();
 
-            if let Some(h) = host {
-                col_parts.insert(0, h.quoted_column());
+            if let Some(host_info) = host {
+                column_parts.insert(0, host_info.quoted_column());
             }
-            let columns = col_parts.join(", ");
+            let columns = column_parts.join(", ");
 
             for entry in &table.entries {
                 let mut literals = format_row(&entry.key, &entry.value, &schema)?;
-                if let Some(h) = host {
-                    literals.insert(0, h.quoted_value()?);
+                if let Some(host_info) = host {
+                    literals.insert(0, host_info.quoted_value()?);
                 }
                 out.push_str(&format!(
                     "INSERT INTO {} ({}) VALUES ({});\n",

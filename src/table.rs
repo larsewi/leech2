@@ -89,13 +89,17 @@ impl Table {
 
         let primary_indices: Vec<usize> = primary_key
             .iter()
-            .filter_map(|pk_col| field_names.iter().position(|c| c == pk_col))
+            .filter_map(|primary_key_column| {
+                field_names
+                    .iter()
+                    .position(|name| name == primary_key_column)
+            })
             .collect();
 
         let subsidiary_indices: Vec<usize> = field_names
             .iter()
             .enumerate()
-            .filter(|(_, col)| !primary_key.contains(col))
+            .filter(|(_, column)| !primary_key.contains(column))
             .map(|(i, _)| i)
             .collect();
 

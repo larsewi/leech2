@@ -30,27 +30,35 @@ impl TryFrom<crate::proto::delta::Delta> for Delta {
     type Error = anyhow::Error;
 
     fn try_from(proto: crate::proto::delta::Delta) -> Result<Self> {
-        let num_sub = proto
-            .num_sub()
+        let num_subsidiary = proto
+            .num_subsidiary()
             .map_err(|e| anyhow::anyhow!("corrupt delta '{}': {}", proto.table_name, e))?;
 
         let inserts = proto
             .inserts
             .into_iter()
-            .map(|e| (e.key, e.value))
+            .map(|entry| (entry.key, entry.value))
             .collect();
         let deletes = proto
             .deletes
             .into_iter()
-            .map(|e| (e.key, e.value))
+            .map(|entry| (entry.key, entry.value))
             .collect();
         let updates = proto
             .updates
             .into_iter()
-            .map(|u| {
-                let old_value = Update::expand_sparse(&u.changed_indices, &u.old_value, num_sub);
-                let new_value = Update::expand_sparse(&u.changed_indices, &u.new_value, num_sub);
-                (u.key, (old_value, new_value))
+            .map(|update| {
+                let old_value = Update::expand_sparse(
+                    &update.changed_indices,
+                    &update.old_value,
+                    num_subsidiary,
+                );
+                let new_value = Update::expand_sparse(
+                    &update.changed_indices,
+                    &update.new_value,
+                    num_subsidiary,
+                );
+                (update.key, (old_value, new_value))
             })
             .collect();
         Ok(Delta {
@@ -100,7 +108,7 @@ impl From<Delta> for crate::proto::delta::Delta {
 /// When `old` is provided and differs from `new`, shows `"old -> new"`.
 /// When `old` equals `new`, shows `"_"` (unchanged). When there is no
 /// old value, shows just `new`.
-fn fmt_update_col(new: &str, old: Option<&str>) -> String {
+fn format_update_column(new: &str, old: Option<&str>) -> String {
     match old {
         Some(old) if old != new => format!("{} -> {}", old, new),
         Some(_) => "_".to_string(),
@@ -116,8 +124,8 @@ impl crate::proto::delta::Delta {
     /// determines the PK count from the first available entry's key length
     /// (trying inserts, then deletes, then updates; defaulting to 0 if the
     /// delta is empty) and subtracts it from the total column count.
-    fn num_sub(&self) -> Result<usize, String> {
-        let num_pk = if let Some(entry) = self.inserts.first() {
+    fn num_subsidiary(&self) -> Result<usize, String> {
+        let num_primary_keys = if let Some(entry) = self.inserts.first() {
             entry.key.len()
         } else if let Some(entry) = self.deletes.first() {
             entry.key.len()
@@ -126,14 +134,14 @@ impl crate::proto::delta::Delta {
         } else {
             0
         };
-        if self.column_names.len() < num_pk {
+        if self.column_names.len() < num_primary_keys {
             return Err(format!(
                 "column_names has {} entries but primary key has {}",
                 self.column_names.len(),
-                num_pk
+                num_primary_keys
             ));
         }
-        Ok(self.column_names.len() - num_pk)
+        Ok(self.column_names.len() - num_primary_keys)
     }
 
     fn fmt_inserts(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -151,36 +159,36 @@ impl crate::proto::delta::Delta {
         Ok(())
     }
 
-    fn fmt_deletes(&self, f: &mut fmt::Formatter<'_>, num_sub: usize) -> fmt::Result {
+    fn fmt_deletes(&self, f: &mut fmt::Formatter<'_>, num_subsidiary: usize) -> fmt::Result {
         if !self.deletes.is_empty() {
             write!(f, "\n  Deletes ({}):", self.deletes.len())?;
             for entry in &self.deletes {
-                let vals = if entry.value.is_empty() {
-                    vec!["_"; num_sub].join(", ")
+                let values = if entry.value.is_empty() {
+                    vec!["_"; num_subsidiary].join(", ")
                 } else {
                     entry.value.join(", ")
                 };
-                write!(f, "\n    ({}) {}", entry.key.join(", "), vals)?;
+                write!(f, "\n    ({}) {}", entry.key.join(", "), values)?;
             }
         }
         Ok(())
     }
 
     /// Format update entries. Updates come in two wire formats:
-    /// - **Full** (blocks): `changed_indices` is empty and all `num_sub`
+    /// - **Full** (blocks): `changed_indices` is empty and all `num_subsidiary`
     ///   columns are present in `new_value`/`old_value` positionally.
     /// - **Sparse** (patches): only the columns listed in `changed_indices`
     ///   appear in `new_value`/`old_value`; unchanged columns show as `"_"`.
-    fn fmt_updates(&self, f: &mut fmt::Formatter<'_>, num_sub: usize) -> fmt::Result {
+    fn fmt_updates(&self, f: &mut fmt::Formatter<'_>, num_subsidiary: usize) -> fmt::Result {
         if !self.updates.is_empty() {
             write!(f, "\n  Updates ({}):", self.updates.len())?;
             for update in &self.updates {
                 let is_full = update.changed_indices.is_empty() && !update.new_value.is_empty();
                 let has_old = !update.old_value.is_empty();
 
-                let cols: Vec<String> = if is_full {
+                let columns: Vec<String> = if is_full {
                     // Full format (blocks): compare old and new positionally.
-                    (0..num_sub)
+                    (0..num_subsidiary)
                         .map(|i| {
                             let new = update
                                 .new_value
@@ -194,7 +202,7 @@ impl crate::proto::delta::Delta {
                                     .map(|s| s.as_str())
                                     .unwrap_or("<missing>")
                             });
-                            fmt_update_col(new, old)
+                            format_update_column(new, old)
                         })
                         .collect()
                 } else {
@@ -203,7 +211,7 @@ impl crate::proto::delta::Delta {
                         update.changed_indices.iter().copied().collect();
                     let mut new_iter = update.new_value.iter();
                     let mut old_iter = update.old_value.iter();
-                    (0..num_sub as u32)
+                    (0..num_subsidiary as u32)
                         .map(|i| {
                             if changed.contains(&i) {
                                 let new =
@@ -211,7 +219,7 @@ impl crate::proto::delta::Delta {
                                 let old = has_old.then(|| {
                                     old_iter.next().map(|s| s.as_str()).unwrap_or("<missing>")
                                 });
-                                fmt_update_col(new, old)
+                                format_update_column(new, old)
                             } else {
                                 "_".to_string()
                             }
@@ -219,7 +227,12 @@ impl crate::proto::delta::Delta {
                         .collect()
                 };
 
-                write!(f, "\n    ({}) {}", update.key.join(", "), cols.join(", "))?;
+                write!(
+                    f,
+                    "\n    ({}) {}",
+                    update.key.join(", "),
+                    columns.join(", ")
+                )?;
             }
         }
         Ok(())
@@ -234,13 +247,13 @@ impl fmt::Display for crate::proto::delta::Delta {
             self.table_name,
             self.column_names.join(", ")
         )?;
-        let num_sub = match self.num_sub() {
-            Ok(n) => n,
+        let num_subsidiary = match self.num_subsidiary() {
+            Ok(num_subsidiary) => num_subsidiary,
             Err(e) => return write!(f, " <corrupt delta: {}>", e),
         };
         self.fmt_inserts(f)?;
-        self.fmt_deletes(f, num_sub)?;
-        self.fmt_updates(f, num_sub)?;
+        self.fmt_deletes(f, num_subsidiary)?;
+        self.fmt_updates(f, num_subsidiary)?;
         Ok(())
     }
 }
@@ -267,8 +280,8 @@ impl Delta {
             self.merge_delete(key, value)
                 .context("failed to merge deletes")?;
         }
-        for (key, (old, new)) in child.updates {
-            self.merge_update(key, old, new)
+        for (key, (old_value, new_value)) in child.updates {
+            self.merge_update(key, old_value, new_value)
                 .context("failed to merge updates")?;
         }
         Ok(())
@@ -336,10 +349,10 @@ impl Delta {
         old_value: Vec<String>,
         new_value: Vec<String>,
     ) -> Result<()> {
-        if let Some(insert_val) = self.inserts.get_mut(&key) {
-            // Rule 7: insert then update → insert(new_val)
+        if let Some(insert_value) = self.inserts.get_mut(&key) {
+            // Rule 7: insert then update → insert(new_value)
             log::debug!("Rule 7: insert + update becomes insert for key {:?}", key);
-            *insert_val = new_value;
+            *insert_value = new_value;
         } else if self.deletes.contains_key(&key) {
             // Rule 11: update after delete → error
             bail!("Rule 11: Key {:?} deleted in parent, updated in child", key);
@@ -373,7 +386,7 @@ impl Delta {
         for (table_name, current_table) in &current_state.tables {
             let previous_table = previous_state
                 .as_ref()
-                .and_then(|ps| ps.tables.get(table_name));
+                .and_then(|state| state.tables.get(table_name));
 
             let (inserts, deletes, updates) = Self::compute_table(previous_table, current_table);
 

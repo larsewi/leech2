@@ -18,11 +18,11 @@ use crate::utils;
 use crate::utils::GENESIS_HASH;
 
 impl From<&HostConfig> for Host {
-    fn from(h: &HostConfig) -> Self {
+    fn from(host_config: &HostConfig) -> Self {
         Host {
-            name: h.name.clone(),
-            r#type: h.field_type.clone(),
-            value: h.value.clone(),
+            name: host_config.name.clone(),
+            r#type: host_config.field_type.clone(),
+            value: host_config.value.clone(),
         }
     }
 }
@@ -34,7 +34,7 @@ impl fmt::Display for Patch {
         write!(f, "Patch:")?;
         write!(f, "\n  Head: {}", self.head)?;
         match &self.created {
-            Some(ts) => write!(f, "\n  Created: {}", utils::format_timestamp(ts))?,
+            Some(timestamp) => write!(f, "\n  Created: {}", utils::format_timestamp(timestamp))?,
             None => write!(f, "\n  Created: N/A")?,
         }
         if let Some(host) = &self.host {
