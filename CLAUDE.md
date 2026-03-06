@@ -21,6 +21,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Use `anyhow` for error handling: `anyhow::Result<T>` for return types, `bail!()` for early error returns, `.context()` / `.with_context()` to add context to errors. Do not use `Box<dyn std::error::Error>`.
 - Do not include `TODO.md` when committing. It is managed manually.
 - Avoid abbreviations in variable names. Prefer descriptive names (e.g., `table_config` over `tc`).
+- After implementing new features, look for opportunities to refactor the code to improve readability and reduce duplication.
+- Commit often, but ensure each commit leaves leech2 in a working state (builds, tests pass, clippy clean).
 
 ## Architecture
 
