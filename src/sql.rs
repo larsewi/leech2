@@ -211,6 +211,68 @@ fn format_row(key: &[String], value: &[String], schema: &TableSchema) -> Result<
     Ok(literals)
 }
 
+/// Generate INSERT statements for a list of entries.
+fn emit_inserts(
+    entries: &[crate::entry::Entry],
+    schema: &TableSchema,
+    injected_fields: &[InjectedField],
+    quoted_table: &str,
+    out: &mut String,
+) -> Result<()> {
+    if entries.is_empty() {
+        return Ok(());
+    }
+
+    let mut column_parts: Vec<String> = schema
+        .fields
+        .iter()
+        .map(|field| quote_ident(&field.name))
+        .collect();
+
+    for (index, injected) in injected_fields.iter().enumerate() {
+        column_parts.insert(index, injected.quoted_column());
+    }
+    let columns = column_parts.join(", ");
+
+    for entry in entries {
+        let mut literals = format_row(&entry.key, &entry.value, schema)?;
+        for (index, injected) in injected_fields.iter().enumerate() {
+            literals.insert(index, injected.quoted_value()?);
+        }
+        out.push_str(&format!(
+            "INSERT INTO {} ({}) VALUES ({});\n",
+            quoted_table,
+            columns,
+            literals.join(", ")
+        ));
+    }
+
+    Ok(())
+}
+
+/// Build a WHERE clause from primary key values and injected fields.
+fn primary_key_where_clause(
+    key: &[String],
+    schema: &TableSchema,
+    injected_fields: &[InjectedField],
+) -> Result<String> {
+    let mut where_parts: Vec<String> = key
+        .iter()
+        .zip(schema.primary_key_fields())
+        .map(|(value, field)| {
+            let literal =
+                format_value(value, field).with_context(|| format!("field '{}'", field.name))?;
+            Ok(format!("{} = {}", quote_ident(&field.name), literal))
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+    for injected in injected_fields {
+        where_parts.push(injected.where_clause()?);
+    }
+
+    Ok(where_parts.join(" AND "))
+}
+
 /// Generate SQL statements for a delta (DELETE/INSERT/UPDATE).
 fn delta_to_sql(
     config: &Config,
@@ -223,54 +285,12 @@ fn delta_to_sql(
 
     // DELETEs
     for entry in &delta.deletes {
-        let mut where_parts: Vec<String> = entry
-            .key
-            .iter()
-            .zip(schema.primary_key_fields())
-            .map(|(value, field)| {
-                let literal = format_value(value, field)
-                    .with_context(|| format!("field '{}'", field.name))?;
-                Ok(format!("{} = {}", quote_ident(&field.name), literal))
-            })
-            .collect::<Result<Vec<_>>>()?;
-
-        for injected in injected_fields {
-            where_parts.push(injected.where_clause()?);
-        }
-
-        out.push_str(&format!(
-            "DELETE FROM {} WHERE {};\n",
-            table,
-            where_parts.join(" AND ")
-        ));
+        let where_clause = primary_key_where_clause(&entry.key, &schema, injected_fields)?;
+        out.push_str(&format!("DELETE FROM {} WHERE {};\n", table, where_clause));
     }
 
     // INSERTs
-    if !delta.inserts.is_empty() {
-        let mut column_parts: Vec<String> = schema
-            .fields
-            .iter()
-            .map(|field| quote_ident(&field.name))
-            .collect();
-
-        for (index, injected) in injected_fields.iter().enumerate() {
-            column_parts.insert(index, injected.quoted_column());
-        }
-        let columns = column_parts.join(", ");
-
-        for entry in &delta.inserts {
-            let mut literals = format_row(&entry.key, &entry.value, &schema)?;
-            for (index, injected) in injected_fields.iter().enumerate() {
-                literals.insert(index, injected.quoted_value()?);
-            }
-            out.push_str(&format!(
-                "INSERT INTO {} ({}) VALUES ({});\n",
-                table,
-                columns,
-                literals.join(", ")
-            ));
-        }
-    }
+    emit_inserts(&delta.inserts, &schema, injected_fields, &table, out)?;
 
     // UPDATEs
     for update in &delta.updates {
@@ -287,26 +307,13 @@ fn delta_to_sql(
             })
             .collect::<Result<Vec<_>>>()?;
 
-        let mut where_parts: Vec<String> = update
-            .key
-            .iter()
-            .zip(schema.primary_key_fields())
-            .map(|(value, field)| {
-                let literal = format_value(value, field)
-                    .with_context(|| format!("field '{}'", field.name))?;
-                Ok(format!("{} = {}", quote_ident(&field.name), literal))
-            })
-            .collect::<Result<Vec<_>>>()?;
-
-        for injected in injected_fields {
-            where_parts.push(injected.where_clause()?);
-        }
+        let where_clause = primary_key_where_clause(&update.key, &schema, injected_fields)?;
 
         out.push_str(&format!(
             "UPDATE {} SET {} WHERE {};\n",
             table,
             set_parts.join(", "),
-            where_parts.join(" AND ")
+            where_clause
         ));
     }
 
@@ -337,31 +344,7 @@ fn state_table_to_sql(
         ));
     }
 
-    if !table.entries.is_empty() {
-        let mut column_parts: Vec<String> = schema
-            .fields
-            .iter()
-            .map(|field| quote_ident(&field.name))
-            .collect();
-
-        for (index, injected) in injected_fields.iter().enumerate() {
-            column_parts.insert(index, injected.quoted_column());
-        }
-        let columns = column_parts.join(", ");
-
-        for entry in &table.entries {
-            let mut literals = format_row(&entry.key, &entry.value, &schema)?;
-            for (index, injected) in injected_fields.iter().enumerate() {
-                literals.insert(index, injected.quoted_value()?);
-            }
-            out.push_str(&format!(
-                "INSERT INTO {} ({}) VALUES ({});\n",
-                quoted_table,
-                columns,
-                literals.join(", ")
-            ));
-        }
-    }
+    emit_inserts(&table.entries, &schema, injected_fields, &quoted_table, out)?;
 
     Ok(())
 }
