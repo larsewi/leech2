@@ -240,19 +240,19 @@ fn cmd_block_show(config: &Config, reference: Option<&str>, n: Option<u32>) -> R
     Ok(format!("block {}\n{}", hash, block))
 }
 
-fn cmd_patch_show(config: &Config) -> Result<String> {
+fn load_patch(config: &Config) -> Result<leech2::patch::Patch> {
     let data = leech2::storage::load(&config.work_dir, PATCH_FILE)?
         .context("no patch file found, run `lch patch create` first")?;
+    leech2::wire::decode_patch(&data).context("failed to decode patch")
+}
 
-    let patch = leech2::wire::decode_patch(&data)?;
+fn cmd_patch_show(config: &Config) -> Result<String> {
+    let patch = load_patch(config)?;
     Ok(format!("{}", patch))
 }
 
 fn cmd_patch_sql(config: &Config) -> Result<String> {
-    let data = leech2::storage::load(&config.work_dir, PATCH_FILE)?
-        .context("no patch file found, run `lch patch create` first")?;
-
-    let patch = leech2::wire::decode_patch(&data)?;
+    let patch = load_patch(config)?;
     match leech2::sql::patch_to_sql(config, &patch)? {
         Some(sql) => Ok(sql),
         None => Ok("-- no changes\n".to_string()),
@@ -260,10 +260,7 @@ fn cmd_patch_sql(config: &Config) -> Result<String> {
 }
 
 fn cmd_patch_applied(config: &Config) -> Result<()> {
-    let data = leech2::storage::load(&config.work_dir, PATCH_FILE)?
-        .context("no patch file found, run `lch patch create` first")?;
-
-    let patch = leech2::wire::decode_patch(&data)?;
+    let patch = load_patch(config)?;
     leech2::reported::save(&config.work_dir, &patch.head)?;
 
     println!("{}", patch.head);
