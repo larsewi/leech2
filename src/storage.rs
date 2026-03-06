@@ -54,22 +54,27 @@ pub fn store(work_dir: &Path, name: &str, data: &[u8]) -> Result<()> {
 pub fn remove(work_dir: &Path, name: &str) -> Result<()> {
     let path = work_dir.join(name);
 
-    if !path.exists() {
-        log::debug!(
-            "File '{}' does not exist, nothing to remove",
-            path.display()
-        );
-        return Ok(());
-    }
-
     let _lock = acquire_lock(work_dir, name, true)?;
 
-    fs::remove_file(&path)
-        .with_context(|| format!("Failed to remove file '{}'", path.display()))?;
+    match fs::remove_file(&path) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            log::debug!(
+                "File '{}' does not exist, nothing to remove",
+                path.display()
+            );
+            return Ok(());
+        }
+        Err(e) => {
+            return Err(
+                anyhow::Error::new(e)
+                    .context(format!("Failed to remove file '{}'", path.display())),
+            );
+        }
+    }
 
     // Best-effort cleanup of the lock file after removing the data file.
     let lock_path = work_dir.join(format!(".{}.lock", name));
-    // _lock is dropped here first, then we try to clean up
     drop(_lock);
     let _ = fs::remove_file(&lock_path);
 
