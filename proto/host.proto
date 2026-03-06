@@ -7,8 +7,9 @@ package host;
 message Host {
   // Column name in the target database (e.g. "host").
   string name = 1;
-  // SQL type string (e.g. "TEXT", "NUMBER"). Defaults to TEXT.
-  string type = 2;
+  // Controls how the host value is quoted in generated SQL (e.g. "TEXT", "NUMBER").
+  // This is not a database column type.
+  string field_type = 2;
   // The identifier value (e.g. "agent-1").
   string value = 3;
 }

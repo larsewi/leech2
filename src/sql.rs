@@ -139,7 +139,7 @@ struct HostInfo {
 
 impl HostInfo {
     fn resolve(host: &Host) -> Result<Self> {
-        let sql_type = SqlType::from_config(&host.r#type).context("host.type")?;
+        let sql_type = SqlType::from_config(&host.field_type).context("host.type")?;
         Ok(HostInfo {
             name: host.name.clone(),
             sql_type,
