@@ -84,7 +84,9 @@ impl State {
 
         let state = State { tables };
         log::info!("Computed current state from {} tables", state.tables.len());
-        log::debug!("{}", crate::proto::state::State::from(state.clone()));
+        if log::log_enabled!(log::Level::Debug) {
+            log::debug!("{}", crate::proto::state::State::from(state.clone()));
+        }
         Ok(state)
     }
 
