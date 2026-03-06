@@ -204,7 +204,7 @@ fn format_row(key: &[String], value: &[String], schema: &TableSchema) -> Result<
 
     if key.len() != primary_key_fields.len() {
         bail!(
-            "PK field count mismatch: got {} values, expected {}",
+            "primary key field count mismatch: got {} values, expected {}",
             key.len(),
             primary_key_fields.len()
         );
