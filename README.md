@@ -69,7 +69,7 @@ Config can be `config.toml` or `config.json`.
 
 ```toml
 [tables.products]
-source = "products.csv"    # relative to work dir, or absolute
+source = "products.csv"  # relative to work dir, or absolute
 header = true
 
 [[tables.products.fields]]
@@ -101,8 +101,8 @@ on primary-key fields.
 source = "example.csv"
 fields = [
     { name = "id", type = "NUMBER", primary-key = true },
-    { name = "notes", type = "TEXT", null = "" },      # empty string -> NULL
-    { name = "score", type = "NUMBER", null = "N/A" }, # "N/A" -> NULL
+    { name = "notes", type = "TEXT", null = "" },       # empty string -> NULL
+    { name = "score", type = "NUMBER", null = "N/A" },  # "N/A" -> NULL
 ]
 ```
 
@@ -116,9 +116,9 @@ that other agents' data is preserved.
 
 ```toml
 [[injected-fields]]
-name = "host"         # column name in the target database
-type = "TEXT"         # SQL type (default: TEXT)
-value = "agent-1"    # the static value
+name = "host"      # column name in the target database
+type = "TEXT"      # SQL type (default: TEXT)
+value = "agent-1"  # the static value
 
 [[injected-fields]]
 name = "environment"
