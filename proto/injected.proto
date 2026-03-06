@@ -5,7 +5,7 @@ package injected;
 // A static field injected into all SQL output.
 // Each injected field adds a column to INSERT statements and a condition
 // to DELETE/UPDATE WHERE clauses.
-message InjectedField {
+message Field {
   // Column name in the target database (e.g. "host", "environment").
   string name = 1;
   // Controls how the value is quoted in generated SQL (e.g. "TEXT", "NUMBER").

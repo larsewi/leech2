@@ -14,7 +14,7 @@ message Patch {
   // Timestamp when the HEAD block was created.
   google.protobuf.Timestamp created = 2;
   // Static fields injected into all SQL output (extra columns in INSERT, conditions in WHERE).
-  repeated injected.InjectedField injected_fields = 3;
+  repeated injected.Field injected_fields = 3;
   // The number of blocks that were merged to produce this patch.
   uint32 num_blocks = 4;
   // The payload is either merged deltas or a full state snapshot (fallback).

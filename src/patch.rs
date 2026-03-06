@@ -11,15 +11,15 @@ use crate::block::Block;
 use crate::config::{Config, InjectedFieldConfig};
 use crate::head;
 use crate::proto::delta::Deltas;
-use crate::proto::injected::InjectedField;
+use crate::proto::injected::Field;
 use crate::proto::patch::patch::Payload;
 use crate::state;
 use crate::utils;
 use crate::utils::GENESIS_HASH;
 
-impl From<&InjectedFieldConfig> for InjectedField {
+impl From<&InjectedFieldConfig> for Field {
     fn from(config: &InjectedFieldConfig) -> Self {
-        InjectedField {
+        Field {
             name: config.name.clone(),
             sql_type: config.sql_type.clone(),
             value: config.value.clone(),
@@ -121,11 +121,7 @@ fn try_consolidate(work_dir: &Path, head: &str, last_known: &str) -> Result<Cons
     Ok((created, num_blocks, Some(payload)))
 }
 
-fn full_state_patch(
-    work_dir: &Path,
-    head: &str,
-    injected_fields: Vec<InjectedField>,
-) -> Result<Patch> {
+fn full_state_patch(work_dir: &Path, head: &str, injected_fields: Vec<Field>) -> Result<Patch> {
     let created = Block::load(work_dir, head)
         .ok()
         .and_then(|block| block.created);
@@ -150,11 +146,7 @@ impl Patch {
 
         let head = head::load(work_dir)?;
 
-        let injected_fields: Vec<InjectedField> = config
-            .injected_fields
-            .iter()
-            .map(InjectedField::from)
-            .collect();
+        let injected_fields: Vec<Field> = config.injected_fields.iter().map(Field::from).collect();
 
         if head == GENESIS_HASH {
             let patch = Patch {

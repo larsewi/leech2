@@ -137,7 +137,7 @@ struct InjectedField {
 }
 
 impl InjectedField {
-    fn resolve(proto: &crate::proto::injected::InjectedField) -> Result<Self> {
+    fn resolve(proto: &crate::proto::injected::Field) -> Result<Self> {
         let sql_type = SqlType::from_config(&proto.sql_type)
             .with_context(|| format!("injected field '{}'", proto.name))?;
         Ok(InjectedField {
