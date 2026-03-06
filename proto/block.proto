@@ -7,7 +7,7 @@ import "google/protobuf/timestamp.proto";
 
 // Block represents a committed set of changes, forming a chain via parent references.
 message Block {
-  // The hash of the parent block, or zero for the genisis block.
+  // The hash of the parent block, or zero for the genesis block.
   string parent = 1;
   // Timestamp when the block was created.
   google.protobuf.Timestamp created = 2;
