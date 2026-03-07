@@ -14,8 +14,6 @@ type UpdateMap = HashMap<Vec<String>, (Vec<String>, Vec<String>)>;
 /// Delta represents the changes to a single table between two states.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Delta {
-    /// The name of the table this delta applies to.
-    pub table_name: String,
     /// The names of all columns, primary key columns first.
     pub column_names: Vec<String>,
     /// Entries that were added (key -> value).
@@ -32,7 +30,7 @@ impl TryFrom<crate::proto::delta::Delta> for Delta {
     fn try_from(proto: crate::proto::delta::Delta) -> Result<Self> {
         let num_subsidiary = proto
             .num_subsidiary()
-            .map_err(|e| anyhow::anyhow!("corrupt delta '{}': {}", proto.table_name, e))?;
+            .map_err(|e| anyhow::anyhow!("corrupt delta: {}", e))?;
 
         let inserts = proto
             .inserts
@@ -62,7 +60,6 @@ impl TryFrom<crate::proto::delta::Delta> for Delta {
             })
             .collect();
         Ok(Delta {
-            table_name: proto.table_name,
             column_names: proto.column_names,
             inserts,
             deletes,
@@ -94,7 +91,6 @@ impl From<Delta> for crate::proto::delta::Delta {
             })
             .collect();
         crate::proto::delta::Delta {
-            table_name: delta.table_name,
             column_names: delta.column_names,
             inserts,
             deletes,
@@ -241,12 +237,7 @@ impl crate::proto::delta::Delta {
 
 impl fmt::Display for crate::proto::delta::Delta {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "'{}' [{}]",
-            self.table_name,
-            self.column_names.join(", ")
-        )?;
+        write!(f, "[{}]", self.column_names.join(", "))?;
         let num_subsidiary = match self.num_subsidiary() {
             Ok(num_subsidiary) => num_subsidiary,
             Err(e) => return write!(f, " <corrupt delta: {}>", e),
@@ -262,11 +253,11 @@ impl Delta {
     /// Merge child delta into parent delta, producing a single delta that
     /// represents the combined effect of both. See DELTA_MERGING_RULES.md for
     /// the full specification of the 15 rules.
-    pub fn merge(&mut self, child: Delta) -> Result<()> {
+    pub fn merge(&mut self, child: Delta, table_name: &str) -> Result<()> {
         if self.column_names != child.column_names {
             bail!(
                 "cannot merge deltas for table '{}': field mismatch ({:?} vs {:?})",
-                self.table_name,
+                table_name,
                 self.column_names,
                 child.column_names
             );
@@ -379,8 +370,8 @@ impl Delta {
         Ok(())
     }
 
-    pub fn compute(previous_state: Option<State>, current_state: &State) -> Vec<Delta> {
-        let mut deltas = Vec::new();
+    pub fn compute(previous_state: Option<State>, current_state: &State) -> HashMap<String, Delta> {
+        let mut deltas = HashMap::new();
 
         // Process tables in current state
         for (table_name, current_table) in &current_state.tables {
@@ -395,13 +386,15 @@ impl Delta {
                 continue;
             }
 
-            deltas.push(Delta {
-                table_name: table_name.clone(),
-                column_names: current_table.fields.clone(),
-                inserts,
-                deletes,
-                updates,
-            });
+            deltas.insert(
+                table_name.clone(),
+                Delta {
+                    column_names: current_table.fields.clone(),
+                    inserts,
+                    deletes,
+                    updates,
+                },
+            );
         }
 
         // Tables only in previous state: all records are deletes
@@ -417,13 +410,15 @@ impl Delta {
                     continue;
                 }
 
-                deltas.push(Delta {
-                    table_name: table_name.clone(),
-                    column_names: table.fields.clone(),
-                    inserts: HashMap::new(),
-                    deletes: table.records.clone(),
-                    updates: HashMap::new(),
-                });
+                deltas.insert(
+                    table_name.clone(),
+                    Delta {
+                        column_names: table.fields.clone(),
+                        inserts: HashMap::new(),
+                        deletes: table.records.clone(),
+                        updates: HashMap::new(),
+                    },
+                );
             }
         }
 
@@ -493,10 +488,6 @@ mod tests {
         }
     }
 
-    fn find_delta<'a>(deltas: &'a [Delta], name: &str) -> Option<&'a Delta> {
-        deltas.iter().find(|delta| delta.table_name == name)
-    }
-
     #[test]
     fn test_no_previous_state_all_inserts() {
         let mut tables = HashMap::new();
@@ -509,7 +500,7 @@ mod tests {
         let deltas = Delta::compute(None, &current);
 
         assert_eq!(deltas.len(), 1);
-        let delta = find_delta(&deltas, "users").unwrap();
+        let delta = deltas.get("users").unwrap();
         assert_eq!(delta.inserts.len(), 2);
         assert_eq!(delta.deletes.len(), 0);
         assert_eq!(delta.updates.len(), 0);
@@ -532,7 +523,7 @@ mod tests {
         let deltas = Delta::compute(Some(previous), &current);
 
         assert_eq!(deltas.len(), 1);
-        let delta = find_delta(&deltas, "old_table").unwrap();
+        let delta = deltas.get("old_table").unwrap();
         assert_eq!(delta.inserts.len(), 0);
         assert_eq!(delta.deletes.len(), 2);
         assert_eq!(delta.updates.len(), 0);
@@ -569,7 +560,7 @@ mod tests {
         let deltas = Delta::compute(Some(previous_state), &current_state);
 
         assert_eq!(deltas.len(), 1);
-        let delta = find_delta(&deltas, "users").unwrap();
+        let delta = deltas.get("users").unwrap();
 
         // Key "4" is new -> insert
         assert_eq!(delta.inserts.len(), 1);
@@ -606,19 +597,19 @@ mod tests {
         assert_eq!(deltas.len(), 3);
 
         // table_a: only in previous -> all deletes
-        let delta_a = find_delta(&deltas, "table_a").unwrap();
+        let delta_a = deltas.get("table_a").unwrap();
         assert_eq!(delta_a.deletes.len(), 1);
         assert_eq!(delta_a.inserts.len(), 0);
 
         // table_b: in both -> key "1" deleted, key "2" inserted
-        let delta_b = find_delta(&deltas, "table_b").unwrap();
+        let delta_b = deltas.get("table_b").unwrap();
         assert_eq!(delta_b.deletes.len(), 1);
         assert!(delta_b.deletes.contains_key(&make_key(&["1"])));
         assert_eq!(delta_b.inserts.len(), 1);
         assert!(delta_b.inserts.contains_key(&make_key(&["2"])));
 
         // table_c: only in current -> all inserts
-        let delta_c = find_delta(&deltas, "table_c").unwrap();
+        let delta_c = deltas.get("table_c").unwrap();
         assert_eq!(delta_c.inserts.len(), 1);
         assert_eq!(delta_c.deletes.len(), 0);
     }
@@ -668,8 +659,8 @@ mod tests {
 
         // Only the changed table should have a delta
         assert_eq!(deltas.len(), 1);
-        assert!(find_delta(&deltas, "changed").is_some());
-        assert!(find_delta(&deltas, "unchanged").is_none());
+        assert!(deltas.contains_key("changed"));
+        assert!(!deltas.contains_key("unchanged"));
     }
 
     #[test]
@@ -700,7 +691,7 @@ mod tests {
 
         let deltas = Delta::compute(Some(previous_state), &current_state);
 
-        let delta = find_delta(&deltas, "orders").unwrap();
+        let delta = deltas.get("orders").unwrap();
         assert_eq!(delta.inserts.len(), 1);
         assert!(delta.inserts.contains_key(&make_key(&["user2", "order1"])));
         assert_eq!(delta.deletes.len(), 1);
@@ -717,7 +708,6 @@ mod tests {
 
     fn empty_delta() -> Delta {
         Delta {
-            table_name: "t".to_string(),
             column_names: vec![],
             inserts: HashMap::new(),
             deletes: HashMap::new(),
@@ -734,7 +724,7 @@ mod tests {
             .inserts
             .insert(make_key(&["3"]), make_value(&["Charlie"]));
 
-        parent_delta.merge(child_delta).unwrap();
+        parent_delta.merge(child_delta, "t").unwrap();
 
         assert_eq!(parent_delta.inserts.len(), 1);
         assert_eq!(
@@ -754,7 +744,7 @@ mod tests {
             .deletes
             .insert(make_key(&["2"]), make_value(&["Bob"]));
 
-        parent_delta.merge(child_delta).unwrap();
+        parent_delta.merge(child_delta, "t").unwrap();
 
         assert_eq!(parent_delta.deletes.len(), 1);
         assert_eq!(
@@ -775,7 +765,7 @@ mod tests {
             (make_value(&["Alice"]), make_value(&["Alicia"])),
         );
 
-        parent_delta.merge(child_delta).unwrap();
+        parent_delta.merge(child_delta, "t").unwrap();
 
         assert_eq!(parent_delta.updates.len(), 1);
         let (old_value, new_value) = &parent_delta.updates[&make_key(&["1"])];
@@ -794,7 +784,7 @@ mod tests {
             .insert(make_key(&["3"]), make_value(&["Charlie"]));
         let child_delta = empty_delta();
 
-        parent_delta.merge(child_delta).unwrap();
+        parent_delta.merge(child_delta, "t").unwrap();
 
         assert_eq!(parent_delta.inserts.len(), 1);
         assert_eq!(
@@ -815,7 +805,7 @@ mod tests {
             .inserts
             .insert(make_key(&["3"]), make_value(&["Charles"]));
 
-        let merged_delta = parent_delta.merge(child_delta);
+        let merged_delta = parent_delta.merge(child_delta, "t");
         assert!(merged_delta.is_err());
     }
 
@@ -831,7 +821,7 @@ mod tests {
             .deletes
             .insert(make_key(&["3"]), make_value(&["Charles"]));
 
-        parent_delta.merge(child_delta).unwrap();
+        parent_delta.merge(child_delta, "t").unwrap();
 
         assert!(parent_delta.inserts.is_empty());
         assert!(parent_delta.deletes.is_empty());
@@ -851,7 +841,7 @@ mod tests {
             (make_value(&["Charlie"]), make_value(&["Charles"])),
         );
 
-        parent_delta.merge(child_delta).unwrap();
+        parent_delta.merge(child_delta, "t").unwrap();
 
         assert_eq!(parent_delta.inserts.len(), 1);
         assert_eq!(
@@ -871,7 +861,7 @@ mod tests {
             .insert(make_key(&["2"]), make_value(&["Bob"]));
         let child_delta = empty_delta();
 
-        parent_delta.merge(child_delta).unwrap();
+        parent_delta.merge(child_delta, "t").unwrap();
 
         assert_eq!(parent_delta.deletes.len(), 1);
         assert_eq!(
@@ -892,7 +882,7 @@ mod tests {
             .inserts
             .insert(make_key(&["2"]), make_value(&["Bob"]));
 
-        parent_delta.merge(child_delta).unwrap();
+        parent_delta.merge(child_delta, "t").unwrap();
 
         assert!(parent_delta.inserts.is_empty());
         assert!(parent_delta.deletes.is_empty());
@@ -911,7 +901,7 @@ mod tests {
             .inserts
             .insert(make_key(&["2"]), make_value(&["Robert"]));
 
-        parent_delta.merge(child_delta).unwrap();
+        parent_delta.merge(child_delta, "t").unwrap();
 
         assert!(parent_delta.inserts.is_empty());
         assert!(parent_delta.deletes.is_empty());
@@ -933,7 +923,7 @@ mod tests {
             .deletes
             .insert(make_key(&["2"]), make_value(&["Bob"]));
 
-        let merged_delta = parent_delta.merge(child_delta);
+        let merged_delta = parent_delta.merge(child_delta, "t");
         assert!(merged_delta.is_err());
     }
 
@@ -950,7 +940,7 @@ mod tests {
             (make_value(&["Bob"]), make_value(&["Robert"])),
         );
 
-        let merged_delta = parent_delta.merge(child_delta);
+        let merged_delta = parent_delta.merge(child_delta, "t");
         assert!(merged_delta.is_err());
     }
 
@@ -964,7 +954,7 @@ mod tests {
         );
         let child_delta = empty_delta();
 
-        parent_delta.merge(child_delta).unwrap();
+        parent_delta.merge(child_delta, "t").unwrap();
 
         assert_eq!(parent_delta.updates.len(), 1);
         let (old_value, new_value) = &parent_delta.updates[&make_key(&["1"])];
@@ -985,7 +975,7 @@ mod tests {
             .inserts
             .insert(make_key(&["1"]), make_value(&["Alice"]));
 
-        let merged_delta = parent_delta.merge(child_delta);
+        let merged_delta = parent_delta.merge(child_delta, "t");
         assert!(merged_delta.is_err());
     }
 
@@ -1002,7 +992,7 @@ mod tests {
             .deletes
             .insert(make_key(&["1"]), make_value(&["Alicia"]));
 
-        parent_delta.merge(child_delta).unwrap();
+        parent_delta.merge(child_delta, "t").unwrap();
 
         assert!(parent_delta.inserts.is_empty());
         assert!(parent_delta.updates.is_empty());
@@ -1026,7 +1016,7 @@ mod tests {
             .deletes
             .insert(make_key(&["1"]), make_value(&["Alice"]));
 
-        let merged_delta = parent_delta.merge(child_delta);
+        let merged_delta = parent_delta.merge(child_delta, "t");
         assert!(merged_delta.is_err());
     }
 
@@ -1044,7 +1034,7 @@ mod tests {
             (make_value(&["Alicia"]), make_value(&["Ali"])),
         );
 
-        parent_delta.merge(child_delta).unwrap();
+        parent_delta.merge(child_delta, "t").unwrap();
 
         assert_eq!(parent_delta.updates.len(), 1);
         let (old_value, new_value) = &parent_delta.updates[&make_key(&["1"])];
@@ -1085,7 +1075,7 @@ mod tests {
             .inserts
             .insert(make_key(&["4"]), make_value(&["Dave"])); // rule 1
 
-        parent_delta.merge(child_delta).unwrap();
+        parent_delta.merge(child_delta, "t").unwrap();
 
         // Rule 7: insert(3, Charlie) + update(3, Charlie→Charles) = insert(3, Charles)
         assert_eq!(parent_delta.inserts.len(), 2);
@@ -1116,21 +1106,19 @@ mod tests {
     #[test]
     fn test_merge_field_mismatch_error() {
         let mut parent_delta = Delta {
-            table_name: "t".to_string(),
             column_names: vec!["id".to_string(), "name".to_string()],
             inserts: HashMap::new(),
             deletes: HashMap::new(),
             updates: HashMap::new(),
         };
         let child_delta = Delta {
-            table_name: "t".to_string(),
             column_names: vec!["id".to_string(), "email".to_string()],
             inserts: HashMap::new(),
             deletes: HashMap::new(),
             updates: HashMap::new(),
         };
 
-        let merged_delta = parent_delta.merge(child_delta);
+        let merged_delta = parent_delta.merge(child_delta, "t");
         assert!(merged_delta.is_err());
         assert!(
             merged_delta
@@ -1154,7 +1142,7 @@ mod tests {
             (make_value(&["100"]), make_value(&["150"])),
         );
 
-        parent_delta.merge(child_delta).unwrap();
+        parent_delta.merge(child_delta, "t").unwrap();
 
         assert_eq!(parent_delta.inserts.len(), 1);
         assert_eq!(

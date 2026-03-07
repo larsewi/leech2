@@ -20,10 +20,18 @@ block chain for change history. Changes flow through four primary operations:
 against the previous state stored on disk. The library loads each CSV file into
 a hash map keyed by composite primary key, then computes a delta against the
 previous snapshot. Each delta records three operation types: inserts (new keys),
-deletes (removed keys), and updates (changed values). All deltas are bundled
-into a block together with a parent hash and a timestamp, SHA-1 hashed, and
-stored as a file named by its hash. The `HEAD` pointer is then advanced to point
-at the new block.
+deletes (removed keys), and updates (changed values).
+
+Before computing deltas, the library detects field layout changes by comparing
+each table's stored fields in the STATE file against the current config's
+`ordered_field_names()`. Tables whose layout changed are recorded in the block
+as a `TableChange` with no delta (`delta: None`), signaling that patch
+consolidation should use a full state snapshot for that table instead of
+attempting to merge incompatible deltas.
+
+All table changes are bundled into a block together with a parent hash and a
+timestamp, SHA-1 hashed, and stored as a file named by its hash. The `HEAD`
+pointer is then advanced to point at the new block.
 
 Printing the block shows its structure:
 
@@ -31,12 +39,13 @@ Printing the block shows its structure:
 Block:
   Parent: 7a3f1b2e...
   Created: 2025-06-15 08:30:00 UTC
-  Payload (1 deltas):
+  Payload (2 tables):
     'employees' [employee_id, first_name, hire_date]
       Inserts (1):
         (3) Charlie, 2025-06-15
       Updates (1):
         (1) _, Alice -> Alicia, _
+    'departments' <layout changed>
 ```
 
 ### Patch::create()
@@ -56,13 +65,19 @@ snapshot for all tables. This guarantees TRUNCATE + INSERT SQL that is safe to
 apply regardless of what the target database currently contains. The same
 fallback applies when the block chain is broken (e.g. a block is missing).
 
-If merging fails for a single table (e.g. column mismatch after a config
-change), only that table falls back to full state — other tables keep their
-consolidated deltas. After merging, each table's delta is optimized: deletes are
-stripped down to keys only, and updates are sparse-encoded to include only
-changed columns. The library then compares each table's consolidated delta
-encoded size against its full state and picks whichever is smaller. This means a
-single patch can contain a mix of delta tables and full-state tables.
+During consolidation, tables whose blocks contain a `TableChange` with no delta
+(indicating a layout change) go directly to full state without attempting to
+merge. If merging fails for a single table (e.g. an unresolvable conflict),
+only that table falls back to full state — other tables keep their consolidated
+deltas. After merging, each table's delta is optimized: deletes are stripped
+down to keys only, and updates are sparse-encoded to include only changed
+columns. The library then compares each table's consolidated delta encoded size
+against its full state and picks whichever is smaller. This means a single patch
+can contain a mix of delta tables and full-state tables.
+
+Each patch also carries per-table field hashes computed from the config
+(`field_hashes`). These allow the hub to validate that its config matches the
+agent's before generating SQL.
 
 Printing the patch shows any combination of deltas and states:
 
@@ -88,7 +103,10 @@ Patch:
 ### patch_to_sql()
 
 `patch_to_sql()` converts an encoded patch into SQL statements suitable for
-replaying changes on a target database. For delta tables it generates `DELETE`,
+replaying changes on a target database. Before generating SQL for each table,
+it validates the table's field hash from the patch against the hub's config. If
+the hashes don't match (or are missing), the table is skipped with a warning —
+other tables are still processed. For delta tables it generates `DELETE`,
 `INSERT`, and `UPDATE` statements. For full-state tables it generates `TRUNCATE`
 followed by `INSERT` statements. A single patch may contain both delta and state
 tables, and all statements are wrapped in a single transaction.
@@ -179,8 +197,8 @@ tests/          Acceptance tests
 - **Table** (`src/table.rs`) -- In-memory representation of a CSV table. Records stored as `HashMap<Vec<String>, Vec<String>>` (primary key -> subsidiary columns). Fields are reordered so primary key columns come first.
 - **State** (`src/state.rs`) -- Snapshot of all tables at a point in time. Serialized to protobuf and persisted as `STATE` file.
 - **Delta** (`src/delta.rs`) -- Diff between two states for a single table: inserts, deletes, and updates. Contains the merge logic implementing 15 rules (see [DELTA_MERGING_RULES.md](DELTA_MERGING_RULES.md)).
-- **Block** (`src/block.rs`) -- A content-addressable unit containing a timestamp, parent hash, and a list of deltas. Blocks form a linked chain. SHA-1 hashed and stored by hash.
-- **Patch** (`src/patch.rs`) -- Consolidates multiple blocks from HEAD back to a `last_known` hash by merging deltas per table independently. Each table's consolidated delta is compared against its full state, and the smaller representation is chosen. A single patch can contain a mix of delta and state tables.
+- **Block** (`src/block.rs`) -- A content-addressable unit containing a timestamp, parent hash, and a map of `TableChange` entries keyed by table name. Each `TableChange` wraps an optional delta: present for normal changes, absent (`None`) when a table's field layout changed. Blocks form a linked chain, SHA-1 hashed and stored by hash.
+- **Patch** (`src/patch.rs`) -- Consolidates multiple blocks from HEAD back to a `last_known` hash by merging deltas per table independently. Tables with layout changes (delta-less `TableChange`) go directly to full state. Each table's consolidated delta is compared against its full state, and the smaller representation is chosen. A single patch can contain a mix of delta and state tables. Patches also carry per-table `field_hashes` for agent-hub validation.
 - **Head** (`src/head.rs`) -- Reads/writes the `HEAD` file tracking the current block hash.
 - **Storage** (`src/storage.rs`) -- File I/O with `fs2` file locking (exclusive for writes, shared for reads).
 
@@ -226,10 +244,17 @@ Table::load()          Parse CSV into HashMap<primary_key, subsidiary_values>
     v
 State::compute()       Collect all tables into a State
     |
+    +---> detect_layout_changes(prev_state, config)
+    |         |
+    |         v
+    |     Layout-changed tables marked as TableChange { delta: None }
+    |
     +---> Delta::compute(prev_state, new_state)
     |         |
     |         v
-    |     Block { parent, timestamp, deltas }
+    |     Normal tables wrapped as TableChange { delta: Some(...) }
+    |
+    +---> Block { parent, timestamp, payload: map<name, TableChange> }
     |         |
     |         +--> SHA-1 hash --> stored as file
     |         +--> HEAD updated
@@ -244,7 +269,10 @@ Patch::create(last_known_hash)
 Walk chain: HEAD -> ... -> last_known (collect blocks oldest-first)
     |
     v
-Group deltas by table name
+Group by table name: deltas from TableChange.delta, layout-changed from None
+    |
+    v
+Layout-changed tables -> full state directly (skip merge)
     |
     v
 Per table: Delta::merge() chain (see DELTA_MERGING_RULES.md)
@@ -256,7 +284,7 @@ Per table: strip (key-only deletes, sparse updates)
 Per table: compare encoded sizes (delta vs state), pick smaller
     |
     v
-Patch { head, created, num_blocks, deltas: [...], states: [...] }
+Patch { head, created, num_blocks, deltas: {...}, states: {...}, field_hashes: {...} }
     |
     v
 wire::encode_patch()  -->  protobuf + optional zstd
@@ -264,6 +292,7 @@ wire::encode_patch()  -->  protobuf + optional zstd
     v
 sql::patch_to_sql()
     |
+    +--> Per table: check_field_hash() (skip+warn on mismatch)
     +--> Delta tables: DELETE...; INSERT...; UPDATE...;
     +--> State tables: TRUNCATE...; INSERT...;
     +--> All wrapped in: BEGIN; ... COMMIT;

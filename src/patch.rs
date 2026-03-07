@@ -1,6 +1,6 @@
 pub use crate::proto::patch::Patch;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::path::Path;
 
@@ -41,14 +41,24 @@ impl fmt::Display for Patch {
         write!(f, "\n  Blocks: {}", self.num_blocks)?;
         if !self.deltas.is_empty() {
             write!(f, "\n  Deltas ({}):", self.deltas.len())?;
-            for delta in &self.deltas {
-                write!(f, "\n    {}", utils::indent(&delta.to_string(), "    "))?;
+            for (name, delta) in &self.deltas {
+                write!(
+                    f,
+                    "\n    '{}' {}",
+                    name,
+                    utils::indent(&delta.to_string(), "    ")
+                )?;
             }
         }
         if !self.states.is_empty() {
             write!(f, "\n  States ({}):", self.states.len())?;
-            for table in &self.states {
-                write!(f, "\n    {}", utils::indent(&table.to_string(), "    "))?;
+            for (name, table) in &self.states {
+                write!(
+                    f,
+                    "\n    '{}' {}",
+                    name,
+                    utils::indent(&table.to_string(), "    ")
+                )?;
             }
         }
         if self.deltas.is_empty() && self.states.is_empty() {
@@ -80,6 +90,7 @@ fn collect_blocks(work_dir: &Path, head_block: Block, last_known: &str) -> Resul
 
 /// Merge a single table's proto deltas (oldest-first) into one consolidated delta.
 fn merge_table_deltas(
+    table_name: &str,
     deltas: Vec<crate::proto::delta::Delta>,
 ) -> Result<crate::proto::delta::Delta> {
     let mut iter = deltas.into_iter();
@@ -88,7 +99,7 @@ fn merge_table_deltas(
 
     for proto_delta in iter {
         let child = Delta::try_from(proto_delta)?;
-        merged.merge(child)?;
+        merged.merge(child, table_name)?;
     }
 
     Ok(crate::proto::delta::Delta::from(merged))
@@ -97,8 +108,8 @@ fn merge_table_deltas(
 type ConsolidateResult = (
     Option<Timestamp>,
     u32,
-    Vec<crate::proto::delta::Delta>,
-    Vec<crate::proto::table::Table>,
+    HashMap<String, crate::proto::delta::Delta>,
+    HashMap<String, crate::proto::table::Table>,
 );
 
 fn try_consolidate(work_dir: &Path, head: &str, last_known: &str) -> Result<ConsolidateResult> {
@@ -106,43 +117,51 @@ fn try_consolidate(work_dir: &Path, head: &str, last_known: &str) -> Result<Cons
     let created = head_block.created;
 
     if head.starts_with(last_known) {
-        return Ok((created, 0, Vec::new(), Vec::new()));
+        return Ok((created, 0, HashMap::new(), HashMap::new()));
     }
 
     let blocks = collect_blocks(work_dir, head_block, last_known)?;
     let num_blocks = blocks.len() as u32;
 
-    // Group deltas by table name, preserving block order (oldest first).
-    let mut table_order: Vec<String> = Vec::new();
+    // Collect deltas by table name and track tables that need full state.
     let mut table_deltas: HashMap<String, Vec<crate::proto::delta::Delta>> = HashMap::new();
+    let mut reset_tables: HashSet<String> = HashSet::new();
+
     for block in blocks {
-        for delta in block.payload {
-            let name = delta.table_name.clone();
-            if !table_deltas.contains_key(&name) {
-                table_order.push(name.clone());
+        for (name, change) in block.payload {
+            match change.delta {
+                Some(delta) => {
+                    table_deltas.entry(name).or_default().push(delta);
+                }
+                None => {
+                    reset_tables.insert(name);
+                }
             }
-            table_deltas.entry(name).or_default().push(delta);
         }
     }
 
-    // Load state for per-table size comparison and merge-failure fallback.
+    // Load state for per-table size comparison and fallback.
     let state = state::State::load(work_dir)?;
     let state_tables: HashMap<String, crate::proto::table::Table> = state
-        .map(|s| {
-            crate::proto::state::State::from(s)
-                .tables
-                .into_iter()
-                .map(|t| (t.table_name.clone(), t))
-                .collect()
-        })
+        .map(|s| crate::proto::state::State::from(s).tables)
         .unwrap_or_default();
 
-    let mut result_deltas = Vec::new();
-    let mut result_states = Vec::new();
+    let mut result_deltas = HashMap::new();
+    let mut result_states = HashMap::new();
 
-    for table_name in table_order {
-        let deltas = table_deltas.remove(&table_name).unwrap();
-        match merge_table_deltas(deltas) {
+    // Tables marked for reset go directly to full state.
+    for table_name in &reset_tables {
+        table_deltas.remove(table_name);
+        if let Some(state_table) = state_tables.get(table_name) {
+            log::info!("Table '{}': using full state (layout changed)", table_name);
+            result_states.insert(table_name.clone(), state_table.clone());
+        } else {
+            log::warn!("Table '{}' not in STATE file, skipping", table_name);
+        }
+    }
+
+    for (table_name, deltas) in table_deltas {
+        match merge_table_deltas(&table_name, deltas) {
             Ok(mut merged_delta) => {
                 // Strip data the receiver doesn't need.
                 for delete in &mut merged_delta.deletes {
@@ -160,11 +179,11 @@ fn try_consolidate(work_dir: &Path, head: &str, last_known: &str) -> Result<Cons
                         "Table '{}': using full state (smaller than consolidated delta)",
                         table_name
                     );
-                    result_states.push(state_table.clone());
+                    result_states.insert(table_name, state_table.clone());
                     continue;
                 }
 
-                result_deltas.push(merged_delta);
+                result_deltas.insert(table_name, merged_delta);
             }
             Err(e) => {
                 log::warn!(
@@ -173,7 +192,7 @@ fn try_consolidate(work_dir: &Path, head: &str, last_known: &str) -> Result<Cons
                     e
                 );
                 if let Some(state_table) = state_tables.get(&table_name) {
-                    result_states.push(state_table.clone());
+                    result_states.insert(table_name, state_table.clone());
                 } else {
                     log::warn!("Table '{}' not in STATE file, skipping", table_name);
                 }
@@ -184,7 +203,12 @@ fn try_consolidate(work_dir: &Path, head: &str, last_known: &str) -> Result<Cons
     Ok((created, num_blocks, result_deltas, result_states))
 }
 
-fn full_state_patch(work_dir: &Path, head: &str, injected_fields: Vec<Field>) -> Result<Patch> {
+fn full_state_patch(
+    work_dir: &Path,
+    head: &str,
+    injected_fields: Vec<Field>,
+    field_hashes: HashMap<String, String>,
+) -> Result<Patch> {
     let created = Block::load(work_dir, head)
         .ok()
         .and_then(|block| block.created);
@@ -196,8 +220,9 @@ fn full_state_patch(work_dir: &Path, head: &str, injected_fields: Vec<Field>) ->
         created,
         injected_fields,
         num_blocks: 0,
-        deltas: Vec::new(),
+        deltas: HashMap::new(),
         states: proto_state.tables,
+        field_hashes,
     };
     log::debug!("Built patch:\n{}", patch);
     Ok(patch)
@@ -213,14 +238,21 @@ impl Patch {
 
         let injected_fields: Vec<Field> = config.injected_fields.iter().map(Field::from).collect();
 
+        let field_hashes: HashMap<String, String> = config
+            .tables
+            .iter()
+            .map(|(name, table_config)| (name.clone(), table_config.field_hash()))
+            .collect();
+
         if head == GENESIS_HASH {
             let patch = Patch {
                 head,
                 created: None,
                 injected_fields,
                 num_blocks: 0,
-                deltas: Vec::new(),
-                states: Vec::new(),
+                deltas: HashMap::new(),
+                states: HashMap::new(),
+                field_hashes,
             };
             log::debug!("Built patch:\n{}", patch);
             return Ok(patch);
@@ -233,14 +265,14 @@ impl Patch {
             Ok(hash) if hash != GENESIS_HASH => hash,
             Ok(_) => {
                 log::info!("Reference is genesis, producing full state patch");
-                return full_state_patch(work_dir, &head, injected_fields);
+                return full_state_patch(work_dir, &head, injected_fields, field_hashes);
             }
             Err(e) => {
                 log::warn!(
                     "Reference block not found, producing full state patch: {}",
                     e
                 );
-                return full_state_patch(work_dir, &head, injected_fields);
+                return full_state_patch(work_dir, &head, injected_fields, field_hashes);
             }
         };
 
@@ -249,7 +281,7 @@ impl Patch {
                 Ok(result) => result,
                 Err(e) => {
                     log::warn!("Consolidation failed, falling back to full state: {}", e);
-                    return full_state_patch(work_dir, &head, injected_fields);
+                    return full_state_patch(work_dir, &head, injected_fields, field_hashes);
                 }
             };
 
@@ -260,6 +292,7 @@ impl Patch {
             num_blocks,
             deltas,
             states,
+            field_hashes,
         };
 
         log::debug!("Built patch:\n{}", patch);

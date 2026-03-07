@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use anyhow::{Context, Result, bail};
 
 use crate::config::Config;
@@ -35,7 +37,6 @@ struct FieldMeta {
 
 /// Schema information for a single table, resolved from config.
 struct TableSchema {
-    table_name: String,
     /// All fields in order: primary keys first, then subsidiary.
     fields: Vec<FieldMeta>,
     /// Number of primary key fields (the first `num_primary_keys` entries in `fields`).
@@ -94,7 +95,6 @@ impl TableSchema {
         }
 
         Ok(TableSchema {
-            table_name: table_name.to_string(),
             num_primary_keys: primary_key.len(),
             fields,
         })
@@ -276,12 +276,13 @@ fn primary_key_where_clause(
 /// Generate SQL statements for a delta (DELETE/INSERT/UPDATE).
 fn delta_to_sql(
     config: &Config,
+    table_name: &str,
     delta: &crate::proto::delta::Delta,
     injected_fields: &[InjectedField],
     out: &mut String,
 ) -> Result<()> {
-    let schema = TableSchema::resolve(config, &delta.table_name)?;
-    let table = quote_ident(&schema.table_name);
+    let schema = TableSchema::resolve(config, table_name)?;
+    let table = quote_ident(table_name);
 
     // DELETEs
     for entry in &delta.deletes {
@@ -323,12 +324,13 @@ fn delta_to_sql(
 /// Generate SQL statements for a single table's full state (TRUNCATE/DELETE + INSERT).
 fn state_table_to_sql(
     config: &Config,
+    table_name: &str,
     table: &crate::proto::table::Table,
     injected_fields: &[InjectedField],
     out: &mut String,
 ) -> Result<()> {
-    let schema = TableSchema::resolve(config, &table.table_name)?;
-    let quoted_table = quote_ident(&table.table_name);
+    let schema = TableSchema::resolve(config, table_name)?;
+    let quoted_table = quote_ident(table_name);
 
     if injected_fields.is_empty() {
         out.push_str(&format!("TRUNCATE {};\n", quoted_table));
@@ -347,6 +349,37 @@ fn state_table_to_sql(
     emit_inserts(&table.entries, &schema, injected_fields, &quoted_table, out)?;
 
     Ok(())
+}
+
+/// Check whether a table's field hash in the patch matches the hub's config.
+/// Returns true if the hash matches, false (with a warning) if it doesn't.
+fn check_field_hash(
+    config: &Config,
+    table_name: &str,
+    field_hashes: &HashMap<String, String>,
+) -> bool {
+    let Some(agent_hash) = field_hashes.get(table_name) else {
+        log::warn!(
+            "Table '{}': missing field hash in patch, skipping",
+            table_name
+        );
+        return false;
+    };
+    let Some(table_config) = config.tables.get(table_name) else {
+        log::warn!("Table '{}': not found in config, skipping", table_name);
+        return false;
+    };
+    let hub_hash = table_config.field_hash();
+    if agent_hash != &hub_hash {
+        log::warn!(
+            "Table '{}': field hash mismatch (agent={}, hub={}), skipping",
+            table_name,
+            agent_hash,
+            hub_hash
+        );
+        return false;
+    }
+    true
 }
 
 /// Convert a decoded patch to SQL statements.
@@ -368,18 +401,18 @@ pub fn patch_to_sql(config: &Config, patch: &Patch) -> Result<Option<String>> {
 
     let mut sql = String::from("BEGIN;\n");
 
-    if !patch.deltas.is_empty() {
-        log::info!("Converting {} deltas to SQL", patch.deltas.len());
-        for delta in &patch.deltas {
-            delta_to_sql(config, delta, &injected_fields, &mut sql)?;
+    for (table_name, delta) in &patch.deltas {
+        if !check_field_hash(config, table_name, &patch.field_hashes) {
+            continue;
         }
+        delta_to_sql(config, table_name, delta, &injected_fields, &mut sql)?;
     }
 
-    if !patch.states.is_empty() {
-        log::info!("Converting {} full state tables to SQL", patch.states.len());
-        for table in &patch.states {
-            state_table_to_sql(config, table, &injected_fields, &mut sql)?;
+    for (table_name, table) in &patch.states {
+        if !check_field_hash(config, table_name, &patch.field_hashes) {
+            continue;
         }
+        state_table_to_sql(config, table_name, table, &injected_fields, &mut sql)?;
     }
 
     sql.push_str("COMMIT;\n");
@@ -486,5 +519,147 @@ mod tests {
         assert_eq!(format_value("N/A", &number_field).unwrap(), "NULL");
         // "42" does not match → normal number
         assert_eq!(format_value("42", &number_field).unwrap(), "42");
+    }
+
+    #[test]
+    fn test_patch_to_sql_skips_mismatched_field_hash() {
+        let table_config = crate::config::TableConfig {
+            source: "test.csv".to_string(),
+            header: false,
+            fields: vec![crate::config::FieldConfig {
+                name: "id".to_string(),
+                sql_type: "TEXT".to_string(),
+                primary_key: true,
+                null: None,
+            }],
+        };
+
+        let config = Config {
+            work_dir: std::path::PathBuf::from("/tmp"),
+            injected_fields: Vec::new(),
+            compression: crate::config::CompressionConfig::default(),
+            tables: HashMap::from([("test_table".to_string(), table_config)]),
+            truncate: None,
+        };
+
+        let patch = Patch {
+            head: "abc123".to_string(),
+            created: None,
+            injected_fields: Vec::new(),
+            num_blocks: 1,
+            deltas: HashMap::from([(
+                "test_table".to_string(),
+                crate::proto::delta::Delta {
+                    column_names: vec!["id".to_string()],
+                    inserts: vec![crate::proto::entry::Entry {
+                        key: vec!["1".to_string()],
+                        value: vec![],
+                    }],
+                    deletes: vec![],
+                    updates: vec![],
+                },
+            )]),
+            states: HashMap::new(),
+            field_hashes: HashMap::from([("test_table".to_string(), "wrong_hash".to_string())]),
+        };
+
+        // Should succeed but produce no statements for the mismatched table
+        let result = patch_to_sql(&config, &patch).unwrap().unwrap();
+        assert!(!result.contains("INSERT INTO"));
+        assert!(result.contains("BEGIN;"));
+        assert!(result.contains("COMMIT;"));
+    }
+
+    #[test]
+    fn test_patch_to_sql_skips_missing_field_hash() {
+        let table_config = crate::config::TableConfig {
+            source: "test.csv".to_string(),
+            header: false,
+            fields: vec![crate::config::FieldConfig {
+                name: "id".to_string(),
+                sql_type: "TEXT".to_string(),
+                primary_key: true,
+                null: None,
+            }],
+        };
+
+        let config = Config {
+            work_dir: std::path::PathBuf::from("/tmp"),
+            injected_fields: Vec::new(),
+            compression: crate::config::CompressionConfig::default(),
+            tables: HashMap::from([("test_table".to_string(), table_config)]),
+            truncate: None,
+        };
+
+        let patch = Patch {
+            head: "abc123".to_string(),
+            created: None,
+            injected_fields: Vec::new(),
+            num_blocks: 1,
+            deltas: HashMap::from([(
+                "test_table".to_string(),
+                crate::proto::delta::Delta {
+                    column_names: vec!["id".to_string()],
+                    inserts: vec![crate::proto::entry::Entry {
+                        key: vec!["1".to_string()],
+                        value: vec![],
+                    }],
+                    deletes: vec![],
+                    updates: vec![],
+                },
+            )]),
+            states: HashMap::new(),
+            field_hashes: HashMap::new(),
+        };
+
+        let result = patch_to_sql(&config, &patch).unwrap().unwrap();
+        assert!(!result.contains("INSERT INTO"));
+    }
+
+    #[test]
+    fn test_patch_to_sql_accepts_matching_field_hash() {
+        let table_config = crate::config::TableConfig {
+            source: "test.csv".to_string(),
+            header: false,
+            fields: vec![crate::config::FieldConfig {
+                name: "id".to_string(),
+                sql_type: "TEXT".to_string(),
+                primary_key: true,
+                null: None,
+            }],
+        };
+        let correct_hash = table_config.field_hash();
+
+        let config = Config {
+            work_dir: std::path::PathBuf::from("/tmp"),
+            injected_fields: Vec::new(),
+            compression: crate::config::CompressionConfig::default(),
+            tables: HashMap::from([("test_table".to_string(), table_config)]),
+            truncate: None,
+        };
+
+        let patch = Patch {
+            head: "abc123".to_string(),
+            created: None,
+            injected_fields: Vec::new(),
+            num_blocks: 1,
+            deltas: HashMap::from([(
+                "test_table".to_string(),
+                crate::proto::delta::Delta {
+                    column_names: vec!["id".to_string()],
+                    inserts: vec![crate::proto::entry::Entry {
+                        key: vec!["1".to_string()],
+                        value: vec![],
+                    }],
+                    deletes: vec![],
+                    updates: vec![],
+                },
+            )]),
+            states: HashMap::new(),
+            field_hashes: HashMap::from([("test_table".to_string(), correct_hash)]),
+        };
+
+        let result = patch_to_sql(&config, &patch).unwrap().unwrap();
+        assert!(result.contains("INSERT INTO"));
     }
 }

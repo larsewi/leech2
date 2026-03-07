@@ -17,8 +17,10 @@ message Patch {
   repeated injected.Field injected_fields = 3;
   // The number of blocks that were merged to produce this patch.
   uint32 num_blocks = 4;
-  // Tables with incremental changes (each Delta carries its own table_name).
-  repeated delta.Delta deltas = 5;
-  // Tables requiring a full state snapshot (each Table carries its own table_name).
-  repeated table.Table states = 6;
+  // Tables with incremental changes (key = table name).
+  map<string, delta.Delta> deltas = 5;
+  // Tables requiring a full state snapshot (key = table name).
+  map<string, table.Table> states = 6;
+  // Per-table config hash for agent-hub field validation (key = table name).
+  map<string, string> field_hashes = 7;
 }

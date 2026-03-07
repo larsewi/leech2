@@ -90,6 +90,48 @@ impl TableConfig {
             .map(|field| field.name.clone())
             .collect()
     }
+
+    /// Return field names in PK-first order: primary key fields first (in
+    /// declaration order), then subsidiary fields (in declaration order).
+    /// This matches the ordering used by `Table::load()` when building the
+    /// in-memory table stored in the STATE file.
+    pub fn ordered_field_names(&self) -> Vec<String> {
+        let primary_key = self.primary_key();
+        let mut names = primary_key.clone();
+        for field in &self.fields {
+            if !primary_key.contains(&field.name) {
+                names.push(field.name.clone());
+            }
+        }
+        names
+    }
+
+    /// Compute a SHA-1 hash over this table's SQL-affecting fields.
+    /// Fields are sorted alphabetically by name for order independence.
+    /// The hash covers: field name, sql_type, primary_key flag, and null sentinel.
+    pub fn field_hash(&self) -> String {
+        let mut sorted_fields: Vec<&FieldConfig> = self.fields.iter().collect();
+        sorted_fields.sort_by(|a, b| a.name.cmp(&b.name));
+
+        let mut data = Vec::new();
+        for field in sorted_fields {
+            data.extend_from_slice(field.name.as_bytes());
+            data.push(0);
+            data.extend_from_slice(field.sql_type.as_bytes());
+            data.push(0);
+            data.push(u8::from(field.primary_key));
+            data.push(0);
+            if let Some(ref sentinel) = field.null {
+                data.push(1);
+                data.extend_from_slice(sentinel.as_bytes());
+            } else {
+                data.push(0);
+            }
+            data.push(0);
+        }
+
+        crate::utils::compute_hash(&data)
+    }
 }
 
 impl Config {
@@ -247,5 +289,103 @@ mod tests {
     #[test]
     fn test_parse_duration_empty() {
         assert!(parse_duration("").is_err());
+    }
+
+    fn make_field(
+        name: &str,
+        sql_type: &str,
+        primary_key: bool,
+        null: Option<&str>,
+    ) -> FieldConfig {
+        FieldConfig {
+            name: name.to_string(),
+            sql_type: sql_type.to_string(),
+            primary_key,
+            null: null.map(|s| s.to_string()),
+        }
+    }
+
+    fn make_table_config(fields: Vec<FieldConfig>) -> TableConfig {
+        TableConfig {
+            source: "test.csv".to_string(),
+            header: false,
+            fields,
+        }
+    }
+
+    #[test]
+    fn test_ordered_field_names() {
+        let config = make_table_config(vec![
+            make_field("name", "TEXT", false, None),
+            make_field("id", "NUMBER", true, None),
+            make_field("email", "TEXT", false, None),
+        ]);
+        assert_eq!(config.ordered_field_names(), vec!["id", "name", "email"]);
+    }
+
+    #[test]
+    fn test_ordered_field_names_multiple_pks() {
+        let config = make_table_config(vec![
+            make_field("value", "TEXT", false, None),
+            make_field("pk_b", "TEXT", true, None),
+            make_field("pk_a", "TEXT", true, None),
+        ]);
+        // PKs in declaration order, then subsidiaries
+        assert_eq!(config.ordered_field_names(), vec!["pk_b", "pk_a", "value"]);
+    }
+
+    #[test]
+    fn test_field_hash_deterministic() {
+        let config = make_table_config(vec![
+            make_field("id", "NUMBER", true, None),
+            make_field("name", "TEXT", false, Some("")),
+        ]);
+        assert_eq!(config.field_hash(), config.field_hash());
+    }
+
+    #[test]
+    fn test_field_hash_order_independent() {
+        let config_a = make_table_config(vec![
+            make_field("id", "NUMBER", true, None),
+            make_field("name", "TEXT", false, None),
+        ]);
+        let config_b = make_table_config(vec![
+            make_field("name", "TEXT", false, None),
+            make_field("id", "NUMBER", true, None),
+        ]);
+        assert_eq!(config_a.field_hash(), config_b.field_hash());
+    }
+
+    #[test]
+    fn test_field_hash_changes_on_type() {
+        let config_a = make_table_config(vec![make_field("id", "NUMBER", true, None)]);
+        let config_b = make_table_config(vec![make_field("id", "TEXT", true, None)]);
+        assert_ne!(config_a.field_hash(), config_b.field_hash());
+    }
+
+    #[test]
+    fn test_field_hash_changes_on_null() {
+        let config_a = make_table_config(vec![
+            make_field("id", "TEXT", true, None),
+            make_field("val", "TEXT", false, None),
+        ]);
+        let config_b = make_table_config(vec![
+            make_field("id", "TEXT", true, None),
+            make_field("val", "TEXT", false, Some("")),
+        ]);
+        assert_ne!(config_a.field_hash(), config_b.field_hash());
+    }
+
+    #[test]
+    fn test_field_hash_changes_on_primary_key() {
+        let config_a = make_table_config(vec![
+            make_field("id", "TEXT", true, None),
+            make_field("name", "TEXT", false, None),
+        ]);
+        let config_b = make_table_config(vec![
+            make_field("id", "TEXT", true, None),
+            make_field("name", "TEXT", true, None),
+        ]);
+        assert_ne!(config_a.field_hash(), config_b.field_hash());
     }
 }

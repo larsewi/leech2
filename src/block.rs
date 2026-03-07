@@ -6,7 +6,9 @@ use prost::Message;
 
 use crate::config::Config;
 use crate::head;
+use crate::proto::block::TableChange;
 use crate::state;
+use crate::state::State;
 use crate::storage;
 use crate::truncate;
 use crate::utils;
@@ -21,12 +23,39 @@ impl fmt::Display for Block {
             Some(ts) => write!(f, "\n  Created: {}", utils::format_timestamp(ts))?,
             None => write!(f, "\n  Created: N/A")?,
         }
-        write!(f, "\n  Payload ({} deltas):", self.payload.len())?;
-        for delta in &self.payload {
-            write!(f, "\n    {}", utils::indent(&delta.to_string(), "    "))?;
+        write!(f, "\n  Payload ({} tables):", self.payload.len())?;
+        for (name, change) in &self.payload {
+            match &change.delta {
+                Some(delta) => write!(
+                    f,
+                    "\n    '{}' {}",
+                    name,
+                    utils::indent(&delta.to_string(), "    ")
+                )?,
+                None => write!(f, "\n    '{}' <layout changed>", name)?,
+            }
         }
         Ok(())
     }
+}
+
+/// Check which tables had their field layout changed since the previous state
+/// and return the set of table names that need a full state snapshot.
+fn detect_layout_changes(previous: &State, config: &Config) -> Vec<String> {
+    let mut changed = Vec::new();
+    for (name, table) in &previous.tables {
+        if let Some(table_config) = config.tables.get(name) {
+            let expected_fields = table_config.ordered_field_names();
+            if table.fields != expected_fields {
+                log::warn!(
+                    "Table '{}': field layout changed, will use full state",
+                    name
+                );
+                changed.push(name.clone());
+            }
+        }
+    }
+    changed
 }
 
 impl Block {
@@ -48,18 +77,37 @@ impl Block {
 
         // When starting a fresh chain (HEAD is genesis), ignore any stale STATE
         // file so the first block captures the full initial state as inserts.
-        let previous_state = if parent_hash == utils::GENESIS_HASH {
-            None
+        let (previous_state, layout_changed_tables) = if parent_hash == utils::GENESIS_HASH {
+            (None, Vec::new())
         } else {
-            state::State::load(work_dir).context("Failed to load previous state")?
+            let state = state::State::load(work_dir).context("Failed to load previous state")?;
+            let changed = state
+                .as_ref()
+                .map(|s| detect_layout_changes(s, config))
+                .unwrap_or_default();
+            (state, changed)
         };
+
         let created = Some(std::time::SystemTime::now().into());
 
         let deltas = crate::delta::Delta::compute(previous_state, &current_state);
-        let payload = deltas
+        let mut payload = deltas
             .into_iter()
-            .map(crate::proto::delta::Delta::from)
-            .collect();
+            .map(|(name, delta)| {
+                (
+                    name,
+                    TableChange {
+                        delta: Some(crate::proto::delta::Delta::from(delta)),
+                    },
+                )
+            })
+            .collect::<std::collections::HashMap<_, _>>();
+
+        // Mark layout-changed tables: replace their delta with None so that
+        // patch consolidation uses full state instead of attempting to merge.
+        for name in layout_changed_tables {
+            payload.insert(name, TableChange { delta: None });
+        }
 
         let block = Block {
             parent: parent_hash,
@@ -103,7 +151,7 @@ mod tests {
                 nanos: 0,
             }),
             parent: "abc123".to_string(),
-            payload: Vec::new(),
+            payload: std::collections::HashMap::new(),
         };
         let mut buf = Vec::new();
         block.encode(&mut buf).unwrap();

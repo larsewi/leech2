@@ -122,8 +122,8 @@ fields = [
     );
 
     // Verify which table ended up where.
-    let delta_tables: Vec<&str> = patch.deltas.iter().map(|d| d.table_name.as_str()).collect();
-    let state_tables: Vec<&str> = patch.states.iter().map(|t| t.table_name.as_str()).collect();
+    let delta_tables: Vec<&str> = patch.deltas.keys().map(|n| n.as_str()).collect();
+    let state_tables: Vec<&str> = patch.states.keys().map(|n| n.as_str()).collect();
     assert!(
         delta_tables.contains(&"logs"),
         "logs should use delta, got deltas={:?} states={:?}",

@@ -11,6 +11,13 @@ message Block {
   string parent = 1;
   // Timestamp when the block was created.
   google.protobuf.Timestamp created = 2;
-  // The set of table deltas contained in this block.
-  repeated delta.Delta payload = 3;
+  // Per-table changes contained in this block (key = table name).
+  map<string, TableChange> payload = 3;
+}
+
+// A single table's change within a block. When delta is present, it holds the
+// incremental changes. When absent, the table's field layout changed since the
+// previous block and a full state snapshot is needed during patch consolidation.
+message TableChange {
+  optional delta.Delta delta = 1;
 }

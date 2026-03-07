@@ -6,5 +6,5 @@ import "table.proto";
 
 // State represents a snapshot of all tables at a point in time.
 message State {
-  repeated table.Table tables = 1;
+  map<string, table.Table> tables = 1;
 }
