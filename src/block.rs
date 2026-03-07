@@ -1,10 +1,13 @@
+use std::collections::HashMap;
 use std::fmt;
 use std::path::Path;
+use std::time::SystemTime;
 
 use anyhow::{Context, Result};
 use prost::Message;
 
 use crate::config::Config;
+use crate::delta;
 use crate::head;
 use crate::proto::block::TableChange;
 use crate::state;
@@ -75,7 +78,7 @@ impl Block {
 
         let parent_hash = head::load(work_dir).context("Failed to load head of chain")?;
 
-        let created = Some(std::time::SystemTime::now().into());
+        let created = Some(SystemTime::now().into());
 
         // When starting a fresh chain (HEAD is genesis), store an empty payload.
         // The first block's deltas are never used during patch creation: a genesis
@@ -83,7 +86,7 @@ impl Block {
         // non-genesis references exclude the first block from consolidation.
         // Any stale STATE file left from a previous run is also ignored.
         let payload = if parent_hash == utils::GENESIS_HASH {
-            std::collections::HashMap::new()
+            HashMap::new()
         } else {
             let previous_state =
                 state::State::load(work_dir).context("Failed to load previous state")?;
@@ -92,7 +95,7 @@ impl Block {
                 .map(|s| detect_layout_changes(s, config))
                 .unwrap_or_default();
 
-            let deltas = crate::delta::Delta::compute(previous_state, &current_state);
+            let deltas = delta::Delta::compute(previous_state, &current_state);
             let mut payload = deltas
                 .into_iter()
                 .map(|(name, delta)| {
@@ -103,7 +106,7 @@ impl Block {
                         },
                     )
                 })
-                .collect::<std::collections::HashMap<_, _>>();
+                .collect::<HashMap<_, _>>();
 
             // Mark layout-changed tables: replace their delta with None so that
             // patch consolidation uses full state instead of attempting to merge.
@@ -156,7 +159,7 @@ mod tests {
                 nanos: 0,
             }),
             parent: "abc123".to_string(),
-            payload: std::collections::HashMap::new(),
+            payload: HashMap::new(),
         };
         let mut buf = Vec::new();
         block.encode(&mut buf).unwrap();
