@@ -12,6 +12,9 @@ To run a single test: `cargo test <test_name>` (e.g. `cargo test test_merge_rule
   on the data-source side, reading CSV files and building the block chain.
 - **Hub** — an application that converts patches to SQL and applies them to the
   target database.
+- **Genesis** — the zero hash representing the start of the chain before any
+  blocks exist. When the reference point is genesis, a full state snapshot is
+  produced for all tables.
 
 ## Core architecture
 
