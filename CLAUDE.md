@@ -22,6 +22,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Do not include `TODO.md` when committing. It is managed manually.
 - Prefer imports over fully-qualified paths. Add `use` items for types and functions that are used in a file rather than repeating `crate::module::Type` or `std::collections::HashMap` inline.
 - Avoid abbreviations in variable names. Prefer descriptive names (e.g., `table_config` over `tc`).
+- Prefer `From`/`Into` (or `TryFrom`/`TryInto` for fallible conversions) over manual construction when converting between types, especially domain-to-proto conversions.
 - After implementing new features, look for opportunities to refactor the code to improve readability and reduce duplication.
 - Commit often, but ensure each commit leaves leech2 in a working state (builds, tests pass, clippy clean).
 
