@@ -75,39 +75,44 @@ impl Block {
 
         let parent_hash = head::load(work_dir).context("Failed to load head of chain")?;
 
-        // When starting a fresh chain (HEAD is genesis), ignore any stale STATE
-        // file so the first block captures the full initial state as inserts.
-        let (previous_state, layout_changed_tables) = if parent_hash == utils::GENESIS_HASH {
-            (None, Vec::new())
+        let created = Some(std::time::SystemTime::now().into());
+
+        // When starting a fresh chain (HEAD is genesis), store an empty payload.
+        // The first block's deltas are never used during patch creation: a genesis
+        // reference always produces a full state patch from the STATE file, and
+        // non-genesis references exclude the first block from consolidation.
+        // Any stale STATE file left from a previous run is also ignored.
+        let payload = if parent_hash == utils::GENESIS_HASH {
+            std::collections::HashMap::new()
         } else {
-            let state = state::State::load(work_dir).context("Failed to load previous state")?;
-            let changed = state
+            let previous_state =
+                state::State::load(work_dir).context("Failed to load previous state")?;
+            let layout_changed_tables = previous_state
                 .as_ref()
                 .map(|s| detect_layout_changes(s, config))
                 .unwrap_or_default();
-            (state, changed)
+
+            let deltas = crate::delta::Delta::compute(previous_state, &current_state);
+            let mut payload = deltas
+                .into_iter()
+                .map(|(name, delta)| {
+                    (
+                        name,
+                        TableChange {
+                            delta: Some(crate::proto::delta::Delta::from(delta)),
+                        },
+                    )
+                })
+                .collect::<std::collections::HashMap<_, _>>();
+
+            // Mark layout-changed tables: replace their delta with None so that
+            // patch consolidation uses full state instead of attempting to merge.
+            for name in layout_changed_tables {
+                payload.insert(name, TableChange { delta: None });
+            }
+
+            payload
         };
-
-        let created = Some(std::time::SystemTime::now().into());
-
-        let deltas = crate::delta::Delta::compute(previous_state, &current_state);
-        let mut payload = deltas
-            .into_iter()
-            .map(|(name, delta)| {
-                (
-                    name,
-                    TableChange {
-                        delta: Some(crate::proto::delta::Delta::from(delta)),
-                    },
-                )
-            })
-            .collect::<std::collections::HashMap<_, _>>();
-
-        // Mark layout-changed tables: replace their delta with None so that
-        // patch consolidation uses full state instead of attempting to merge.
-        for name in layout_changed_tables {
-            payload.insert(name, TableChange { delta: None });
-        }
 
         let block = Block {
             parent: parent_hash,
