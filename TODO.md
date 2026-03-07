@@ -12,9 +12,6 @@ leech2 log messages in their own logging system instead of relying on stderr.
 ## Add validation function for block and patch (and patch?)
 When we read something from disk, we don't know if it has been corrupted.
 
-## When creating a new block, it should be opened with the EXECL flag
-To protect agains overwriting existing blocks
-
 ## Store all checksums as byte vectors and convert to string when ever printed
 Maybe we should create a custom type and implement display?
 
