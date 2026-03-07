@@ -1,7 +1,5 @@
 # TODO
 
-## Investigate what happens if table configs don't match
-
 ## There should be a way to not report records that are too big
 
 ## There should be a way to filter records. E.g. they may contain sensitive data
@@ -11,10 +9,17 @@ Find out how to do this without ruining the delta merging rules
 Expose a function to register a log callback so C consumers can capture
 leech2 log messages in their own logging system instead of relying on stderr.
 
-## Investigate how to package leech2
-
-## Add validation function for block and patch
+## Add validation function for block and patch (and patch?)
 When we read something from disk, we don't know if it has been corrupted.
 
 ## When creating a new block, it should be opened with the EXECL flag
 To protect agains overwriting existing blocks
+
+## Store all checksums as byte vectors and convert to string when ever printed
+Maybe we should create a custom type and implement display?
+
+## Allow header row in CSV files
+Configured in config file (per table).
+Check that fields match with table config, then skip row.
+
+## Investigate how to package leech2
