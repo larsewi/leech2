@@ -5,6 +5,7 @@ package state;
 import "table.proto";
 
 // State represents a snapshot of all tables at a point in time.
+// Used exclusively for the STATE file on disk (not in patches or blocks).
 message State {
   map<string, table.Table> tables = 1;
 }
