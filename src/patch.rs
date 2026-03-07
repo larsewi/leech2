@@ -142,9 +142,8 @@ fn try_consolidate(work_dir: &Path, head: &str, last_known: &str) -> Result<Cons
 
     // Load state for per-table size comparison and fallback.
     let state = state::State::load(work_dir)?;
-    let state_tables: HashMap<String, crate::proto::table::Table> = state
-        .map(|s| crate::proto::state::State::from(s).tables)
-        .unwrap_or_default();
+    let state_tables: HashMap<String, crate::proto::table::Table> =
+        state.map(|s| s.into()).unwrap_or_default();
 
     let mut result_deltas = HashMap::new();
     let mut result_states = HashMap::new();
@@ -214,14 +213,13 @@ fn full_state_patch(
         .and_then(|block| block.created);
     let state =
         state::State::load(work_dir)?.context("No STATE file found for full state patch")?;
-    let proto_state = crate::proto::state::State::from(state);
     let patch = Patch {
         head: head.to_string(),
         created,
         injected_fields,
         num_blocks: 0,
         deltas: HashMap::new(),
-        states: proto_state.tables,
+        states: state.into(),
         field_hashes,
     };
     log::debug!("Built patch:\n{}", patch);

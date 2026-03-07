@@ -30,6 +30,16 @@ impl From<crate::proto::state::State> for State {
     }
 }
 
+impl From<State> for HashMap<String, crate::proto::table::Table> {
+    fn from(state: State) -> Self {
+        state
+            .tables
+            .into_iter()
+            .map(|(name, table)| (name, crate::proto::table::Table::from(table)))
+            .collect()
+    }
+}
+
 impl From<State> for crate::proto::state::State {
     fn from(state: State) -> Self {
         let tables = state
