@@ -1,5 +1,6 @@
 pub use crate::proto::update::Update;
 
+use std::collections::HashSet;
 use std::fmt;
 use std::mem;
 
@@ -19,6 +20,56 @@ impl Update {
         self.old_value = old_expanded;
         self.new_value = new_expanded;
         self.changed_indices.clear();
+    }
+
+    /// Format column values for display.
+    ///
+    /// Returns a vector of formatted column strings. Full updates (no
+    /// `changed_indices`) compare old and new positionally. Sparse updates
+    /// show only changed columns, with `"_"` for unchanged ones.
+    pub fn format_columns(&self, num_subsidiary: usize) -> Vec<String> {
+        let has_old = !self.old_value.is_empty();
+        if self.changed_indices.is_empty() && !self.new_value.is_empty() {
+            return self.format_full_columns(num_subsidiary, has_old);
+        }
+        self.format_sparse_columns(num_subsidiary, has_old)
+    }
+
+    fn format_full_columns(&self, num_subsidiary: usize, has_old: bool) -> Vec<String> {
+        (0..num_subsidiary)
+            .map(|i| {
+                let new = self
+                    .new_value
+                    .get(i)
+                    .map(|s| s.as_str())
+                    .unwrap_or("<missing>");
+                let old = has_old.then(|| {
+                    self.old_value
+                        .get(i)
+                        .map(|s| s.as_str())
+                        .unwrap_or("<missing>")
+                });
+                format_update_column(new, old)
+            })
+            .collect()
+    }
+
+    fn format_sparse_columns(&self, num_subsidiary: usize, has_old: bool) -> Vec<String> {
+        let changed: HashSet<u32> = self.changed_indices.iter().copied().collect();
+        let mut new_iter = self.new_value.iter();
+        let mut old_iter = self.old_value.iter();
+        (0..num_subsidiary as u32)
+            .map(|i| {
+                if changed.contains(&i) {
+                    let new = new_iter.next().map(|s| s.as_str()).unwrap_or("<missing>");
+                    let old =
+                        has_old.then(|| old_iter.next().map(|s| s.as_str()).unwrap_or("<missing>"));
+                    format_update_column(new, old)
+                } else {
+                    "_".to_string()
+                }
+            })
+            .collect()
     }
 
     /// Sparse-encode an update: keep only the indices and values of columns that
@@ -48,6 +99,19 @@ impl From<(Vec<String>, (Vec<String>, Vec<String>))> for Update {
             old_value,
             new_value,
         }
+    }
+}
+
+/// Format a single column value for update display.
+///
+/// When `old` is provided and differs from `new`, shows `"old -> new"`.
+/// When `old` equals `new`, shows `"_"` (unchanged).
+/// When there is no old value, shows just `new`.
+fn format_update_column(new: &str, old: Option<&str>) -> String {
+    match old {
+        Some(old) if old != new => format!("{} -> {}", old, new),
+        Some(_) => "_".to_string(),
+        None => new.to_string(),
     }
 }
 

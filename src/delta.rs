@@ -60,19 +60,6 @@ impl From<Delta> for crate::proto::delta::Delta {
     }
 }
 
-/// Format a single column value for update display.
-///
-/// When `old` is provided and differs from `new`, shows `"old -> new"`.
-/// When `old` equals `new`, shows `"_"` (unchanged).
-/// When there is no old value, shows just `new`.
-fn format_update_column(new: &str, old: Option<&str>) -> String {
-    match old {
-        Some(old) if old != new => format!("{} -> {}", old, new),
-        Some(_) => "_".to_string(),
-        None => new.to_string(),
-    }
-}
-
 impl crate::proto::delta::Delta {
     /// Number of subsidiary (non-key) columns.
     ///
@@ -137,60 +124,19 @@ impl crate::proto::delta::Delta {
     /// - **Sparse** (patches): only the columns listed in `changed_indices`
     ///   appear in `new_value`/`old_value`; unchanged columns show as `"_"`.
     fn fmt_updates(&self, f: &mut fmt::Formatter<'_>, num_subsidiary: usize) -> fmt::Result {
-        if !self.updates.is_empty() {
-            write!(f, "\n  Updates ({}):", self.updates.len())?;
-            for update in &self.updates {
-                let is_full = update.changed_indices.is_empty() && !update.new_value.is_empty();
-                let has_old = !update.old_value.is_empty();
+        if self.updates.is_empty() {
+            return Ok(());
+        }
 
-                let columns: Vec<String> = if is_full {
-                    // Full format (blocks): compare old and new positionally.
-                    (0..num_subsidiary)
-                        .map(|i| {
-                            let new = update
-                                .new_value
-                                .get(i)
-                                .map(|s| s.as_str())
-                                .unwrap_or("<missing>");
-                            let old = has_old.then(|| {
-                                update
-                                    .old_value
-                                    .get(i)
-                                    .map(|s| s.as_str())
-                                    .unwrap_or("<missing>")
-                            });
-                            format_update_column(new, old)
-                        })
-                        .collect()
-                } else {
-                    // Sparse format (patches): use changed_indices.
-                    let changed: std::collections::HashSet<u32> =
-                        update.changed_indices.iter().copied().collect();
-                    let mut new_iter = update.new_value.iter();
-                    let mut old_iter = update.old_value.iter();
-                    (0..num_subsidiary as u32)
-                        .map(|i| {
-                            if changed.contains(&i) {
-                                let new =
-                                    new_iter.next().map(|s| s.as_str()).unwrap_or("<missing>");
-                                let old = has_old.then(|| {
-                                    old_iter.next().map(|s| s.as_str()).unwrap_or("<missing>")
-                                });
-                                format_update_column(new, old)
-                            } else {
-                                "_".to_string()
-                            }
-                        })
-                        .collect()
-                };
-
-                write!(
-                    f,
-                    "\n    ({}) {}",
-                    update.key.join(", "),
-                    columns.join(", ")
-                )?;
-            }
+        write!(f, "\n  Updates ({}):", self.updates.len())?;
+        for update in &self.updates {
+            let columns = update.format_columns(num_subsidiary);
+            write!(
+                f,
+                "\n    ({}) {}",
+                update.key.join(", "),
+                columns.join(", ")
+            )?;
         }
         Ok(())
     }
