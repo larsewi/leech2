@@ -334,7 +334,7 @@ mod tests {
     }
 
     #[test]
-    fn test_ordered_field_names_multiple_pks() {
+    fn test_ordered_field_names_multiple_primary_keys() {
         let config = make_table_config(vec![
             make_field("value", "TEXT", false, None),
             make_field("pk_b", "TEXT", true, None),
