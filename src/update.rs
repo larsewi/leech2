@@ -1,23 +1,24 @@
 pub use crate::proto::update::Update;
 
 use std::fmt;
+use std::mem;
 
 impl Update {
-    /// Expand sparse values back to a full-length vector.
+    /// Expand sparse old and new values back to full-length vectors in place.
     /// Positions not in `changed_indices` are filled with empty strings.
-    pub fn expand_sparse(
-        changed_indices: &[u32],
-        sparse_values: &[String],
-        num_values: usize,
-    ) -> Vec<String> {
-        if changed_indices.is_empty() {
-            return sparse_values.to_vec();
+    pub fn expand_sparse(&mut self, num_values: usize) {
+        if self.changed_indices.is_empty() {
+            return;
         }
-        let mut full = vec![String::new(); num_values];
-        for (index, value) in changed_indices.iter().zip(sparse_values.iter()) {
-            full[*index as usize] = value.clone();
+        let mut old_expanded = vec![String::new(); num_values];
+        let mut new_expanded = vec![String::new(); num_values];
+        for (sparse_index, &column_index) in self.changed_indices.iter().enumerate() {
+            old_expanded[column_index as usize] = mem::take(&mut self.old_value[sparse_index]);
+            new_expanded[column_index as usize] = mem::take(&mut self.new_value[sparse_index]);
         }
-        full
+        self.old_value = old_expanded;
+        self.new_value = new_expanded;
+        self.changed_indices.clear();
     }
 
     /// Sparse-encode an update: keep only the indices and values of columns that

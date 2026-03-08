@@ -46,18 +46,9 @@ impl TryFrom<crate::proto::delta::Delta> for Delta {
         let updates = proto
             .updates
             .into_iter()
-            .map(|update| {
-                let old_value = Update::expand_sparse(
-                    &update.changed_indices,
-                    &update.old_value,
-                    num_subsidiary,
-                );
-                let new_value = Update::expand_sparse(
-                    &update.changed_indices,
-                    &update.new_value,
-                    num_subsidiary,
-                );
-                (update.key, (old_value, new_value))
+            .map(|mut update| {
+                update.expand_sparse(num_subsidiary);
+                (update.key, (update.old_value, update.new_value))
             })
             .collect();
         Ok(Delta {
