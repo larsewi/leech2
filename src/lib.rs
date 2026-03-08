@@ -18,6 +18,9 @@ pub mod update;
 pub mod utils;
 pub mod wire;
 
+const SUCCESS: i32 = 0;
+const FAILURE: i32 = -1;
+
 /// # Safety
 /// `work_dir` must be a valid, non-null, null-terminated C string.
 /// Returns a config handle on success, or NULL on failure.
@@ -68,15 +71,15 @@ pub unsafe extern "C" fn lch_deinit(config: *mut config::Config) {
 pub unsafe extern "C" fn lch_block_create(config: *const config::Config) -> i32 {
     if config.is_null() {
         log::error!("lch_block_create(): Bad argument: config cannot be NULL");
-        return -1;
+        return FAILURE;
     }
 
     let config = unsafe { &*config };
     match block::Block::create(config) {
-        Ok(_) => 0,
+        Ok(_) => SUCCESS,
         Err(e) => {
             log::error!("lch_block_create(): {:#}", e);
-            -1
+            FAILURE
         }
     }
 }
@@ -95,12 +98,12 @@ pub unsafe extern "C" fn lch_patch_create(
 ) -> i32 {
     if config.is_null() {
         log::error!("lch_patch_create(): Bad argument: config cannot be NULL");
-        return -1;
+        return FAILURE;
     }
 
     if out.is_null() || len.is_null() {
         log::error!("lch_patch_create(): Bad argument: out and out_len cannot be NULL");
-        return -1;
+        return FAILURE;
     }
 
     let config = unsafe { &*config };
@@ -111,7 +114,7 @@ pub unsafe extern "C" fn lch_patch_create(
             Ok(None) => utils::GENESIS_HASH.to_string(),
             Err(e) => {
                 log::error!("lch_patch_create(): Failed to load REPORTED: {:#}", e);
-                return -1;
+                return FAILURE;
             }
         }
     } else {
@@ -119,7 +122,7 @@ pub unsafe extern "C" fn lch_patch_create(
             Ok(hash) => hash.to_string(),
             Err(e) => {
                 log::error!("lch_patch_create(): Bad argument: {e}");
-                return -1;
+                return FAILURE;
             }
         }
     };
@@ -128,7 +131,7 @@ pub unsafe extern "C" fn lch_patch_create(
         Ok(patch) => patch,
         Err(e) => {
             log::error!("lch_patch_create(): {:#}", e);
-            return -1;
+            return FAILURE;
         }
     };
 
@@ -136,7 +139,7 @@ pub unsafe extern "C" fn lch_patch_create(
         Ok(buf) => buf,
         Err(e) => {
             log::error!("lch_patch_create(): Failed to encode patch: {:#}", e);
-            return -1;
+            return FAILURE;
         }
     };
 
@@ -149,7 +152,7 @@ pub unsafe extern "C" fn lch_patch_create(
         *len = buf_len;
     }
 
-    0
+    SUCCESS
 }
 
 /// # Safety
@@ -165,17 +168,17 @@ pub unsafe extern "C" fn lch_patch_to_sql(
 ) -> i32 {
     if config.is_null() {
         log::error!("lch_patch_to_sql(): Bad argument: config cannot be NULL");
-        return -1;
+        return FAILURE;
     }
 
     if buf.is_null() {
         log::error!("lch_patch_to_sql(): Bad argument: buf cannot be NULL");
-        return -1;
+        return FAILURE;
     }
 
     if out.is_null() {
         log::error!("lch_patch_to_sql(): Bad argument: out cannot be NULL");
-        return -1;
+        return FAILURE;
     }
 
     let config = unsafe { &*config };
@@ -185,7 +188,7 @@ pub unsafe extern "C" fn lch_patch_to_sql(
         Ok(patch) => patch,
         Err(e) => {
             log::error!("lch_patch_to_sql(): Failed to decode patch: {:#}", e);
-            return -1;
+            return FAILURE;
         }
     };
 
@@ -193,11 +196,11 @@ pub unsafe extern "C" fn lch_patch_to_sql(
         Ok(Some(sql)) => sql,
         Ok(None) => {
             unsafe { *out = std::ptr::null_mut() };
-            return 0;
+            return SUCCESS;
         }
         Err(e) => {
             log::error!("lch_patch_to_sql(): {:#}", e);
-            return -1;
+            return FAILURE;
         }
     };
 
@@ -205,7 +208,7 @@ pub unsafe extern "C" fn lch_patch_to_sql(
         Ok(cstr) => cstr,
         Err(e) => {
             log::error!("lch_patch_to_sql(): Failed to create CString: {:#}", e);
-            return -1;
+            return FAILURE;
         }
     };
 
@@ -213,7 +216,7 @@ pub unsafe extern "C" fn lch_patch_to_sql(
         *out = cstr.into_raw();
     }
 
-    0
+    SUCCESS
 }
 
 /// # Safety
@@ -248,7 +251,7 @@ pub unsafe extern "C" fn lch_patch_free(
                 drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(buf, len)));
             }
         }
-        return -1;
+        return FAILURE;
     }
 
     let config = unsafe { &*config };
@@ -267,16 +270,16 @@ pub unsafe extern "C" fn lch_patch_free(
             Ok(p) => p,
             Err(e) => {
                 log::error!("lch_patch_free(): Failed to decode patch: {:#}", e);
-                return -1; // data is dropped here, freeing the buffer
+                return FAILURE; // data is dropped here, freeing the buffer
             }
         };
 
         if let Err(e) = self::reported::save(&config.work_dir, &patch.head) {
             log::error!("lch_patch_free(): Failed to save REPORTED: {:#}", e);
-            return -1; // data is dropped here, freeing the buffer
+            return FAILURE; // data is dropped here, freeing the buffer
         }
     }
 
     // data is dropped here, freeing the buffer
-    0
+    SUCCESS
 }
