@@ -370,7 +370,16 @@ impl Delta {
         Ok(())
     }
 
-    pub fn compute(previous_state: Option<State>, current_state: &State) -> HashMap<String, Delta> {
+    /// Compute deltas between a previous and current state.
+    ///
+    /// Returns `None` for tables whose field layout changed (columns
+    /// added/removed/reordered), since positional record values are
+    /// not comparable across different layouts.  Callers should treat
+    /// `None` as "use full state instead of a delta".
+    pub fn compute(
+        previous_state: Option<State>,
+        current_state: &State,
+    ) -> HashMap<String, Option<Delta>> {
         let mut deltas = HashMap::new();
 
         // Process tables in current state
@@ -378,6 +387,18 @@ impl Delta {
             let previous_table = previous_state
                 .as_ref()
                 .and_then(|state| state.tables.get(table_name));
+
+            // If the field layout changed, a meaningful delta cannot be computed.
+            if let Some(previous_table) = previous_table
+                && previous_table.fields != current_table.fields
+            {
+                log::warn!(
+                    "Table '{}': field layout changed, will use full state",
+                    table_name
+                );
+                deltas.insert(table_name.clone(), None);
+                continue;
+            }
 
             let (inserts, deletes, updates) = Self::compute_table(previous_table, current_table);
 
@@ -388,12 +409,12 @@ impl Delta {
 
             deltas.insert(
                 table_name.clone(),
-                Delta {
+                Some(Delta {
                     column_names: current_table.fields.clone(),
                     inserts,
                     deletes,
                     updates,
-                },
+                }),
             );
         }
 
@@ -412,12 +433,12 @@ impl Delta {
 
                 deltas.insert(
                     table_name.clone(),
-                    Delta {
+                    Some(Delta {
                         column_names: table.fields.clone(),
                         inserts: HashMap::new(),
                         deletes: table.records.clone(),
                         updates: HashMap::new(),
-                    },
+                    }),
                 );
             }
         }
@@ -500,7 +521,7 @@ mod tests {
         let deltas = Delta::compute(None, &current);
 
         assert_eq!(deltas.len(), 1);
-        let delta = deltas.get("users").unwrap();
+        let delta = deltas.get("users").unwrap().as_ref().unwrap();
         assert_eq!(delta.inserts.len(), 2);
         assert_eq!(delta.deletes.len(), 0);
         assert_eq!(delta.updates.len(), 0);
@@ -523,7 +544,7 @@ mod tests {
         let deltas = Delta::compute(Some(previous), &current);
 
         assert_eq!(deltas.len(), 1);
-        let delta = deltas.get("old_table").unwrap();
+        let delta = deltas.get("old_table").unwrap().as_ref().unwrap();
         assert_eq!(delta.inserts.len(), 0);
         assert_eq!(delta.deletes.len(), 2);
         assert_eq!(delta.updates.len(), 0);
@@ -560,7 +581,7 @@ mod tests {
         let deltas = Delta::compute(Some(previous_state), &current_state);
 
         assert_eq!(deltas.len(), 1);
-        let delta = deltas.get("users").unwrap();
+        let delta = deltas.get("users").unwrap().as_ref().unwrap();
 
         // Key "4" is new -> insert
         assert_eq!(delta.inserts.len(), 1);
@@ -597,19 +618,19 @@ mod tests {
         assert_eq!(deltas.len(), 3);
 
         // table_a: only in previous -> all deletes
-        let delta_a = deltas.get("table_a").unwrap();
+        let delta_a = deltas.get("table_a").unwrap().as_ref().unwrap();
         assert_eq!(delta_a.deletes.len(), 1);
         assert_eq!(delta_a.inserts.len(), 0);
 
         // table_b: in both -> key "1" deleted, key "2" inserted
-        let delta_b = deltas.get("table_b").unwrap();
+        let delta_b = deltas.get("table_b").unwrap().as_ref().unwrap();
         assert_eq!(delta_b.deletes.len(), 1);
         assert!(delta_b.deletes.contains_key(&make_key(&["1"])));
         assert_eq!(delta_b.inserts.len(), 1);
         assert!(delta_b.inserts.contains_key(&make_key(&["2"])));
 
         // table_c: only in current -> all inserts
-        let delta_c = deltas.get("table_c").unwrap();
+        let delta_c = deltas.get("table_c").unwrap().as_ref().unwrap();
         assert_eq!(delta_c.inserts.len(), 1);
         assert_eq!(delta_c.deletes.len(), 0);
     }
@@ -664,6 +685,41 @@ mod tests {
     }
 
     #[test]
+    fn test_layout_change_returns_none() {
+        let mut previous_tables = HashMap::new();
+        previous_tables.insert(
+            "users".to_string(),
+            Table {
+                fields: vec!["id".to_string(), "name".to_string()],
+                records: HashMap::from([(vec!["1".to_string()], vec!["alice".to_string()])]),
+            },
+        );
+        let previous_state = State {
+            tables: previous_tables,
+        };
+
+        let mut current_tables = HashMap::new();
+        current_tables.insert(
+            "users".to_string(),
+            Table {
+                fields: vec!["id".to_string(), "name".to_string(), "email".to_string()],
+                records: HashMap::from([(
+                    vec!["1".to_string()],
+                    vec!["alice".to_string(), "alice@example.com".to_string()],
+                )]),
+            },
+        );
+        let current_state = State {
+            tables: current_tables,
+        };
+
+        let deltas = Delta::compute(Some(previous_state), &current_state);
+
+        assert_eq!(deltas.len(), 1);
+        assert!(deltas.get("users").unwrap().is_none());
+    }
+
+    #[test]
     fn test_composite_key() {
         let mut previous_tables = HashMap::new();
         previous_tables.insert(
@@ -691,7 +747,7 @@ mod tests {
 
         let deltas = Delta::compute(Some(previous_state), &current_state);
 
-        let delta = deltas.get("orders").unwrap();
+        let delta = deltas.get("orders").unwrap().as_ref().unwrap();
         assert_eq!(delta.inserts.len(), 1);
         assert!(delta.inserts.contains_key(&make_key(&["user2", "order1"])));
         assert_eq!(delta.deletes.len(), 1);

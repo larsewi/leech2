@@ -11,17 +11,16 @@ use crate::delta;
 use crate::head;
 use crate::proto::block::TableChange;
 use crate::state;
-use crate::state::State;
 use crate::storage;
 use crate::truncate;
 use crate::utils;
 
 pub use crate::proto::block::Block;
 
-impl From<delta::Delta> for TableChange {
-    fn from(delta: delta::Delta) -> Self {
+impl From<Option<delta::Delta>> for TableChange {
+    fn from(delta: Option<delta::Delta>) -> Self {
         TableChange {
-            delta: Some(crate::proto::delta::Delta::from(delta)),
+            delta: delta.map(crate::proto::delta::Delta::from),
         }
     }
 }
@@ -48,25 +47,6 @@ impl fmt::Display for Block {
         }
         Ok(())
     }
-}
-
-/// Check which tables had their field layout changed since the previous state
-/// and return the set of table names that need a full state snapshot.
-fn detect_layout_changes(previous: &State, config: &Config) -> Vec<String> {
-    let mut changed = Vec::new();
-    for (name, table) in &previous.tables {
-        if let Some(table_config) = config.tables.get(name) {
-            let expected_fields = table_config.ordered_field_names();
-            if table.fields != expected_fields {
-                log::warn!(
-                    "Table '{}': field layout changed, will use full state",
-                    name
-                );
-                changed.push(name.clone());
-            }
-        }
-    }
-    changed
 }
 
 impl Block {
@@ -98,24 +78,11 @@ impl Block {
         } else {
             let previous_state =
                 state::State::load(work_dir).context("Failed to load previous state")?;
-            let layout_changed_tables = previous_state
-                .as_ref()
-                .map(|s| detect_layout_changes(s, config))
-                .unwrap_or_default();
 
-            let deltas = delta::Delta::compute(previous_state, &current_state);
-            let mut payload: HashMap<_, _> = deltas
+            delta::Delta::compute(previous_state, &current_state)
                 .into_iter()
                 .map(|(name, delta)| (name, TableChange::from(delta)))
-                .collect();
-
-            // Mark layout-changed tables: replace their delta with None so that
-            // patch consolidation uses full state instead of attempting to merge.
-            for name in layout_changed_tables {
-                payload.insert(name, TableChange { delta: None });
-            }
-
-            payload
+                .collect()
         };
 
         let block = Block {
