@@ -99,7 +99,9 @@ fn merge_table_deltas(
 
     for proto_delta in iter {
         let child = Delta::try_from(proto_delta)?;
-        merged.merge(child, table_name)?;
+        merged
+            .merge(child)
+            .with_context(|| format!("table '{}'", table_name))?;
     }
 
     Ok(crate::proto::delta::Delta::from(merged))

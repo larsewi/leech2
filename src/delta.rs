@@ -256,11 +256,10 @@ impl Delta {
     /// Merge child delta into parent delta, producing a single delta that
     /// represents the combined effect of both. See DELTA_MERGING_RULES.md for
     /// the full specification of the 15 rules.
-    pub fn merge(&mut self, child: Delta, table_name: &str) -> Result<()> {
+    pub fn merge(&mut self, child: Delta) -> Result<()> {
         if self.column_names != child.column_names {
             bail!(
-                "cannot merge deltas for table '{}': field mismatch ({:?} vs {:?})",
-                table_name,
+                "field mismatch ({:?} vs {:?})",
                 self.column_names,
                 child.column_names
             );
@@ -783,7 +782,7 @@ mod tests {
             .inserts
             .insert(make_key(&["3"]), make_value(&["Charlie"]));
 
-        parent_delta.merge(child_delta, "t").unwrap();
+        parent_delta.merge(child_delta).unwrap();
 
         assert_eq!(parent_delta.inserts.len(), 1);
         assert_eq!(
@@ -803,7 +802,7 @@ mod tests {
             .deletes
             .insert(make_key(&["2"]), make_value(&["Bob"]));
 
-        parent_delta.merge(child_delta, "t").unwrap();
+        parent_delta.merge(child_delta).unwrap();
 
         assert_eq!(parent_delta.deletes.len(), 1);
         assert_eq!(
@@ -824,7 +823,7 @@ mod tests {
             (make_value(&["Alice"]), make_value(&["Alicia"])),
         );
 
-        parent_delta.merge(child_delta, "t").unwrap();
+        parent_delta.merge(child_delta).unwrap();
 
         assert_eq!(parent_delta.updates.len(), 1);
         let (old_value, new_value) = &parent_delta.updates[&make_key(&["1"])];
@@ -843,7 +842,7 @@ mod tests {
             .insert(make_key(&["3"]), make_value(&["Charlie"]));
         let child_delta = empty_delta();
 
-        parent_delta.merge(child_delta, "t").unwrap();
+        parent_delta.merge(child_delta).unwrap();
 
         assert_eq!(parent_delta.inserts.len(), 1);
         assert_eq!(
@@ -864,7 +863,7 @@ mod tests {
             .inserts
             .insert(make_key(&["3"]), make_value(&["Charles"]));
 
-        let merged_delta = parent_delta.merge(child_delta, "t");
+        let merged_delta = parent_delta.merge(child_delta);
         assert!(merged_delta.is_err());
     }
 
@@ -880,7 +879,7 @@ mod tests {
             .deletes
             .insert(make_key(&["3"]), make_value(&["Charles"]));
 
-        parent_delta.merge(child_delta, "t").unwrap();
+        parent_delta.merge(child_delta).unwrap();
 
         assert!(parent_delta.inserts.is_empty());
         assert!(parent_delta.deletes.is_empty());
@@ -900,7 +899,7 @@ mod tests {
             (make_value(&["Charlie"]), make_value(&["Charles"])),
         );
 
-        parent_delta.merge(child_delta, "t").unwrap();
+        parent_delta.merge(child_delta).unwrap();
 
         assert_eq!(parent_delta.inserts.len(), 1);
         assert_eq!(
@@ -920,7 +919,7 @@ mod tests {
             .insert(make_key(&["2"]), make_value(&["Bob"]));
         let child_delta = empty_delta();
 
-        parent_delta.merge(child_delta, "t").unwrap();
+        parent_delta.merge(child_delta).unwrap();
 
         assert_eq!(parent_delta.deletes.len(), 1);
         assert_eq!(
@@ -941,7 +940,7 @@ mod tests {
             .inserts
             .insert(make_key(&["2"]), make_value(&["Bob"]));
 
-        parent_delta.merge(child_delta, "t").unwrap();
+        parent_delta.merge(child_delta).unwrap();
 
         assert!(parent_delta.inserts.is_empty());
         assert!(parent_delta.deletes.is_empty());
@@ -960,7 +959,7 @@ mod tests {
             .inserts
             .insert(make_key(&["2"]), make_value(&["Robert"]));
 
-        parent_delta.merge(child_delta, "t").unwrap();
+        parent_delta.merge(child_delta).unwrap();
 
         assert!(parent_delta.inserts.is_empty());
         assert!(parent_delta.deletes.is_empty());
@@ -982,7 +981,7 @@ mod tests {
             .deletes
             .insert(make_key(&["2"]), make_value(&["Bob"]));
 
-        let merged_delta = parent_delta.merge(child_delta, "t");
+        let merged_delta = parent_delta.merge(child_delta);
         assert!(merged_delta.is_err());
     }
 
@@ -999,7 +998,7 @@ mod tests {
             (make_value(&["Bob"]), make_value(&["Robert"])),
         );
 
-        let merged_delta = parent_delta.merge(child_delta, "t");
+        let merged_delta = parent_delta.merge(child_delta);
         assert!(merged_delta.is_err());
     }
 
@@ -1013,7 +1012,7 @@ mod tests {
         );
         let child_delta = empty_delta();
 
-        parent_delta.merge(child_delta, "t").unwrap();
+        parent_delta.merge(child_delta).unwrap();
 
         assert_eq!(parent_delta.updates.len(), 1);
         let (old_value, new_value) = &parent_delta.updates[&make_key(&["1"])];
@@ -1034,7 +1033,7 @@ mod tests {
             .inserts
             .insert(make_key(&["1"]), make_value(&["Alice"]));
 
-        let merged_delta = parent_delta.merge(child_delta, "t");
+        let merged_delta = parent_delta.merge(child_delta);
         assert!(merged_delta.is_err());
     }
 
@@ -1051,7 +1050,7 @@ mod tests {
             .deletes
             .insert(make_key(&["1"]), make_value(&["Alicia"]));
 
-        parent_delta.merge(child_delta, "t").unwrap();
+        parent_delta.merge(child_delta).unwrap();
 
         assert!(parent_delta.inserts.is_empty());
         assert!(parent_delta.updates.is_empty());
@@ -1075,7 +1074,7 @@ mod tests {
             .deletes
             .insert(make_key(&["1"]), make_value(&["Alice"]));
 
-        let merged_delta = parent_delta.merge(child_delta, "t");
+        let merged_delta = parent_delta.merge(child_delta);
         assert!(merged_delta.is_err());
     }
 
@@ -1093,7 +1092,7 @@ mod tests {
             (make_value(&["Alicia"]), make_value(&["Ali"])),
         );
 
-        parent_delta.merge(child_delta, "t").unwrap();
+        parent_delta.merge(child_delta).unwrap();
 
         assert_eq!(parent_delta.updates.len(), 1);
         let (old_value, new_value) = &parent_delta.updates[&make_key(&["1"])];
@@ -1134,7 +1133,7 @@ mod tests {
             .inserts
             .insert(make_key(&["4"]), make_value(&["Dave"])); // rule 1
 
-        parent_delta.merge(child_delta, "t").unwrap();
+        parent_delta.merge(child_delta).unwrap();
 
         // Rule 7: insert(3, Charlie) + update(3, Charlie→Charles) = insert(3, Charles)
         assert_eq!(parent_delta.inserts.len(), 2);
@@ -1177,7 +1176,7 @@ mod tests {
             updates: HashMap::new(),
         };
 
-        let merged_delta = parent_delta.merge(child_delta, "t");
+        let merged_delta = parent_delta.merge(child_delta);
         assert!(merged_delta.is_err());
         assert!(
             merged_delta
@@ -1201,7 +1200,7 @@ mod tests {
             (make_value(&["100"]), make_value(&["150"])),
         );
 
-        parent_delta.merge(child_delta, "t").unwrap();
+        parent_delta.merge(child_delta).unwrap();
 
         assert_eq!(parent_delta.inserts.len(), 1);
         assert_eq!(
