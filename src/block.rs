@@ -52,9 +52,9 @@ impl fmt::Display for Block {
 impl Block {
     pub fn load(work_dir: &Path, hash: &str) -> Result<Block> {
         let data = storage::load(work_dir, hash)?
-            .with_context(|| format!("Failed to load block '{:.7}...'", hash))?;
+            .with_context(|| format!("failed to load block '{:.7}...'", hash))?;
         let block = Block::decode(data.as_slice())
-            .with_context(|| format!("Failed to decode block '{:.7}...'", hash))?;
+            .with_context(|| format!("failed to decode block '{:.7}...'", hash))?;
         log::info!("Loaded block '{:.7}...'", hash);
         Ok(block)
     }
@@ -62,9 +62,9 @@ impl Block {
     pub fn create(config: &Config) -> Result<String> {
         let work_dir = &config.work_dir;
         let current_state =
-            state::State::compute(config).context("Failed to compute current state")?;
+            state::State::compute(config).context("failed to compute current state")?;
 
-        let parent_hash = head::load(work_dir).context("Failed to load head of chain")?;
+        let parent_hash = head::load(work_dir).context("failed to load head of chain")?;
 
         let created = Some(SystemTime::now().into());
 
@@ -77,7 +77,7 @@ impl Block {
             HashMap::new()
         } else {
             let previous_state =
-                state::State::load(work_dir).context("Failed to load previous state")?;
+                state::State::load(work_dir).context("failed to load previous state")?;
 
             delta::Delta::compute(previous_state, &current_state)
                 .into_iter()
@@ -95,17 +95,17 @@ impl Block {
         let mut encoded = Vec::new();
         block
             .encode(&mut encoded)
-            .context("Failed to encode block")?;
+            .context("failed to encode block")?;
         let hash = utils::compute_hash(&encoded);
         storage::store(work_dir, &hash, &encoded)
-            .with_context(|| format!("Failed to store block {:.7}", hash))?;
+            .with_context(|| format!("failed to store block {:.7}", hash))?;
 
         log::info!("Created block '{:.7}...'", hash);
 
         current_state
             .store(work_dir)
-            .context("Failed to store current state")?;
-        head::store(work_dir, &hash).context("Failed to update head of state")?;
+            .context("failed to store current state")?;
+        head::store(work_dir, &hash).context("failed to update head of state")?;
 
         if let Err(e) = truncate::run(config) {
             log::warn!("Truncation failed (non-fatal): {}", e);

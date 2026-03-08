@@ -81,7 +81,7 @@ fn collect_blocks(work_dir: &Path, head_block: Block, last_known: &str) -> Resul
     }
 
     if !current_hash.starts_with(last_known) {
-        bail!("Block starting with '{}' not found in chain", last_known);
+        bail!("block starting with '{}' not found in chain", last_known);
     }
 
     blocks.reverse(); // oldest first
@@ -214,7 +214,7 @@ fn full_state_patch(
         .ok()
         .and_then(|block| block.created);
     let state =
-        state::State::load(work_dir)?.context("No STATE file found for full state patch")?;
+        state::State::load(work_dir)?.context("no STATE file found for full state patch")?;
     let patch = Patch {
         head: head.to_string(),
         created,

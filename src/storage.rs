@@ -12,20 +12,20 @@ use fs2::FileExt;
 fn acquire_lock(dir: &Path, name: &str, exclusive: bool) -> Result<File> {
     let lock_path = dir.join(format!(".{}.lock", name));
     let lock_file = File::create(&lock_path)
-        .with_context(|| format!("Failed to open lock file '{}'", lock_path.display()))?;
+        .with_context(|| format!("failed to open lock file '{}'", lock_path.display()))?;
     if exclusive {
         lock_file.lock_exclusive()
     } else {
         lock_file.lock_shared()
     }
-    .with_context(|| format!("Failed to acquire lock on '{}'", lock_path.display()))?;
+    .with_context(|| format!("failed to acquire lock on '{}'", lock_path.display()))?;
     Ok(lock_file)
 }
 
 /// Saves data to a file in the work directory using a separate lock file and atomic rename.
 pub fn store(work_dir: &Path, name: &str, data: &[u8]) -> Result<()> {
     fs::create_dir_all(work_dir)
-        .with_context(|| format!("Failed to create work directory '{}'", work_dir.display()))?;
+        .with_context(|| format!("failed to create work directory '{}'", work_dir.display()))?;
 
     let _lock = acquire_lock(work_dir, name, true)?;
 
@@ -34,12 +34,12 @@ pub fn store(work_dir: &Path, name: &str, data: &[u8]) -> Result<()> {
     let path = work_dir.join(name);
 
     File::create(&tmp_path)
-        .with_context(|| format!("Failed to create temp file '{}'", tmp_path.display()))?
+        .with_context(|| format!("failed to create temp file '{}'", tmp_path.display()))?
         .write_all(data)
-        .with_context(|| format!("Failed to write to '{}'", tmp_path.display()))?;
+        .with_context(|| format!("failed to write to '{}'", tmp_path.display()))?;
     fs::rename(&tmp_path, &path).with_context(|| {
         format!(
-            "Failed to rename '{}' to '{}'",
+            "failed to rename '{}' to '{}'",
             tmp_path.display(),
             path.display()
         )
@@ -67,7 +67,7 @@ pub fn remove(work_dir: &Path, name: &str) -> Result<()> {
         }
         Err(e) => {
             return Err(anyhow::Error::new(e)
-                .context(format!("Failed to remove file '{}'", path.display())));
+                .context(format!("failed to remove file '{}'", path.display())));
         }
     }
 
@@ -92,9 +92,9 @@ pub fn load(work_dir: &Path, name: &str) -> Result<Option<Vec<u8>>> {
 
     let mut data = Vec::new();
     File::open(&path)
-        .with_context(|| format!("Failed to open file '{}'", path.display()))?
+        .with_context(|| format!("failed to open file '{}'", path.display()))?
         .read_to_end(&mut data)
-        .with_context(|| format!("Failed to read from '{}'", path.display()))?;
+        .with_context(|| format!("failed to read from '{}'", path.display()))?;
 
     // _lock dropped here, releasing shared lock.
     log::debug!("Loaded {} bytes from '{}'", data.len(), path.display());

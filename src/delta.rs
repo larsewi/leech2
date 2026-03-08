@@ -283,7 +283,7 @@ impl Delta {
     fn merge_insert(&mut self, key: Vec<String>, insert_value: Vec<String>) -> Result<()> {
         if self.inserts.contains_key(&key) {
             // Rule 5: double insert → error
-            bail!("Rule 5: Key {:?} inserted in both blocks", key);
+            bail!("rule 5: key {:?} inserted in both blocks", key);
         } else if let Some(delete_value) = self.deletes.remove(&key) {
             if delete_value == insert_value {
                 // Rule 9a: delete then insert with same value → cancels out
@@ -296,7 +296,7 @@ impl Delta {
         } else if self.updates.contains_key(&key) {
             // Rule 13: insert after update → error
             bail!(
-                "Rule 13: Key {:?} updated in parent, inserted in child",
+                "rule 13: key {:?} updated in parent, inserted in child",
                 key
             );
         } else {
@@ -313,7 +313,7 @@ impl Delta {
             log::debug!("Rule 6: insert + delete cancel out for key {:?}", key);
         } else if self.deletes.contains_key(&key) {
             // Rule 10: double delete → error
-            bail!("Rule 10: Key {:?} deleted in both blocks", key);
+            bail!("rule 10: key {:?} deleted in both blocks", key);
         } else if let Some((old_value, new_value)) = self.updates.remove(&key) {
             if delete_value == new_value {
                 // Rule 14a: update then delete, values match → delete(old)
@@ -322,7 +322,7 @@ impl Delta {
             } else {
                 // Rule 14b: update then delete, values mismatch → error
                 bail!(
-                    "Rule 14b: Key {:?} updated to {:?} in parent, but deleted with {:?}",
+                    "rule 14b: key {:?} updated to {:?} in parent, but deleted with {:?}",
                     key,
                     new_value,
                     delete_value
@@ -348,7 +348,7 @@ impl Delta {
             *insert_value = new_value;
         } else if self.deletes.contains_key(&key) {
             // Rule 11: update after delete → error
-            bail!("Rule 11: Key {:?} deleted in parent, updated in child", key);
+            bail!("rule 11: key {:?} deleted in parent, updated in child", key);
         } else if let Some(update) = self.updates.get_mut(&key) {
             // Rule 15: update then update → update(old1 → new2)
             // Merge sparse-expanded updates: only touch positions that actually
