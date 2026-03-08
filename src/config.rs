@@ -186,12 +186,16 @@ impl Config {
         };
         config.work_dir = work_dir.to_path_buf();
 
+        // Validate each table: at least one primary key, no duplicate field
+        // names, and no null sentinels on primary-key fields.
         for (name, table) in &config.tables {
             table
                 .validate()
                 .with_context(|| format!("table '{}'", name))?;
         }
 
+        // Validate injected fields: no duplicate names across the list,
+        // and each field must have a valid SQL type.
         let mut injected_names = HashSet::new();
         for (index, field) in config.injected_fields.iter().enumerate() {
             if !injected_names.insert(&field.name) {
@@ -206,6 +210,8 @@ impl Config {
                 .with_context(|| format!("injected-fields[{}]", index))?;
         }
 
+        // Validate truncation: max-blocks >= 1 and max-age is a valid
+        // duration string (e.g. "30s", "12h", "7d").
         if let Some(ref truncate) = config.truncate {
             if let Some(max_blocks) = truncate.max_blocks
                 && max_blocks < 1
