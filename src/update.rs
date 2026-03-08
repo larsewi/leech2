@@ -40,6 +40,17 @@ impl Update {
     }
 }
 
+impl From<(Vec<String>, (Vec<String>, Vec<String>))> for Update {
+    fn from((key, (old_value, new_value)): (Vec<String>, (Vec<String>, Vec<String>))) -> Self {
+        Update {
+            key,
+            changed_indices: Vec::new(),
+            old_value,
+            new_value,
+        }
+    }
+}
+
 impl fmt::Display for Update {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(

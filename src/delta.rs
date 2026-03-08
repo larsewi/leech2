@@ -5,7 +5,6 @@ use anyhow::{Context, Result, bail};
 
 use crate::state::State;
 use crate::table::Table;
-use crate::update::Update;
 
 type RecordMap = HashMap<Vec<String>, Vec<String>>;
 type UpdateMap = HashMap<Vec<String>, (Vec<String>, Vec<String>)>;
@@ -55,16 +54,7 @@ impl From<Delta> for crate::proto::delta::Delta {
     fn from(delta: Delta) -> Self {
         let inserts = delta.inserts.into_iter().map(Into::into).collect();
         let deletes = delta.deletes.into_iter().map(Into::into).collect();
-        let updates = delta
-            .updates
-            .into_iter()
-            .map(|(key, (old_value, new_value))| Update {
-                key,
-                changed_indices: Vec::new(),
-                old_value,
-                new_value,
-            })
-            .collect();
+        let updates = delta.updates.into_iter().map(Into::into).collect();
         crate::proto::delta::Delta {
             column_names: delta.column_names,
             inserts,
