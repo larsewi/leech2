@@ -33,6 +33,7 @@ impl fmt::Display for Patch {
         write!(f, "\n  Head: {}", self.head)?;
         match &self.created {
             Some(timestamp) => write!(f, "\n  Created: {}", utils::format_timestamp(timestamp))?,
+            // Timestamp is None when the head points to genesis (no blocks exist yet).
             None => write!(f, "\n  Created: N/A")?,
         }
         for field in &self.injected_fields {
