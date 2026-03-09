@@ -5,6 +5,13 @@ package block;
 import "delta.proto";
 import "google/protobuf/timestamp.proto";
 
+// Lightweight view of a Block for reading only the chain metadata without
+// decoding the heavy payload. Uses the same field tags as Block so that Block
+// bytes can be decoded as a BlockHeader.
+message BlockHeader {
+  string parent = 1;
+}
+
 // Block represents a committed set of changes, forming a chain via parent references.
 message Block {
   // The hash of the parent block, or zero for the genesis block.
