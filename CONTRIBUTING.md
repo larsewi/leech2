@@ -69,12 +69,16 @@ Block:
 
 `Patch::create()` consolidates multiple blocks into a single patch by walking
 the chain from `HEAD` back to a last-known hash (typically the hash stored in
-`REPORTED`, or genesis on first run). It collects all blocks, groups their
-deltas by table name, and merges each table's delta chain independently using 15
-conflict-resolution rules (see
-[DELTA_MERGING_RULES.md](DELTA_MERGING_RULES.md)). Some rules handle
-non-conflicting scenarios seamlessly, while others detect unresolvable conflicts
-(e.g. double insert).
+`REPORTED`, or genesis on first run). To keep memory usage low, consolidation
+proceeds in two phases: first, block hashes are collected by reading only the
+lightweight `BlockHeader` (parent hash field) from each block file — just 42–56
+bytes per block instead of the full payload. Then, blocks are loaded one at a
+time in oldest-first order and their deltas are merged incrementally into
+per-table running results using 15 conflict-resolution rules (see
+[DELTA_MERGING_RULES.md](DELTA_MERGING_RULES.md)). Each block is dropped after
+its deltas are merged, so only one block's payload and the per-table running
+results are in memory at a time. Some rules handle non-conflicting scenarios
+seamlessly, while others detect unresolvable conflicts (e.g. double insert).
 
 When the reference hash is genesis or can't be resolved (e.g. the block was
 truncated), the library skips consolidation entirely and produces a full state
@@ -147,9 +151,10 @@ position can be safely pruned.
 ### Truncation
 
 After every `Block::create()`, optional truncation runs to reclaim disk space.
-It removes orphaned blocks (not reachable from `HEAD`), blocks older than the
-`REPORTED` position, and blocks exceeding configured `max-blocks` or `max-age`
-limits.
+It walks the chain using `Block::load_header()` (reading only 56 bytes per
+block) to determine reachability and creation timestamps, then removes orphaned
+blocks (not reachable from `HEAD`), blocks older than the `REPORTED` position,
+and blocks exceeding configured `max-blocks` or `max-age` limits.
 
 ### Recovery from missing files
 
@@ -214,10 +219,10 @@ tests/          Acceptance tests
 - **Table** (`src/table.rs`) -- In-memory representation of a CSV table. Records stored as `HashMap<Vec<String>, Vec<String>>` (primary key -> subsidiary columns). Fields are reordered so primary key columns come first.
 - **State** (`src/state.rs`) -- Snapshot of all tables at a point in time. Serialized to protobuf and persisted as `STATE` file.
 - **Delta** (`src/delta.rs`) -- Diff between two states for a single table: inserts, deletes, and updates. Contains the merge logic implementing 15 rules (see [DELTA_MERGING_RULES.md](DELTA_MERGING_RULES.md)).
-- **Block** (`src/block.rs`) -- A content-addressable unit containing a timestamp, parent hash, and a map of `TableChange` entries keyed by table name. Each `TableChange` wraps an optional delta: present for normal changes, absent (`None`) when a table's field layout changed. Blocks form a linked chain, SHA-1 hashed and stored by hash.
+- **Block** (`src/block.rs`) -- A content-addressable unit containing a timestamp, parent hash, and a map of `TableChange` entries keyed by table name. Each `TableChange` wraps an optional delta: present for normal changes, absent (`None`) when a table's field layout changed. Blocks form a linked chain, SHA-1 hashed and stored by hash. A companion `BlockHeader` proto message (defined in `block.proto`) allows reading just the parent hash and timestamp from a block file without decoding the payload, used by patch consolidation and truncation for lightweight chain traversal.
 - **Patch** (`src/patch.rs`) -- Consolidates multiple blocks from HEAD back to a `last_known` hash by merging deltas per table independently. Tables with layout changes (delta-less `TableChange`) go directly to full state. Each table's consolidated delta is compared against its full state, and the smaller representation is chosen. A single patch can contain a mix of delta and state tables. Patches also carry per-table `field_hashes` for agent-hub validation.
 - **Head** (`src/head.rs`) -- Reads/writes the `HEAD` file tracking the current block hash.
-- **Storage** (`src/storage.rs`) -- File I/O with `fs2` file locking (exclusive for writes, shared for reads).
+- **Storage** (`src/storage.rs`) -- File I/O with `fs2` file locking (exclusive for writes, shared for reads). Provides `load_prefix()` for reading only the first N bytes of a file, used by `Block::load_header()` to avoid reading full block payloads.
 
 ## Work directory layout
 
@@ -285,16 +290,16 @@ State::compute()       Collect all tables into a State
 Patch::create(last_known_hash)
     |
     v
-Walk chain: HEAD -> ... -> last_known (collect blocks oldest-first)
+Collect block hashes: HEAD -> ... -> last_known
+    (reads only BlockHeader — 42-56 bytes per block)
     |
     v
-Group by table name: deltas from TableChange.delta, layout-changed from None
+Load blocks one at a time oldest-first, merging deltas incrementally
+    |   (one block's payload + per-table running results in memory)
     |
-    v
-Layout-changed tables -> full state directly (skip merge)
+    +-> Layout-changed tables -> full state directly (skip merge)
     |
-    v
-Per table: Delta::merge() chain (see DELTA_MERGING_RULES.md)
+    +-> Per table: Delta::merge() into running result (see DELTA_MERGING_RULES.md)
     |         (merge failure -> fall back to state for that table)
     v
 Per table: strip (key-only deletes, sparse updates)
