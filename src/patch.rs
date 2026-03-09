@@ -69,43 +69,71 @@ impl fmt::Display for Patch {
     }
 }
 
-/// Walk the chain from `head_block` back to (but not including) `last_known`,
-/// returning blocks oldest-first.
-fn collect_blocks(work_dir: &Path, head_block: Block, last_known: &str) -> Result<Vec<Block>> {
-    let mut blocks = vec![head_block];
-    let mut current_hash = blocks[0].parent.clone();
+/// Walk the chain from `head` back to (but not including) `last_known`,
+/// collecting only the block hashes. Uses `Block::load_parent_hash` to read
+/// just 42 bytes per block instead of decoding the full payload. Returns hashes
+/// in chain order (newest-first); callers that need oldest-first should reverse.
+fn collect_block_hashes(work_dir: &Path, head: &str, last_known: &str) -> Result<Vec<String>> {
+    let mut hashes = vec![head.to_string()];
+    let mut parent = Block::load_parent_hash(work_dir, head)?;
 
-    while current_hash != GENESIS_HASH && !current_hash.starts_with(last_known) {
-        let block = Block::load(work_dir, &current_hash)?;
-        current_hash = block.parent.clone();
-        blocks.push(block);
+    while parent != GENESIS_HASH && !parent.starts_with(last_known) {
+        hashes.push(parent.clone());
+        parent = Block::load_parent_hash(work_dir, &parent)?;
     }
 
-    if !current_hash.starts_with(last_known) {
+    if !parent.starts_with(last_known) {
         bail!("block starting with '{}' not found in chain", last_known);
     }
 
-    blocks.reverse(); // oldest first
-    Ok(blocks)
+    Ok(hashes)
 }
 
-/// Merge a single table's proto deltas (oldest-first) into one consolidated delta.
-fn merge_table_deltas(
-    table_name: &str,
-    deltas: Vec<crate::proto::delta::Delta>,
-) -> Result<crate::proto::delta::Delta> {
-    let mut iter = deltas.into_iter();
-    let first = iter.next().context("no deltas to merge")?;
-    let mut merged = Delta::try_from(first)?;
-
-    for proto_delta in iter {
-        let child = Delta::try_from(proto_delta)?;
-        merged
-            .merge(child)
-            .with_context(|| format!("table '{}'", table_name))?;
+/// Merge a single block's deltas into per-table running results. The block is
+/// the older (parent) side and the running results are the newer (child) side,
+/// so the merge direction is `parent.merge(child)`. When `running_deltas` is
+/// empty (first block), this simply extracts the block's deltas.
+///
+/// Tables whose layout changed (delta is `None`) or whose merge failed are
+/// added to `reset_tables` so they fall back to full state.
+fn merge_block_deltas(
+    block: Block,
+    running_deltas: &mut HashMap<String, Delta>,
+    reset_tables: &mut HashSet<String>,
+) {
+    for (name, change) in block.payload {
+        if reset_tables.contains(&name) {
+            continue;
+        }
+        match change.delta {
+            Some(proto_delta) => {
+                let result = Delta::try_from(proto_delta).and_then(|mut parent| {
+                    if let Some(child) = running_deltas.remove(&name) {
+                        parent.merge(child)?;
+                    }
+                    Ok(parent)
+                });
+                match result {
+                    Ok(delta) => {
+                        running_deltas.insert(name, delta);
+                    }
+                    Err(e) => {
+                        log::warn!(
+                            "Merge failed for table '{}', falling back to full state: {}",
+                            name,
+                            e
+                        );
+                        running_deltas.remove(&name);
+                        reset_tables.insert(name);
+                    }
+                }
+            }
+            None => {
+                running_deltas.remove(&name);
+                reset_tables.insert(name);
+            }
+        }
     }
-
-    Ok(crate::proto::delta::Delta::from(merged))
 }
 
 type ConsolidateResult = (
@@ -123,24 +151,21 @@ fn try_consolidate(work_dir: &Path, head: &str, last_known: &str) -> Result<Cons
         return Ok((created, 0, HashMap::new(), HashMap::new()));
     }
 
-    let blocks = collect_blocks(work_dir, head_block, last_known)?;
-    let num_blocks = blocks.len() as u32;
+    // Collect block hashes by walking the chain newest-to-oldest. Only 42
+    // bytes per block are read from disk (just the parent hash field).
+    let mut block_hashes = collect_block_hashes(work_dir, head, last_known)?;
+    let num_blocks = block_hashes.len() as u32;
+    block_hashes.reverse();
 
-    // Collect deltas by table name and track tables that need full state.
-    let mut table_deltas: HashMap<String, Vec<crate::proto::delta::Delta>> = HashMap::new();
+    // Load blocks one at a time oldest-first, merging deltas incrementally.
+    // Only one block's payload and the per-table running results are in
+    // memory at a time.
+    let mut running_deltas: HashMap<String, Delta> = HashMap::new();
     let mut reset_tables: HashSet<String> = HashSet::new();
 
-    for block in blocks {
-        for (name, change) in block.payload {
-            match change.delta {
-                Some(delta) => {
-                    table_deltas.entry(name).or_default().push(delta);
-                }
-                None => {
-                    reset_tables.insert(name);
-                }
-            }
-        }
+    for hash in block_hashes {
+        let block = Block::load(work_dir, &hash)?;
+        merge_block_deltas(block, &mut running_deltas, &mut reset_tables);
     }
 
     // Load state for per-table size comparison and fallback.
@@ -153,7 +178,6 @@ fn try_consolidate(work_dir: &Path, head: &str, last_known: &str) -> Result<Cons
 
     // Tables marked for reset go directly to full state.
     for table_name in &reset_tables {
-        table_deltas.remove(table_name);
         if let Some(state_table) = state_tables.get(table_name) {
             log::info!("Table '{}': using full state (layout changed)", table_name);
             result_states.insert(table_name.clone(), state_table.clone());
@@ -162,44 +186,30 @@ fn try_consolidate(work_dir: &Path, head: &str, last_known: &str) -> Result<Cons
         }
     }
 
-    for (table_name, deltas) in table_deltas {
-        match merge_table_deltas(&table_name, deltas) {
-            Ok(mut merged_delta) => {
-                // Strip data the receiver doesn't need.
-                for delete in &mut merged_delta.deletes {
-                    delete.value.clear();
-                }
-                for update in &mut merged_delta.updates {
-                    update.sparse_encode();
-                }
+    for (table_name, merged) in running_deltas {
+        let mut merged_delta = crate::proto::delta::Delta::from(merged);
 
-                // Per-table size comparison: use full state if it's smaller.
-                if let Some(state_table) = state_tables.get(&table_name)
-                    && state_table.encoded_len() < merged_delta.encoded_len()
-                {
-                    log::info!(
-                        "Table '{}': using full state (smaller than consolidated delta)",
-                        table_name
-                    );
-                    result_states.insert(table_name, state_table.clone());
-                    continue;
-                }
-
-                result_deltas.insert(table_name, merged_delta);
-            }
-            Err(e) => {
-                log::warn!(
-                    "Merge failed for table '{}', falling back to full state: {}",
-                    table_name,
-                    e
-                );
-                if let Some(state_table) = state_tables.get(&table_name) {
-                    result_states.insert(table_name, state_table.clone());
-                } else {
-                    log::warn!("Table '{}' not in STATE file, skipping", table_name);
-                }
-            }
+        // Strip data the receiver doesn't need.
+        for delete in &mut merged_delta.deletes {
+            delete.value.clear();
         }
+        for update in &mut merged_delta.updates {
+            update.sparse_encode();
+        }
+
+        // Per-table size comparison: use full state if it's smaller.
+        if let Some(state_table) = state_tables.get(&table_name)
+            && state_table.encoded_len() < merged_delta.encoded_len()
+        {
+            log::info!(
+                "Table '{}': using full state (smaller than consolidated delta)",
+                table_name
+            );
+            result_states.insert(table_name, state_table.clone());
+            continue;
+        }
+
+        result_deltas.insert(table_name, merged_delta);
     }
 
     Ok((created, num_blocks, result_deltas, result_states))
