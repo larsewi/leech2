@@ -70,9 +70,9 @@ Block:
 `Patch::create()` consolidates multiple blocks into a single patch by walking
 the chain from `HEAD` back to a last-known hash (typically the hash stored in
 `REPORTED`, or genesis on first run). To keep memory usage low, consolidation
-proceeds in two phases: first, block hashes are collected by reading only the
-lightweight `BlockHeader` (parent hash field) from each block file — just 42–56
-bytes per block instead of the full payload. Then, blocks are loaded one at a
+proceeds in two phases: first, block hashes are collected by decoding each block
+file as a lightweight `BlockHeader` (which shares field tags with `Block` so
+prost skips the payload). Then, blocks are loaded one at a
 time in oldest-first order and their deltas are merged incrementally into
 per-table running results using 15 conflict-resolution rules (see
 [DELTA_MERGING_RULES.md](DELTA_MERGING_RULES.md)). Each block is dropped after
@@ -151,8 +151,9 @@ position can be safely pruned.
 ### Truncation
 
 After every `Block::create()`, optional truncation runs to reclaim disk space.
-It walks the chain using `Block::load_header()` (reading only 56 bytes per
-block) to determine reachability and creation timestamps, then removes orphaned
+It walks the chain using `Block::load_header()` (decoding only the parent hash
+and timestamp, skipping the payload) to determine reachability and creation
+timestamps, then removes orphaned
 blocks (not reachable from `HEAD`), blocks older than the `REPORTED` position,
 and blocks exceeding configured `max-blocks` or `max-age` limits.
 
@@ -222,7 +223,7 @@ tests/          Acceptance tests
 - **Block** (`src/block.rs`) -- A content-addressable unit containing a timestamp, parent hash, and a map of `TableChange` entries keyed by table name. Each `TableChange` wraps an optional delta: present for normal changes, absent (`None`) when a table's field layout changed. Blocks form a linked chain, SHA-1 hashed and stored by hash. A companion `BlockHeader` proto message (defined in `block.proto`) allows reading just the parent hash and timestamp from a block file without decoding the payload, used by patch consolidation and truncation for lightweight chain traversal.
 - **Patch** (`src/patch.rs`) -- Consolidates multiple blocks from HEAD back to a `last_known` hash by merging deltas per table independently. Tables with layout changes (delta-less `TableChange`) go directly to full state. Each table's consolidated delta is compared against its full state, and the smaller representation is chosen. A single patch can contain a mix of delta and state tables. Patches also carry per-table `field_hashes` for agent-hub validation.
 - **Head** (`src/head.rs`) -- Reads/writes the `HEAD` file tracking the current block hash.
-- **Storage** (`src/storage.rs`) -- File I/O with `fs2` file locking (exclusive for writes, shared for reads). Provides `load_prefix()` for reading only the first N bytes of a file, used by `Block::load_header()` to avoid reading full block payloads.
+- **Storage** (`src/storage.rs`) -- File I/O with `fs2` file locking (exclusive for writes, shared for reads).
 
 ## Work directory layout
 
@@ -291,7 +292,7 @@ Patch::create(last_known_hash)
     |
     v
 Collect block hashes: HEAD -> ... -> last_known
-    (reads only BlockHeader — 42-56 bytes per block)
+    (decodes each block as BlockHeader, skipping payload)
     |
     v
 Load blocks one at a time oldest-first, merging deltas incrementally
