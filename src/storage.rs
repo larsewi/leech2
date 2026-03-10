@@ -101,33 +101,6 @@ pub fn load(work_dir: &Path, name: &str) -> Result<Option<Vec<u8>>> {
     Ok(Some(data))
 }
 
-/// Loads at most `limit` bytes from the start of a file in the work directory.
-pub fn load_prefix(work_dir: &Path, name: &str, limit: usize) -> Result<Option<Vec<u8>>> {
-    let path = work_dir.join(name);
-    if !path.exists() {
-        log::debug!("File '{}' does not exist", path.display());
-        return Ok(None);
-    }
-
-    let _lock = acquire_lock(work_dir, name, false)?;
-
-    let mut data = vec![0u8; limit];
-    let bytes_read = File::open(&path)
-        .with_context(|| format!("failed to open file '{}'", path.display()))?
-        .take(limit as u64)
-        .read(&mut data)
-        .with_context(|| format!("failed to read from '{}'", path.display()))?;
-    data.truncate(bytes_read);
-
-    // _lock dropped here, releasing shared lock.
-    log::debug!(
-        "Loaded {} bytes (prefix) from '{}'",
-        bytes_read,
-        path.display()
-    );
-    Ok(Some(data))
-}
-
 pub fn resolve_hash_prefix(work_dir: &Path, prefix: &str) -> Result<String> {
     let mut matches: Vec<String> = Vec::new();
 

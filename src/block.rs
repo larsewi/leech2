@@ -59,15 +59,13 @@ impl Block {
         Ok(block)
     }
 
-    /// Load the block header (parent hash + created timestamp) without reading
-    /// or decoding the full payload. Reads a small prefix of the file and
-    /// decodes it via [`BlockHeader`].
+    /// Load the block header (parent hash + created timestamp) without
+    /// decoding the full payload. Reads the block file and decodes it as a
+    /// [`BlockHeader`], which shares field tags with [`Block`] — prost skips
+    /// the unknown payload field so only the parent hash and timestamp are
+    /// deserialized.
     pub fn load_header(work_dir: &Path, hash: &str) -> Result<BlockHeader> {
-        // Field 1 (parent): 1 tag + 1 length + 40 hash = 42 bytes.
-        // Field 2 (created): 1 tag + 1 length + up to 12 Timestamp = 14 bytes.
-        // Total: 56 bytes covers both fields with room to spare.
-        const HEADER_SIZE: usize = 56;
-        let data = storage::load_prefix(work_dir, hash, HEADER_SIZE)?
+        let data = storage::load(work_dir, hash)?
             .with_context(|| format!("failed to load block '{:.7}...'", hash))?;
         let header = BlockHeader::decode(data.as_slice())
             .with_context(|| format!("failed to decode header from block '{:.7}...'", hash))?;
