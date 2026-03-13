@@ -15,6 +15,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Workflow
 
+- **Never commit directly to `master`.** When starting a new piece of work, first run `git fetch origin`, then create and check out a new branch that tracks `origin/master` (e.g. `git checkout -b <branch-name> origin/master`). All commits must go on a feature/fix branch.
 - Always run `cargo fmt` and `cargo clippy` after changing Rust code.
 - Update documentation ([README.md](README.md), [CONTRIBUTING.md](CONTRIBUTING.md), [DELTA_MERGING_RULES.md](DELTA_MERGING_RULES.md)) when changing or adding features.
 - Avoid `unwrap()`, `expect()`, and other panicking functions in production code. Use proper error handling (`?`, `ok_or_else`, pattern matching, etc.) instead. Panicking in tests is acceptable.
