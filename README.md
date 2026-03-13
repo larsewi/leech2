@@ -173,7 +173,7 @@ lch_patch_create(config, NULL, &buf, &len);
 char *sql;
 lch_patch_to_sql(config, buf, len, &sql);
 printf("%s", sql);
-lch_free_sql(sql);
+lch_sql_free(sql);
 
 int flags = hub_send(buf, len) ? LCH_PATCH_APPLIED : 0;
 lch_patch_free(config, buf, len, flags);

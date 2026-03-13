@@ -5,7 +5,7 @@
  * leech2 tracks CSV data sources, computes diffs between snapshots, and
  * produces SQL patches that can be applied to a downstream database.
  *
- * All functions (except lch_init, lch_deinit, and lch_free_sql) return
+ * All functions (except lch_init, lch_deinit, and lch_sql_free) return
  * LCH_SUCCESS on success and LCH_FAILURE on error. Errors are logged via
  * env_logger; set the LEECH2_LOG environment variable (e.g. LEECH2_LOG=debug)
  * for detailed output.
@@ -101,7 +101,7 @@ extern int lch_patch_create(const lch_config_t *config, const char *hash, uint8_
  * @param buf     Pointer to the encoded patch (must not be NULL).
  * @param len     Length of @p buf in bytes.
  * @param[out] sql  Receives a pointer to the SQL string, or NULL if the patch
- *                  is empty. Free with lch_free_sql().
+ *                  is empty. Free with lch_sql_free().
  * @return LCH_SUCCESS on success, LCH_FAILURE on error.
  */
 extern int lch_patch_to_sql(const lch_config_t *config, const uint8_t *buf, size_t len, char **sql);
@@ -132,6 +132,6 @@ extern int lch_patch_free(const lch_config_t *config, uint8_t *buf, size_t len, 
  *
  * @param sql  SQL string to free, or NULL.
  */
-extern void lch_free_sql(char *sql);
+extern void lch_sql_free(char *sql);
 
 #endif /* __LEECH2_H__ */

@@ -222,7 +222,7 @@ pub unsafe extern "C" fn lch_patch_to_sql(
 /// # Safety
 /// `ptr` must be null or a pointer previously returned by `lch_patch_to_sql`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn lch_free_sql(ptr: *mut c_char) {
+pub unsafe extern "C" fn lch_sql_free(ptr: *mut c_char) {
     if !ptr.is_null() {
         unsafe {
             drop(CString::from_raw(ptr));
