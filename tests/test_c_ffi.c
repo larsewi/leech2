@@ -38,12 +38,13 @@ int main(int argc, char *argv[]) {
   ret = lch_patch_to_sql(config, buf, len, &sql);
   if (ret == LCH_FAILURE) {
     fprintf(stderr, "lch_patch_to_sql failed\n");
-    lch_patch_free(config, buf, len, 0);
+    lch_patch_free(buf, len);
     lch_deinit(config);
     return EXIT_FAILURE;
   }
 
-  lch_patch_free(config, buf, len, LCH_PATCH_APPLIED);
+  lch_patch_applied(config, buf, len);
+  lch_patch_free(buf, len);
 
   if (sql != NULL) {
     lch_sql_free(sql);

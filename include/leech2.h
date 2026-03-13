@@ -5,7 +5,7 @@
  * leech2 tracks CSV data sources, computes diffs between snapshots, and
  * produces SQL patches that can be applied to a downstream database.
  *
- * All functions (except lch_init, lch_deinit, and lch_sql_free) return
+ * All functions (except lch_init, lch_deinit, lch_patch_free, and lch_sql_free) return
  * LCH_SUCCESS on success and LCH_FAILURE on error. Errors are logged via
  * env_logger; set the LEECH2_LOG environment variable (e.g. LEECH2_LOG=debug)
  * for detailed output.
@@ -19,8 +19,6 @@
 
 #define LCH_SUCCESS       0
 #define LCH_FAILURE      -1
-
-#define LCH_PATCH_APPLIED 1
 
 /**
  * Opaque configuration handle.
@@ -74,8 +72,7 @@ extern int lch_block_create(const lch_config_t *config);
  * If @p hash is NULL the REPORTED hash is used as the starting point; if
  * REPORTED does not exist, genesis (the very beginning of the chain) is used.
  *
- * The buffer written to @p buf must eventually be passed to lch_patch_applied()
- * which frees it.
+ * The buffer written to @p buf must eventually be freed with lch_patch_free().
  *
  * @param config  Valid config handle (must not be NULL).
  * @param hash    Last-known block hash (null-terminated string), or NULL.
@@ -107,23 +104,28 @@ extern int lch_patch_create(const lch_config_t *config, const char *hash, uint8_
 extern int lch_patch_to_sql(const lch_config_t *config, const uint8_t *buf, size_t len, char **sql);
 
 /**
- * Free a patch buffer and optionally mark it as applied.
+ * Mark a patch as applied.
  *
- * Always frees the buffer pointed to by @p buf, regardless of errors or the
- * value of @p flags. After this call, @p buf is invalid and must not be used.
- *
- * If LCH_PATCH_APPLIED is set in @p flags, the REPORTED file is updated with
- * the patch's head hash so that future truncation knows which blocks are safe
- * to remove.
+ * Updates the REPORTED file with the patch's head hash so that future
+ * truncation knows which blocks are safe to remove.
  *
  * @param config  Valid config handle (must not be NULL).
- * @param buf     Patch buffer previously returned by lch_patch_create(),
- *                or NULL.
+ * @param buf     Pointer to the encoded patch (must not be NULL).
  * @param len     Length of @p buf in bytes.
- * @param flags   Bitmask of flags (e.g. LCH_PATCH_APPLIED).
- * @return LCH_SUCCESS on success, LCH_FAILURE on error (the buffer is still freed).
+ * @return LCH_SUCCESS on success, LCH_FAILURE on error.
  */
-extern int lch_patch_free(const lch_config_t *config, uint8_t *buf, size_t len, int flags);
+extern int lch_patch_applied(const lch_config_t *config, const uint8_t *buf, size_t len);
+
+/**
+ * Free a patch buffer without marking it as applied.
+ *
+ * Passing NULL is a safe no-op. After this call, @p buf is invalid and must
+ * not be used.
+ *
+ * @param buf  Patch buffer previously returned by lch_patch_create(), or NULL.
+ * @param len  Length of @p buf in bytes.
+ */
+extern void lch_patch_free(uint8_t *buf, size_t len);
 
 /**
  * Free an SQL string returned by lch_patch_to_sql().
