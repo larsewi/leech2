@@ -69,8 +69,8 @@ Config can be `config.toml` or `config.json`.
 
 ```toml
 [tables.products]
-source = "products.csv"  # relative to work dir, or absolute
-header = true
+source = "products.csv"  # where to find the CSV (relative to work dir, or absolute)
+header = true            # whether the CSV has a header column (defaults to false)
 
 [[tables.products.fields]]
 name = "id"
