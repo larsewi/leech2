@@ -162,25 +162,25 @@ and blocks older than the last reported position (see `lch_patch_applied`).
 See [`include/leech2.h`](include/leech2.h) for the full API reference.
 
 ```c
-lch_config_t *config = lch_init("/path/to/.leech2");
+lch_config_t *cfg = lch_init("/path/to/.leech2");
 
-lch_block_create(config);
+lch_block_create(cfg);
 
 uint8_t *buf;
 size_t len;
-lch_patch_create(config, NULL, &buf, &len);
+lch_patch_create(cfg, NULL, &buf, &len);
 
 char *sql;
-lch_patch_to_sql(config, buf, len, &sql);
+lch_patch_to_sql(cfg, buf, len, &sql);
 printf("%s", sql);
 lch_sql_free(sql);
 
 if (hub_send(buf, len)) {
-  lch_patch_applied(config, buf, len);
+  lch_patch_applied(cfg, buf, len);
 }
 lch_patch_free(buf, len);
 
-lch_deinit(config);
+lch_deinit(cfg);
 ```
 
 ## Contributing
