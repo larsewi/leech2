@@ -62,8 +62,8 @@ pub fn run(config: &Config) -> Result<()> {
 
     let mut current_hash = head_hash.clone();
     while current_hash != GENESIS_HASH {
-        let block = match Block::load(work_dir, &current_hash) {
-            Ok(block) => block,
+        let header = match Block::load_header(work_dir, &current_hash) {
+            Ok(header) => header,
             Err(_) => {
                 // Block was previously truncated — end of reachable chain
                 log::debug!(
@@ -73,17 +73,16 @@ pub fn run(config: &Config) -> Result<()> {
                 break;
             }
         };
-        let created = block.created.map(|ts| {
+        let created = header.created.map(|ts| {
             SystemTime::UNIX_EPOCH
                 + std::time::Duration::new(ts.seconds.max(0) as u64, ts.nanos.max(0) as u32)
         });
-        let parent = block.parent.clone();
         reachable.insert(current_hash.clone());
         chain.push(ChainEntry {
             hash: current_hash,
             created,
         });
-        current_hash = parent;
+        current_hash = header.parent;
     }
 
     // Orphan removal: delete block files on disk not in reachable set,

@@ -69,8 +69,8 @@ Config can be `config.toml` or `config.json`.
 
 ```toml
 [tables.products]
-source = "products.csv"  # relative to work dir, or absolute
-header = true
+source = "products.csv"  # where to find the CSV (relative to work dir, or absolute)
+header = true            # whether the CSV has a header column (defaults to false)
 
 [[tables.products.fields]]
 name = "id"
@@ -157,7 +157,7 @@ All fields are optional and independent. Supported duration suffixes: `s`
 (seconds), `m` (minutes), `h` (hours), `d` (days), `w` (weeks).
 
 By default, truncation removes orphaned blocks (on disk but not reachable from
-HEAD) and blocks older than the last reported position (see `lch_patch_free`).
+HEAD) and blocks older than the last reported position (see `lch_patch_applied`).
 Set `remove-orphans = false` or `truncate-reported = false` to disable these
 behaviors.
 
@@ -166,23 +166,25 @@ behaviors.
 See [`include/leech2.h`](include/leech2.h) for the full API reference.
 
 ```c
-lch_config_t *config = lch_init("/path/to/.leech2");
+lch_config_t *cfg = lch_init("/path/to/.leech2");
 
-lch_block_create(config);
+lch_block_create(cfg);
 
 uint8_t *buf;
 size_t len;
-lch_patch_create(config, NULL, &buf, &len);
+lch_patch_create(cfg, NULL, &buf, &len);
 
 char *sql;
-lch_patch_to_sql(config, buf, len, &sql);
+lch_patch_to_sql(cfg, buf, len, &sql);
 printf("%s", sql);
-lch_free_sql(sql);
+lch_sql_free(sql);
 
-int flags = hub_send(buf, len) ? LCH_PATCH_APPLIED : 0;
-lch_patch_free(config, buf, len, flags);
+if (hub_send(buf, len)) {
+  lch_patch_applied(cfg, buf, len);
+}
+lch_patch_free(buf, len);
 
-lch_deinit(config);
+lch_deinit(cfg);
 ```
 
 ## Contributing

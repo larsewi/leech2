@@ -15,6 +15,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Workflow
 
+- **Never commit directly to `master`.** When starting a new piece of work, first run `git fetch origin`, then create and check out a new branch that tracks `origin/master` (e.g. `git checkout -b <branch-name> origin/master`). All commits must go on a feature/fix branch.
 - Always run `cargo fmt` and `cargo clippy` after changing Rust code.
 - Update documentation ([README.md](README.md), [CONTRIBUTING.md](CONTRIBUTING.md), [DELTA_MERGING_RULES.md](DELTA_MERGING_RULES.md)) when changing or adding features.
 - Avoid `unwrap()`, `expect()`, and other panicking functions in production code. Use proper error handling (`?`, `ok_or_else`, pattern matching, etc.) instead. Panicking in tests is acceptable.
@@ -24,7 +25,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Avoid abbreviations in variable names. Prefer descriptive names (e.g., `table_config` over `tc`).
 - Prefer `From`/`Into` (or `TryFrom`/`TryInto` for fallible conversions) over manual construction when converting between types, especially domain-to-proto conversions.
 - After implementing new features, look for opportunities to refactor the code to improve readability and reduce duplication.
+- Never include a "Test plan" section in pull request descriptions.
 - Commit often, but ensure each commit leaves leech2 in a working state (builds, tests pass, clippy clean).
+- Every commit message must include a `Signed-off-by` line. Example:
+  ```
+  Short summary of the change
+
+  Signed-off-by: Lars Erik Wik <lars.erik.wik@northern.tech>
+  ```
 
 ## Architecture
 

@@ -222,7 +222,7 @@ pub unsafe extern "C" fn lch_patch_to_sql(
 /// # Safety
 /// `ptr` must be null or a pointer previously returned by `lch_patch_to_sql`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn lch_free_sql(ptr: *mut c_char) {
+pub unsafe extern "C" fn lch_sql_free(ptr: *mut c_char) {
     if !ptr.is_null() {
         unsafe {
             drop(CString::from_raw(ptr));
@@ -233,53 +233,49 @@ pub unsafe extern "C" fn lch_free_sql(ptr: *mut c_char) {
 /// # Safety
 /// `config` must be a valid, non-null pointer returned by `lch_init`.
 /// `buf` must be a valid pointer to `len` bytes, previously returned by `lch_patch_create`.
-/// The buffer is always freed regardless of the `flags` value or any errors.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn lch_patch_free(
+pub unsafe extern "C" fn lch_patch_applied(
     config: *const config::Config,
-    buf: *mut u8,
+    buf: *const u8,
     len: usize,
-    flags: i32,
 ) -> i32 {
-    const LCH_PATCH_APPLIED: i32 = 1;
-
     if config.is_null() {
-        log::error!("lch_patch_free(): Bad argument: config cannot be NULL");
-        // Still free the buffer even on argument errors
-        if !buf.is_null() {
-            unsafe {
-                drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(buf, len)));
-            }
-        }
+        log::error!("lch_patch_applied(): Bad argument: config cannot be NULL");
+        return FAILURE;
+    }
+
+    if buf.is_null() {
+        log::error!("lch_patch_applied(): Bad argument: buf cannot be NULL");
         return FAILURE;
     }
 
     let config = unsafe { &*config };
+    let data = unsafe { std::slice::from_raw_parts(buf, len) };
 
-    // Reconstruct the Box<[u8]> to reclaim the allocation. Converting to Vec
-    // reuses the same allocation without copying, and the Vec is dropped (freed)
-    // when this function returns — regardless of early returns below.
-    let data = if buf.is_null() {
-        Vec::new()
-    } else {
-        unsafe { Box::from_raw(std::ptr::slice_from_raw_parts_mut(buf, len)) }.into_vec()
+    let patch = match wire::decode_patch(data) {
+        Ok(p) => p,
+        Err(e) => {
+            log::error!("lch_patch_applied(): Failed to decode patch: {:#}", e);
+            return FAILURE;
+        }
     };
 
-    if flags & LCH_PATCH_APPLIED != 0 {
-        let patch = match wire::decode_patch(&data) {
-            Ok(p) => p,
-            Err(e) => {
-                log::error!("lch_patch_free(): Failed to decode patch: {:#}", e);
-                return FAILURE; // data is dropped here, freeing the buffer
-            }
-        };
-
-        if let Err(e) = self::reported::save(&config.work_dir, &patch.head) {
-            log::error!("lch_patch_free(): Failed to save REPORTED: {:#}", e);
-            return FAILURE; // data is dropped here, freeing the buffer
-        }
+    if let Err(e) = self::reported::save(&config.work_dir, &patch.head) {
+        log::error!("lch_patch_applied(): Failed to save REPORTED: {:#}", e);
+        return FAILURE;
     }
 
-    // data is dropped here, freeing the buffer
     SUCCESS
+}
+
+/// # Safety
+/// `buf` must be a valid pointer to `len` bytes, previously returned by `lch_patch_create`,
+/// or NULL (no-op).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn lch_patch_free(buf: *mut u8, len: usize) {
+    if !buf.is_null() {
+        unsafe {
+            drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(buf, len)));
+        }
+    }
 }
