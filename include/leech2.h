@@ -36,9 +36,9 @@ typedef enum {
 /**
  * Callback type for receiving log messages.
  *
- * @param level    Severity level of the message.
- * @param message  Null-terminated log message string. Only valid for the
- *                 duration of the callback invocation.
+ * @param level      Severity level of the message.
+ * @param message    Null-terminated log message string. Only valid for the
+ *                   duration of the callback invocation.
  * @param user_data  Opaque pointer passed to lch_log_init().
  */
 typedef void (*lch_log_callback_t)(
@@ -113,8 +113,8 @@ extern int lch_block_create(const lch_config_t *config);
  *
  * The buffer written to @p buf must eventually be freed with lch_patch_free().
  *
- * @param config  Valid config handle (must not be NULL).
- * @param hash    Last-known block hash (null-terminated string), or NULL.
+ * @param config    Valid config handle (must not be NULL).
+ * @param hash      Last-known block hash (null-terminated string), or NULL.
  * @param[out] buf  Receives a pointer to the encoded patch buffer.
  * @param[out] len  Receives the length of the patch buffer in bytes.
  * @return LCH_SUCCESS on success, LCH_FAILURE on error.
@@ -133,9 +133,9 @@ extern int lch_patch_create(const lch_config_t *config, const char *hash, uint8_
  * If the patch contains no actionable changes, @p sql is set to NULL and the
  * function returns LCH_SUCCESS.
  *
- * @param config  Valid config handle (must not be NULL).
- * @param buf     Pointer to the encoded patch (must not be NULL).
- * @param len     Length of @p buf in bytes.
+ * @param config    Valid config handle (must not be NULL).
+ * @param buf       Pointer to the encoded patch (must not be NULL).
+ * @param len       Length of @p buf in bytes.
  * @param[out] sql  Receives a pointer to the SQL string, or NULL if the patch
  *                  is empty. Free with lch_sql_free().
  * @return LCH_SUCCESS on success, LCH_FAILURE on error.
