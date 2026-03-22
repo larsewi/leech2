@@ -62,6 +62,11 @@ Config can be `config.toml` or `config.json`.
 
 - Each table must have at least one field marked `primary-key = true`
 - Field names within a table must be unique
+- When `header = true`, the first row of the CSV is treated as a header. Each
+  config field is matched to a CSV column by name, so columns may appear in any
+  order. Every config field name must be present in the header; extra CSV columns
+  are ignored. When `header = false` (the default), CSV columns are mapped to
+  config fields by position — the first column maps to the first field, etc.
 - The type field controls how values are quoted in generated SQL. These are not
   database column types — your database may use any compatible type (e.g.
   `INTEGER`, `FLOAT`, `TIMESTAMP`). It is your responsibility to ensure the
@@ -70,7 +75,7 @@ Config can be `config.toml` or `config.json`.
 ```toml
 [tables.products]
 source = "products.csv"  # where to find the CSV (relative to work dir, or absolute)
-header = true            # whether the CSV has a header column (defaults to false)
+header = true            # CSV has a header row (defaults to false)
 
 [[tables.products.fields]]
 name = "id"

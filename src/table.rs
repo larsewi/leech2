@@ -74,9 +74,27 @@ impl Table {
         Ok(table)
     }
 
-    fn parse_csv(config: &TableConfig, reader: csv::Reader<File>) -> Result<Self> {
+    fn parse_csv(config: &TableConfig, mut reader: csv::Reader<File>) -> Result<Self> {
         let field_names = config.field_names();
         let primary_key = config.primary_key();
+
+        // Map each config field to its CSV column index.
+        // When header=true, match by name; otherwise, use positional order.
+        let mut field_indices = Vec::with_capacity(field_names.len());
+        if config.header {
+            let headers = reader.headers().context("failed to read CSV header")?;
+            for name in &field_names {
+                let index = headers
+                    .iter()
+                    .position(|h| h == name)
+                    .ok_or_else(|| anyhow::anyhow!("field '{}' not found in CSV header", name))?;
+                field_indices.push(index);
+            }
+        } else {
+            for i in 0..field_names.len() {
+                field_indices.push(i);
+            }
+        }
 
         let primary_indices: Vec<usize> = primary_key
             .iter()
@@ -85,33 +103,37 @@ impl Table {
                     .iter()
                     .position(|name| name == primary_key_column)
             })
+            .map(|config_index| field_indices[config_index])
             .collect();
 
         let subsidiary_indices: Vec<usize> = field_names
             .iter()
             .enumerate()
             .filter(|(_, column)| !primary_key.contains(column))
-            .map(|(i, _)| i)
+            .map(|(config_index, _)| field_indices[config_index])
             .collect();
 
         // Order fields with primary key columns first, then subsidiary columns.
-        let fields: Vec<String> = primary_indices
+        let fields: Vec<String> = primary_key
             .iter()
-            .chain(subsidiary_indices.iter())
-            .map(|&i| field_names[i].clone())
+            .chain(
+                field_names
+                    .iter()
+                    .filter(|name| !primary_key.contains(name)),
+            )
+            .cloned()
             .collect();
 
-        let expected_len = field_names.len();
         let mut records: HashMap<Vec<String>, Vec<String>> = HashMap::new();
 
         for (row_num, record) in reader.into_records().enumerate() {
             let record = record?;
 
-            if record.len() != expected_len {
+            if !config.header && record.len() != field_names.len() {
                 anyhow::bail!(
                     "row {}: expected {} fields but got {}",
                     row_num + 1,
-                    expected_len,
+                    field_names.len(),
                     record.len()
                 );
             }

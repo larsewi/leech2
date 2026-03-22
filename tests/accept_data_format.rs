@@ -47,6 +47,56 @@ fields = [
 }
 
 #[test]
+fn test_csv_header_reordered_columns() {
+    common::init_logging();
+    let tmp = tempfile::tempdir().unwrap();
+    let work_dir = tmp.path();
+
+    // Config declares fields in order: id, name, email
+    common::write_config(
+        work_dir,
+        "config.toml",
+        r#"
+[tables.users]
+source = "users.csv"
+header = true
+fields = [
+    { name = "id", type = "NUMBER", primary-key = true },
+    { name = "name", type = "TEXT" },
+    { name = "email", type = "TEXT" },
+]
+"#,
+    );
+
+    // CSV columns are in a different order: name, email, id
+    common::write_csv(
+        work_dir,
+        "users.csv",
+        "name,email,id\nAlice,alice@example.com,1\nBob,bob@example.com,2\n",
+    );
+    let config = Config::load(work_dir).unwrap();
+    Block::create(&config).unwrap();
+
+    let patch = Patch::create(&config, GENESIS_HASH).unwrap();
+    let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
+
+    // Verify values are correctly mapped despite reordered CSV columns
+    assert_eq!(common::count_sql(&sql, "INSERT INTO"), 2);
+    assert!(sql.contains("'Alice'"));
+    assert!(sql.contains("'alice@example.com'"));
+    assert!(sql.contains("'Bob'"));
+    assert!(sql.contains("'bob@example.com'"));
+
+    // Verify header values are not treated as data
+    assert!(
+        !sql.contains("VALUES ('name',"),
+        "header row should be skipped"
+    );
+
+    common::assert_wire_roundtrip(&config, &patch);
+}
+
+#[test]
 fn test_empty_csv_table() {
     common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
