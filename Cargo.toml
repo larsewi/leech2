@@ -2,6 +2,10 @@
 name = "leech2"
 version = "0.1.0"
 edition = "2024"
+description = "Track CSV changes and produce SQL patches via a git-like block chain"
+license = "MIT"
+repository = "https://github.com/larsewi/leech2"
+homepage = "https://github.com/larsewi/leech2"
 
 [lib]
 crate-type = ["cdylib", "lib"]
@@ -32,3 +36,26 @@ tempfile = "3"
 
 [build-dependencies]
 prost-build = "0.14"
+
+[package.metadata.deb]
+maintainer = "Lars Erik Wik <lars.erik.wik@northern.tech>"
+section = "utils"
+priority = "optional"
+depends = "libc6"
+assets = [
+    ["target/release/lch", "usr/bin/", "755"],
+    ["target/release/libleech2.so", "usr/lib/", "755"],
+    ["include/leech2.h", "usr/include/", "644"],
+    ["README.md", "usr/share/doc/leech2/", "644"],
+]
+
+[package.metadata.generate-rpm]
+assets = [
+    { source = "target/release/lch", dest = "/usr/bin/lch", mode = "755" },
+    { source = "target/release/libleech2.so", dest = "/usr/lib64/libleech2.so", mode = "755" },
+    { source = "include/leech2.h", dest = "/usr/include/leech2.h", mode = "644" },
+    { source = "README.md", dest = "/usr/share/doc/leech2/README.md", mode = "644" },
+]
+
+[package.metadata.generate-rpm.requires]
+glibc = "*"
