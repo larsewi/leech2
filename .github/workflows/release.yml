@@ -12,7 +12,7 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Read version from Cargo.toml
         id: version
@@ -47,7 +47,7 @@ jobs:
             artifact: macos-aarch64
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Install dependencies (Linux)
         if: runner.os == 'Linux'
@@ -103,21 +103,21 @@ jobs:
           tar czf "dist/${DIR}.tar.gz" -C dist "${DIR}"
 
       - name: Upload tarball
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact }}-tarball
           path: dist/*.tar.gz
 
       - name: Upload .deb
         if: runner.os == 'Linux'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact }}-deb
           path: target/${{ matrix.target }}/debian/*.deb
 
       - name: Upload .rpm
         if: runner.os == 'Linux'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact }}-rpm
           path: target/${{ matrix.target }}/generate-rpm/*.rpm
@@ -128,7 +128,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Create and push tag
         run: |
@@ -136,7 +136,7 @@ jobs:
           git push origin "v${{ needs.validate.outputs.version }}"
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
 
