@@ -1,0 +1,163 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (e.g., 0.2.0) — must match Cargo.toml version"
+        required: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Verify version matches Cargo.toml
+        run: |
+          CARGO_VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          if [ "$CARGO_VERSION" != "${{ inputs.version }}" ]; then
+            echo "::error::Cargo.toml version ($CARGO_VERSION) does not match input version (${{ inputs.version }})"
+            exit 1
+          fi
+
+      - name: Check tag does not already exist
+        run: |
+          if git rev-parse "v${{ inputs.version }}" >/dev/null 2>&1; then
+            echo "::error::Tag v${{ inputs.version }} already exists"
+            exit 1
+          fi
+
+  build:
+    needs: validate
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            artifact: linux-x86_64
+            cross: false
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            artifact: linux-aarch64
+            cross: true
+          - target: x86_64-apple-darwin
+            os: macos-13
+            artifact: macos-x86_64
+            cross: false
+          - target: aarch64-apple-darwin
+            os: macos-14
+            artifact: macos-aarch64
+            cross: false
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install protoc (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
+      - name: Install protoc (macOS)
+        if: runner.os == 'macOS'
+        run: brew install protobuf
+
+      - name: Add Rust target
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Build (cross)
+        if: matrix.cross
+        run: |
+          cargo install cross --locked
+          cross build --release --target ${{ matrix.target }}
+
+      - name: Build (native)
+        if: "!matrix.cross"
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Package .deb
+        if: runner.os == 'Linux'
+        run: |
+          cargo install cargo-deb --locked
+          cargo deb --no-build --target ${{ matrix.target }}
+
+      - name: Package .rpm
+        if: runner.os == 'Linux'
+        run: |
+          cargo install cargo-generate-rpm --locked
+          cargo generate-rpm --target ${{ matrix.target }}
+
+      - name: Determine library extension
+        id: libext
+        run: |
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            echo "ext=dylib" >> "$GITHUB_OUTPUT"
+          else
+            echo "ext=so" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create tarball
+        run: |
+          DIR="leech2-${{ inputs.version }}-${{ matrix.artifact }}"
+          mkdir -p "dist/${DIR}"
+          cp "target/${{ matrix.target }}/release/lch" "dist/${DIR}/"
+          cp "target/${{ matrix.target }}/release/libleech2.${{ steps.libext.outputs.ext }}" "dist/${DIR}/"
+          cp include/leech2.h "dist/${DIR}/"
+          cp README.md "dist/${DIR}/"
+          cp LICENSE "dist/${DIR}/"
+          tar czf "dist/${DIR}.tar.gz" -C dist "${DIR}"
+
+      - name: Upload tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}-tarball
+          path: dist/*.tar.gz
+
+      - name: Upload .deb
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}-deb
+          path: target/${{ matrix.target }}/debian/*.deb
+
+      - name: Upload .rpm
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}-rpm
+          path: target/${{ matrix.target }}/generate-rpm/*.rpm
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Create and push tag
+        run: |
+          git tag "v${{ inputs.version }}"
+          git push origin "v${{ inputs.version }}"
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Collect release assets
+        run: |
+          mkdir -p release-assets
+          find artifacts -type f \( -name '*.tar.gz' -o -name '*.deb' -o -name '*.rpm' \) \
+            -exec cp {} release-assets/ \;
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v${{ inputs.version }}" \
+            --title "leech2 v${{ inputs.version }}" \
+            --generate-notes \
+            release-assets/*
