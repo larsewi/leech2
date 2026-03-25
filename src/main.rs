@@ -278,7 +278,8 @@ fn print_with_pager(content: &str) {
         return;
     }
 
-    let pager_cmd = std::env::var("PAGER").unwrap_or_else(|_| "less".to_string());
+    let default_pager = if cfg!(windows) { "more" } else { "less" };
+    let pager_cmd = std::env::var("PAGER").unwrap_or_else(|_| default_pager.to_string());
 
     let mut child = match ProcessCommand::new(&pager_cmd)
         .stdin(Stdio::piped())

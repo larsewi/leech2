@@ -18,7 +18,15 @@ runs:
           PROTOC_ARCH="osx-x86_64"
         elif [ "$OS" = "Darwin" ] && [ "$ARCH" = "arm64" ]; then
           PROTOC_ARCH="osx-aarch_64"
+        elif echo "$OS" | grep -qi "mingw\|msys\|cygwin\|windows_nt"; then
+          PROTOC_ARCH="win64"
         fi
-        curl -LO "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-${PROTOC_ARCH}.zip"
-        sudo unzip "protoc-${PROTOC_VERSION}-${PROTOC_ARCH}.zip" -d /usr/local
-        rm "protoc-${PROTOC_VERSION}-${PROTOC_ARCH}.zip"
+        ZIPFILE="protoc-${PROTOC_VERSION}-${PROTOC_ARCH}.zip"
+        curl -LO "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/${ZIPFILE}"
+        if echo "$OS" | grep -qi "mingw\|msys\|cygwin\|windows_nt"; then
+          unzip "${ZIPFILE}" -d "$HOME/.local"
+          echo "$(cygpath -w "$HOME/.local/bin")" >> "$GITHUB_PATH"
+        else
+          sudo unzip "${ZIPFILE}" -d /usr/local
+        fi
+        rm "${ZIPFILE}"
