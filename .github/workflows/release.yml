@@ -138,6 +138,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y clamav
+          sudo systemctl stop clamav-freshclam
           sudo freshclam
           clamscan --recursive --infected release-assets/
 
