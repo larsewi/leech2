@@ -1,6 +1,6 @@
 [package]
 name = "leech2"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 description = "Track CSV changes and produce SQL patches via a git-like block chain"
 license = "MIT"
