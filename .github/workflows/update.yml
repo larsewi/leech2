@@ -1,0 +1,29 @@
+name: Update
+
+on:
+  schedule:
+    - cron: "0 9 * * 1" # Every Monday at 09:00 UTC
+  workflow_dispatch: # Allows manual triggering
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Update dependencies
+        run: cargo update
+
+      - name: Create pull request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.PAT }}
+          commit-message: "Update Cargo dependencies"
+          branch: auto/update-dependencies
+          title: "Update Cargo dependencies"
+          body: |
+            Automated weekly update of Cargo dependencies.
+
+            Please review the changes to `Cargo.lock` before merging.
+          delete-branch: true
