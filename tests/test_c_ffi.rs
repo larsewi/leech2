@@ -38,6 +38,7 @@ fields = [
 }
 
 #[test]
+#[cfg_attr(target_os = "windows", ignore)]
 fn test_c_ffi() {
     let bin = build_c_test();
     let tmp = setup_workdir();
@@ -56,6 +57,7 @@ fn test_c_ffi() {
 }
 
 #[test]
+#[cfg_attr(target_os = "windows", ignore)]
 fn test_c_ffi_valgrind() {
     // Skip if valgrind is not installed
     let valgrind_check = Command::new("valgrind").arg("--version").output();

@@ -1,8 +1,6 @@
 name: Test
 
 on:
-  push:
-    branches: ["master"]
   pull_request:
     branches: ["master"]
 
@@ -11,7 +9,13 @@ env:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+          - os: macos-latest
+          - os: windows-latest
+    runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v6

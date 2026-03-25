@@ -2,6 +2,7 @@
 name = "leech2"
 version = "0.1.1"
 edition = "2024"
+authors = ["Lars Erik Wik <lars.erik.wik@northern.tech>"]
 description = "Track CSV changes and produce SQL patches via a git-like block chain"
 license = "MIT"
 repository = "https://github.com/larsewi/leech2"
