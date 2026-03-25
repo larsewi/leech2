@@ -25,8 +25,7 @@ runs:
         curl -LO "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/${ZIPFILE}"
         if echo "$OS" | grep -qi "mingw\|msys\|cygwin\|windows_nt"; then
           unzip "${ZIPFILE}" -d "$HOME/.local"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          echo "PROTOC=$HOME/.local/bin/protoc.exe" >> "$GITHUB_ENV"
+          echo "$(cygpath -w "$HOME/.local/bin")" >> "$GITHUB_PATH"
         else
           sudo unzip "${ZIPFILE}" -d /usr/local
         fi
