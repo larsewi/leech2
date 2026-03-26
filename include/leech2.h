@@ -108,6 +108,10 @@ extern int lch_block_create(const lch_config_t *config);
  * If @p hash is NULL the REPORTED hash is used as the starting point; if
  * REPORTED does not exist, genesis (the very beginning of the chain) is used.
  *
+ * Passing an explicit @p hash allows callers to bypass the built-in REPORTED
+ * mechanism (lch_patch_applied / lch_patch_failed) and implement their own
+ * system for tracking which blocks have been reported.
+ *
  * The buffer written to @p buf must eventually be freed with lch_patch_free().
  *
  * @param config    Valid config handle (must not be NULL).

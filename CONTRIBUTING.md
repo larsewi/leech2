@@ -69,16 +69,21 @@ Block:
 
 `Patch::create()` consolidates multiple blocks into a single patch by walking
 the chain from `HEAD` back to a last-known hash (typically the hash stored in
-`REPORTED`, or genesis on first run). To keep memory usage low, consolidation
-proceeds in two phases: first, block hashes are collected by decoding each block
-file as a lightweight `BlockHeader` (which shares field tags with `Block` so
-prost skips the payload). Then, blocks are loaded one at a
-time in oldest-first order and their deltas are merged incrementally into
-per-table running results using 15 conflict-resolution rules (see
-[DELTA_MERGING_RULES.md](DELTA_MERGING_RULES.md)). Each block is dropped after
-its deltas are merged, so only one block's payload and the per-table running
-results are in memory at a time. Some rules handle non-conflicting scenarios
-seamlessly, while others detect unresolvable conflicts (e.g. double insert).
+`REPORTED`, or genesis on first run). Callers may also pass an explicit hash to
+bypass the built-in REPORTED mechanism (`lch_patch_applied` /
+`lch_patch_failed`) and implement their own system for tracking which blocks
+have been reported.
+
+To keep memory usage low, consolidation proceeds in two phases: first, block
+hashes are collected by decoding each block file as a lightweight `BlockHeader`
+(which shares field tags with `Block` so prost skips the payload). Then, blocks
+are loaded one at a time in oldest-first order and their deltas are merged
+incrementally into per-table running results using 15 conflict-resolution rules
+(see [DELTA_MERGING_RULES.md](DELTA_MERGING_RULES.md)). Each block is dropped
+after its deltas are merged, so only one block's payload and the per-table
+running results are in memory at a time. Some rules handle non-conflicting
+scenarios seamlessly, while others detect unresolvable conflicts (e.g. double
+insert).
 
 When the reference hash is genesis or can't be resolved (e.g. the block was
 truncated), the library skips consolidation entirely and produces a full state
