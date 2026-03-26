@@ -1,9 +1,5 @@
 # Releasing leech2
 
-## Prerequisites
-
-- Push access to the repository
-
 ## Steps
 
 1. **Update the version in `Cargo.toml`**
@@ -15,6 +11,8 @@
    name = "leech2"
    version = "X.Y.Z"
    ```
+
+   Run `cargo build` so that `Cargo.lock` file also gets updated.
 
 2. **Commit and merge the version bump**
 
@@ -35,23 +33,28 @@
      - Linux aarch64
      - macOS x86_64
      - macOS aarch64
-   - Package `.deb` and `.rpm` files for both Linux targets
-   - Create `.tar.gz` archives for all targets
-   - Tag the commit as `vX.Y.Z` and push the tag
+     - Windows x86_64
+   - Package `.deb`, `.rpm` and `.msi` files for Linux and Windows targets
+   - Create `.tar.gz` or `.zip` archives for all targets
+   - Run virus scan on all build artifacts
    - Create a GitHub Release with all artifacts attached
 
 5. **Verify the release**
 
    Check the [Releases](https://github.com/larsewi/leech2/releases) page and
    confirm that the release contains the expected artifacts:
-   - `leech2-X.Y.Z-linux-x86_64.tar.gz`
+   - `leech2-X.Y.Z-1.aarch64.rpm`
+   - `leech2-X.Y.Z-1.x86_64.rpm`
    - `leech2-X.Y.Z-linux-aarch64.tar.gz`
-   - `leech2-X.Y.Z-macos-x86_64.tar.gz`
+   - `leech2-X.Y.Z-linux-x86_64.tar.gz`
    - `leech2-X.Y.Z-macos-aarch64.tar.gz`
+   - `leech2-X.Y.Z-macos-x86_64.tar.gz`
+   - `leech2-X.Y.Z-windows-x86_64.zip`
+   - `leech2-X.Y.Z-x86_64.msi`
    - `leech2_X.Y.Z-1_amd64.deb`
    - `leech2_X.Y.Z-1_arm64.deb`
-   - `leech2-X.Y.Z-1.x86_64.rpm`
-   - `leech2-X.Y.Z-1.aarch64.rpm`
+
+   Update changelog.
 
 ## Retrying a failed release
 
@@ -60,10 +63,3 @@ workflow with the same version.
 
 If the workflow fails after the tag has been pushed, delete the tag before
 retrying:
-
-```bash
-git tag -d vX.Y.Z
-git push origin :refs/tags/vX.Y.Z
-```
-
-Then re-run the workflow.
