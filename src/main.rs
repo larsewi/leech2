@@ -42,6 +42,8 @@ enum Cmd {
     Sql,
     /// Alias for `patch applied`
     Applied,
+    /// Alias for `patch failed`
+    Failed,
 }
 
 #[derive(Subcommand)]
@@ -364,6 +366,9 @@ fn run(cli: Cli) -> Result<()> {
         }
         Cmd::Applied => {
             cmd_patch_applied(&config)?;
+        }
+        Cmd::Failed => {
+            cmd_patch_failed(&config)?;
         }
     }
 
