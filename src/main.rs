@@ -36,7 +36,7 @@ enum Cmd {
         #[command(subcommand)]
         command: PatchCmd,
     },
-    /// List all blocks from HEAD to genesis
+    /// Alias for `block log`
     Log,
 }
 
@@ -53,6 +53,8 @@ enum BlockCmd {
         #[arg(short)]
         n: Option<u32>,
     },
+    /// List all blocks from HEAD to genesis
+    Log,
 }
 
 #[derive(Subcommand)]
@@ -322,6 +324,10 @@ fn run(cli: Cli) -> Result<()> {
             BlockCmd::Create => cmd_block_create(&config)?,
             BlockCmd::Show { reference, n } => {
                 let output = cmd_block_show(&config, reference.as_deref(), *n)?;
+                print_with_pager(&output);
+            }
+            BlockCmd::Log => {
+                let output = cmd_log(&config)?;
                 print_with_pager(&output);
             }
         },
