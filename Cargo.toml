@@ -33,6 +33,7 @@ toml = "0.8"
 zstd = "0.13"
 
 [dev-dependencies]
+cc = "1"
 tempfile = "3"
 
 [build-dependencies]

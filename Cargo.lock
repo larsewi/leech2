@@ -519,6 +519,7 @@ name = "leech2"
 version = "0.1.2"
 dependencies = [
  "anyhow",
+ "cc",
  "chrono",
  "clap",
  "csv",

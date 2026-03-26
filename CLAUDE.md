@@ -8,7 +8,6 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - **Build the Rust library:** `cargo build`
 - **Run Rust tests:** `cargo build && cargo test` (the C FFI test links against the cdylib built by `cargo build`; without it, the linker may fail with undefined references)
-- **Clean stale C FFI objects:** `make -C tests clean` (run this after renaming or removing FFI functions)
 - **Run a single test:** `cargo test <test_name>` (e.g. `cargo test test_merge_rule5`)
 - **Format code:** `cargo fmt`, `clang-format -i`
 - **Lint:** `cargo clippy`
