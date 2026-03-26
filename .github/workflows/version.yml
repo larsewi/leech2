@@ -1,0 +1,41 @@
+name: Version
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Version component to bump"
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-tags: true
+
+      - name: Bump version
+        id: bump
+        run: bash .github/scripts/bump-version.sh "${{ inputs.bump }}" Cargo.toml
+
+      - name: Update Cargo.lock
+        run: cargo update --workspace
+
+      - name: Create pull request
+        uses: ./.github/actions/create-pull-request
+        with:
+          token: ${{ secrets.PAT }}
+          branch: auto/bump-version
+          commit-message: "Bumped version to ${{ steps.bump.outputs.new_version }}"
+          title: "Bumped version to ${{ steps.bump.outputs.new_version }}"
+          body: |
+            Bumped version from ${{ steps.bump.outputs.old_version }} to ${{ steps.bump.outputs.new_version }}.
+
+            Please review the changes before merging.

@@ -6,7 +6,7 @@ on:
   workflow_dispatch: # Allows manual triggering
 
 jobs:
-  update:
+  cargo:
     runs-on: ubuntu-latest
 
     steps:
@@ -16,14 +16,42 @@ jobs:
         run: cargo update
 
       - name: Create pull request
-        uses: peter-evans/create-pull-request@v7
+        uses: ./.github/actions/create-pull-request
         with:
           token: ${{ secrets.PAT }}
-          commit-message: "Update Cargo dependencies"
           branch: auto/update-dependencies
-          title: "Update Cargo dependencies"
+          commit-message: "Updated Cargo dependencies"
+          title: "Updated Cargo dependencies"
           body: |
             Automated weekly update of Cargo dependencies.
 
             Please review the changes to `Cargo.lock` before merging.
-          delete-branch: true
+
+  protoc:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Get latest protoc version
+        id: latest
+        run: |
+          LATEST=$(curl -s https://api.github.com/repos/protocolbuffers/protobuf/releases/latest \
+            | jq -r '.tag_name' \
+            | sed 's/^v//')
+          echo "version=${LATEST}" >> "$GITHUB_OUTPUT"
+
+      - name: Update .protoc-version
+        run: echo "${{ steps.latest.outputs.version }}" > .protoc-version
+
+      - name: Create pull request
+        uses: ./.github/actions/create-pull-request
+        with:
+          token: ${{ secrets.PAT }}
+          branch: auto/update-protoc
+          commit-message: "Updated protoc to ${{ steps.latest.outputs.version }}"
+          title: "Updated protoc to ${{ steps.latest.outputs.version }}"
+          body: |
+            Automated weekly update of the protobuf compiler.
+
+            Please review the version bump before merging.

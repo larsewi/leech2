@@ -1,0 +1,50 @@
+name: Create pull request
+description: Commit changes and open a pull request
+
+inputs:
+  branch:
+    description: "Branch name for the pull request"
+    required: true
+  commit-message:
+    description: "Commit message"
+    required: true
+  title:
+    description: "Pull request title"
+    required: true
+  body:
+    description: "Pull request body"
+    required: true
+  token:
+    description: "GitHub token for authentication"
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Check for changes
+      id: changes
+      shell: bash
+      run: |
+        if git diff --quiet; then
+          echo "has_changes=false" >> "$GITHUB_OUTPUT"
+        else
+          echo "has_changes=true" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Create pull request
+      if: steps.changes.outputs.has_changes == 'true'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git checkout -b "${{ inputs.branch }}"
+        git add -A
+        git commit -m "${{ inputs.commit-message }}"
+        git push -f origin "${{ inputs.branch }}"
+        if ! gh pr list --head "${{ inputs.branch }}" --state open | grep -q .; then
+          gh pr create \
+            --title "${{ inputs.title }}" \
+            --body "${{ inputs.body }}"
+        fi
