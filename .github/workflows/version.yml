@@ -29,13 +29,14 @@ jobs:
         run: cargo update --workspace
 
       - name: Create pull request
-        uses: ./.github/actions/create-pull-request
+        uses: peter-evans/create-pull-request@v7
         with:
           token: ${{ secrets.PAT }}
-          branch: auto/bump-version
           commit-message: "Bumped version to ${{ steps.bump.outputs.new_version }}"
+          branch: auto/bump-version
           title: "Bumped version to ${{ steps.bump.outputs.new_version }}"
           body: |
             Bumped version from ${{ steps.bump.outputs.old_version }} to ${{ steps.bump.outputs.new_version }}.
 
             Please review the changes before merging.
+          delete-branch: true
