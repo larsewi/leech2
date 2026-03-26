@@ -1,7 +1,7 @@
 # leech2
 
 <p align="center">
-  <img src="logo.svg" alt="Leech Logo" width="120"/>
+  <img src="logo.svg" alt="Leech Logo" width="100"/>
 </p>
 
 leech2 tracks changes to tables using a git-like content-addressable block
@@ -28,8 +28,8 @@ choco install protoc
 ## Building
 
 ```sh
-cargo build            # build the library and CLI
-cargo test             # run all tests
+cargo build  # build the library and CLI
+cargo test   # run all tests
 ```
 
 ## Quick start
@@ -141,15 +141,15 @@ records never enter state, deltas, or SQL output.
 
 ```toml
 [filters]
-max-field-length = 1024  # drop records where any field value exceeds this length
+max-field-length = 1024     # drop records where a field exceeds this length
 
 [[filters.exclude]]
-field = "status"         # field name to check
-equals = "inactive"      # exact value — matching records are dropped
+field = "status"            # field name to check
+equals = "inactive"         # records matching value are dropped
 
 [[filters.exclude]]
 field = "description"
-contains = "DEPRECATED"  # substring — records containing this are dropped
+contains = "DEPRECATED"     # records containing value are dropped
 
 [[filters.exclude]]
 table = ["staging_orders"]  # only apply to specific tables (default: all)
@@ -189,10 +189,10 @@ after every `lch_block_create()` / `lch block create`:
 
 ```toml
 [truncate]
-max-blocks = 100         # keep at most 100 blocks in the chain (>= 1)
-max-age = "7d"           # remove blocks older than this duration
-remove-orphans = true    # remove blocks on disk not reachable from HEAD (default: true)
-truncate-reported = true # remove blocks older than last reported position (default: true)
+max-blocks = 100          # keep at most 100 blocks in the chain (>= 1)
+max-age = "7d"            # remove blocks older than this duration
+remove-orphans = true     # remove blocks not reachable from HEAD (default: true)
+truncate-reported = true  # remove blocks older than last reported (default: true)
 ```
 
 All fields are optional and independent. Supported duration suffixes: `s`
@@ -208,7 +208,7 @@ behaviors.
 See [`include/leech2.h`](include/leech2.h) for the full API reference.
 
 ```c
-lch_config_t *cfg = lch_init("/path/to/.leech2");
+lch_config_t *cfg = lch_init("/path/to/workdir");
 
 lch_block_create(cfg);
 
