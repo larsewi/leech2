@@ -1,3 +1,6 @@
+/* Smoke test for the C FFI: exercises every public API function in leech2.h
+ * to verify that the shared library links, runs, and returns success. */
+
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
