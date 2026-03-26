@@ -2,29 +2,19 @@
 
 ## Steps
 
-1. **Update the version in `Cargo.toml`**
+1. **Bump the version**
 
-   Edit the `version` field under `[package]` to the new version number:
+   Go to **Actions** → **Version** → **Run workflow** in the GitHub UI. Select
+   which component to bump (major, minor, or patch) and click **Run workflow**.
+   This will create a pull request with the version bump in `Cargo.toml` and
+   `Cargo.lock`. Review and merge the pull request.
 
-   ```toml
-   [package]
-   name = "leech2"
-   version = "X.Y.Z"
-   ```
-
-   Run `cargo build` so that `Cargo.lock` file also gets updated.
-
-2. **Commit and merge the version bump**
-
-   Create a branch, commit the version change, open a pull request, and merge
-   it to `master`.
-
-3. **Trigger the release workflow**
+2. **Trigger the release workflow**
 
    Go to **Actions** → **Release** → **Run workflow** in the GitHub UI. Select
    the branch to release from and click **Run workflow**.
 
-4. **Wait for the workflow to complete**
+3. **Wait for the workflow to complete**
 
    The workflow will:
    - Read the version from `Cargo.toml`
@@ -39,7 +29,7 @@
    - Run virus scan on all build artifacts
    - Create a GitHub Release with all artifacts attached
 
-5. **Verify the release**
+4. **Verify the release**
 
    Check the [Releases](https://github.com/larsewi/leech2/releases) page and
    confirm that the release contains the expected artifacts:
