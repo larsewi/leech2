@@ -12,7 +12,7 @@ const LEECH2_DIR: &str = ".leech2";
 const PATCH_FILE: &str = "PATCH";
 
 #[derive(Parser)]
-#[command(name = "lch", about = "leech2 CLI - track CSV changes")]
+#[command(name = "lch", about = "leech2 CLI - track CSV changes", version)]
 struct Cli {
     /// Run as if started in <path> instead of the current directory
     #[arg(short = 'C', global = true)]
