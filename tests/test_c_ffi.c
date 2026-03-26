@@ -90,11 +90,7 @@ int main(int argc, char *argv[]) {
   }
 
   lch_patch_free(buf, len);
-
-  if (sql != NULL) {
-    lch_sql_free(sql);
-  }
-
+  lch_sql_free(sql);
   lch_deinit(config);
 
   if (log_state.count == 0) {
