@@ -357,17 +357,29 @@ fn run(cli: Cli) -> Result<()> {
             }
         },
         Cmd::Log => {
+            eprintln!(
+                "warning: `lch log` is an alias that may change; use `lch block log` in scripts"
+            );
             let output = cmd_block_log(&config)?;
             print_with_pager(&output);
         }
         Cmd::Sql => {
+            eprintln!(
+                "warning: `lch sql` is an alias that may change; use `lch patch sql` in scripts"
+            );
             let output = cmd_patch_sql(&config)?;
             print_with_pager(&output);
         }
         Cmd::Applied => {
+            eprintln!(
+                "warning: `lch applied` is an alias that may change; use `lch patch applied` in scripts"
+            );
             cmd_patch_applied(&config)?;
         }
         Cmd::Failed => {
+            eprintln!(
+                "warning: `lch failed` is an alias that may change; use `lch patch failed` in scripts"
+            );
             cmd_patch_failed(&config)?;
         }
     }
