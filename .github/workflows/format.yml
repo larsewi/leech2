@@ -1,0 +1,82 @@
+name: Format
+
+on:
+  push:
+    branches: ["master"]
+  workflow_dispatch: # Allows manual triggering
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Format Rust files
+        run: cargo fmt
+
+      - name: Create pull request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.PAT }}
+          commit-message: "Formatted Rust code"
+          branch: auto/format-rust
+          title: "Formatted Rust code"
+          body: |
+            Automated Rust code formatting using `cargo fmt`.
+
+            Please review the changes before merging.
+          delete-branch: true
+
+  c:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Format C/H files
+        run: |
+          FILES=$(find . -path ./target -prune -o \( -name '*.c' -o -name '*.h' \) -print)
+          if [ -n "$FILES" ]; then
+            echo "$FILES" | xargs clang-format -i
+          fi
+
+      - name: Create pull request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.PAT }}
+          commit-message: "Formatted C code"
+          branch: auto/format-c
+          title: "Formatted C code"
+          body: |
+            Automated C code formatting using `clang-format`.
+
+            Please review the changes before merging.
+          delete-branch: true
+
+  shell:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Format shell scripts
+        run: |
+          sudo apt-get update && sudo apt-get install -y shfmt
+          FILES=$(find . -path ./target -prune -o -name '*.sh' -print)
+          if [ -n "$FILES" ]; then
+            echo "$FILES" | xargs shfmt -w
+          fi
+
+      - name: Create pull request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.PAT }}
+          commit-message: "Formatted shell scripts"
+          branch: auto/format-shell
+          title: "Formatted shell scripts"
+          body: |
+            Automated shell script formatting using `shfmt`.
+
+            Please review the changes before merging.
+          delete-branch: true
