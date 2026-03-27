@@ -99,6 +99,7 @@ jobs:
           cp include/leech2.h "dist/${DIR}/"
           cp README.md "dist/${DIR}/"
           cp LICENSE "dist/${DIR}/"
+          cp man/lch.1 man/libleech2.3 "dist/${DIR}/"
           tar czf "dist/${DIR}.tar.gz" -C dist "${DIR}"
 
       - name: Create zip

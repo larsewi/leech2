@@ -1,0 +1,245 @@
+.TH LIBLEECH2 3 "2026-03-27" "leech2 0.2.0" "Library Functions"
+.SH NAME
+libleech2 \- C API for tracking CSV changes and producing SQL patches
+.SH SYNOPSIS
+.B #include <leech2.h>
+.PP
+.BI "void lch_log_init(lch_log_callback_t " callback ", void *" user_data );
+.PP
+.BI "lch_config_t *lch_init(const char *" work_dir );
+.br
+.BI "void lch_deinit(lch_config_t *" config );
+.PP
+.BI "int lch_block_create(const lch_config_t *" config );
+.PP
+.BI "int lch_patch_create(const lch_config_t *" config ", const char *" hash ", uint8_t **" buf ", size_t *" len );
+.br
+.BI "int lch_patch_to_sql(const lch_config_t *" config ", const uint8_t *" buf ", size_t " len ", char **" sql );
+.br
+.BI "int lch_patch_applied(const lch_config_t *" config ", const uint8_t *" buf ", size_t " len );
+.br
+.BI "int lch_patch_failed(const lch_config_t *" config );
+.PP
+.BI "void lch_patch_free(uint8_t *" buf ", size_t " len );
+.br
+.BI "void lch_sql_free(char *" sql );
+.SH DESCRIPTION
+.B libleech2
+is a C-compatible shared library for tracking CSV table changes using a git-like
+content-addressable block chain. It computes deltas between table snapshots,
+stores them as linked blocks, and produces consolidated patches that convert
+into SQL statements for replaying changes on a target database.
+.PP
+The library operates on a work directory containing a configuration file
+.RB ( config.toml
+or
+.BR config.json )
+that defines tables, field schemas, filters, and other settings. See
+.BR lch (1)
+for configuration details.
+.SH FUNCTIONS
+.SS Logging
+.TP
+.BI "void lch_log_init(lch_log_callback_t " callback ", void *" user_data )
+Install a custom logger that delivers all log messages through
+.IR callback .
+Must be called before
+.BR lch_init ()
+for the callback to receive messages from initialization. May be called again to
+replace the callback.
+.I callback
+must not be NULL.
+.I user_data
+is an opaque pointer forwarded to every callback invocation.
+.SS Lifecycle
+.TP
+.BI "lch_config_t *lch_init(const char *" work_dir )
+Initialize the library by parsing the configuration in
+.IR work_dir .
+Returns an opaque config handle on success, or NULL on failure. The caller must
+eventually free the handle with
+.BR lch_deinit ().
+.I work_dir
+must not be NULL.
+.TP
+.BI "void lch_deinit(lch_config_t *" config )
+Free all resources associated with
+.IR config .
+Passing NULL is a safe no-op. After this call the handle is invalid and must not
+be used.
+.SS Block creation
+.TP
+.BI "int lch_block_create(const lch_config_t *" config )
+Read the configured CSV sources, compute the new state, diff it against the
+previous state, and write a new block together with updated STATE and HEAD
+files. History truncation is performed afterwards.
+.SS Patch operations
+.TP
+.BI "int lch_patch_create(const lch_config_t *" config ", const char *" hash ", uint8_t **" buf ", size_t *" len )
+Walk the block chain from HEAD back to
+.I hash
+and produce a consolidated patch. The patch is encoded (protobuf + optional zstd
+compression) into a buffer written to
+.I buf
+and
+.IR len .
+.IP
+If
+.I hash
+is NULL, the REPORTED hash is used as the starting point; if no REPORTED file
+exists, genesis (the very beginning of the chain) is used.
+.IP
+Passing an explicit
+.I hash
+allows callers to bypass the built-in REPORTED mechanism and implement their own
+system for tracking which blocks have been reported.
+.IP
+The buffer must eventually be freed with
+.BR lch_patch_free ().
+.TP
+.BI "int lch_patch_to_sql(const lch_config_t *" config ", const uint8_t *" buf ", size_t " len ", char **" sql )
+Decode the patch in
+.I buf
+and produce SQL statements that apply the patch to a downstream database. Delta
+payloads generate DELETE, INSERT, and UPDATE statements. State payloads generate
+TRUNCATE followed by INSERT statements. All statements are wrapped in BEGIN /
+COMMIT.
+.IP
+If the patch contains no actionable changes,
+.I sql
+is set to NULL and the function returns
+.BR LCH_SUCCESS .
+Otherwise, the string must be freed with
+.BR lch_sql_free ().
+.TP
+.BI "int lch_patch_applied(const lch_config_t *" config ", const uint8_t *" buf ", size_t " len )
+Mark a patch as applied by updating the REPORTED file with the patch's head
+hash. Future truncation uses this to know which blocks are safe to remove.
+.TP
+.BI "int lch_patch_failed(const lch_config_t *" config )
+Mark a patch as failed by removing the REPORTED file. The next
+.BR lch_patch_create ()
+will produce a full state patch (TRUNCATE + INSERT for all tables). Safe to call
+regardless of whether a REPORTED file exists.
+.SS Memory management
+.TP
+.BI "void lch_patch_free(uint8_t *" buf ", size_t " len )
+Free a patch buffer previously returned by
+.BR lch_patch_create ()
+without marking it as applied. Passing NULL is a safe no-op.
+.TP
+.BI "void lch_sql_free(char *" sql )
+Free an SQL string previously returned by
+.BR lch_patch_to_sql ().
+Passing NULL is a safe no-op.
+.SH TYPES
+.TP
+.B lch_config_t
+Opaque configuration handle created by
+.BR lch_init ()
+and freed by
+.BR lch_deinit ().
+All API functions require a valid handle.
+.TP
+.B lch_log_level_t
+Log severity levels:
+.BR LCH_LOG_ERROR " (1),"
+.BR LCH_LOG_WARN " (2),"
+.BR LCH_LOG_INFO " (3),"
+.BR LCH_LOG_DEBUG " (4),"
+.BR LCH_LOG_TRACE " (5)."
+Trace messages are only emitted in debug builds; release builds strip them at
+compile time.
+.TP
+.B lch_log_callback_t
+Callback function type:
+.BI "void (*)(lch_log_level_t " level ", const char *" message ", void *" user_data )."
+The
+.I message
+string is only valid for the duration of the callback invocation.
+.SH RETURN VALUES
+Functions returning
+.B int
+use the following convention:
+.TP
+.B LCH_SUCCESS (0)
+The operation completed successfully.
+.TP
+.B LCH_FAILURE (\-1)
+An error occurred. If a log callback was installed with
+.BR lch_log_init (),
+detailed error messages are delivered through it.
+.PP
+.BR lch_init ()
+returns a pointer on success or NULL on failure.
+.PP
+.BR lch_deinit (),
+.BR lch_patch_free (),
+and
+.BR lch_sql_free ()
+do not return a value.
+.SH EXAMPLE
+.PP
+.RS
+.nf
+#include <stdio.h>
+#include <leech2.h>
+
+static void log_cb(lch_log_level_t level, const char *msg, void *data) {
+    (void)data;
+    fprintf(stderr, "[%d] %s\\n", level, msg);
+}
+
+int main(void) {
+    lch_log_init(log_cb, NULL);
+
+    lch_config_t *cfg = lch_init("/path/to/.leech2");
+    if (!cfg) return 1;
+
+    if (lch_block_create(cfg) != LCH_SUCCESS) {
+        lch_deinit(cfg);
+        return 1;
+    }
+
+    uint8_t *buf;
+    size_t len;
+    if (lch_patch_create(cfg, NULL, &buf, &len) != LCH_SUCCESS) {
+        lch_deinit(cfg);
+        return 1;
+    }
+
+    char *sql;
+    if (lch_patch_to_sql(cfg, buf, len, &sql) != LCH_SUCCESS) {
+        lch_patch_free(buf, len);
+        lch_deinit(cfg);
+        return 1;
+    }
+
+    if (sql) {
+        printf("%s", sql);
+        lch_sql_free(sql);
+    }
+
+    /* Mark as applied on success, or failed on error */
+    lch_patch_applied(cfg, buf, len);
+    lch_patch_free(buf, len);
+
+    lch_deinit(cfg);
+    return 0;
+}
+.fi
+.RE
+.PP
+Compile with:
+.PP
+.RS
+.nf
+cc -o example example.c -lleech2
+.fi
+.RE
+.SH SEE ALSO
+.BR lch (1)
+.PP
+Full documentation and source code:
+.UR https://github.com/larsewi/leech2
+.UE

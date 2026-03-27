@@ -1,0 +1,383 @@
+.TH LCH 1 "2026-03-27" "leech2 0.2.0" "User Commands"
+.SH NAME
+lch \- track CSV changes and produce SQL patches
+.SH SYNOPSIS
+.B lch
+.RB [ \-C
+.IR path ]
+.I command
+.RI [ args ]
+.SH DESCRIPTION
+.B lch
+is the command-line interface for
+.BR leech2 ,
+a change data capture tool that tracks CSV table modifications using a git-like
+content-addressable block chain. It computes deltas between table snapshots,
+stores them as linked blocks, and produces consolidated patches that convert
+into SQL statements for replaying changes on a target database.
+.PP
+A typical workflow is:
+.IP 1. 4
+Initialize a work directory with
+.BR "lch init" .
+.IP 2. 4
+Edit CSV files and record changes with
+.BR "lch block create" .
+.IP 3. 4
+Generate a patch with
+.BR "lch patch create" .
+.IP 4. 4
+Convert the patch to SQL with
+.BR "lch patch sql" .
+.IP 5. 4
+Mark the patch as applied with
+.BR "lch patch applied" ,
+or as failed with
+.BR "lch patch failed" .
+.SH OPTIONS
+.TP
+.BI \-C " path"
+Run as if started in
+.I path
+instead of the current directory. This affects where the
+.B .leech2
+work directory is located.
+.TP
+.B \-V\fR, \fB\-\-version
+Print version information and exit.
+.TP
+.B \-h\fR, \fB\-\-help
+Print help information and exit.
+.SH COMMANDS
+.SS lch init
+Initialize a new
+.B .leech2
+work directory with an example table configuration and CSV file. Fails if a
+configuration already exists.
+.SS lch block create
+Create a new block from the current CSV state. Reads the configured CSV sources,
+computes the new state, diffs it against the previous state, and writes a new
+block. History truncation is performed afterwards. Prints the new block's SHA-1
+hash to stdout.
+.SS lch block show \fR[\fIREF\fR] [\fB\-n \fIN\fR]
+Show the full contents of a block.
+.TP
+.I REF
+Block hash or unambiguous hash prefix. Defaults to HEAD.
+.TP
+.BI \-n " N"
+Show the block
+.I N
+steps back from HEAD. Cannot be combined with
+.IR REF .
+.SS lch block log
+List all blocks from HEAD to genesis, one line per block showing the hash,
+timestamp, and table names.
+.SS lch patch create \fR[\fIREF\fR] [\fB\-n \fIN\fR]
+Create a patch from
+.I REF
+to HEAD and write it to
+.BR .leech2/PATCH .
+.TP
+.I REF
+Block hash or unambiguous hash prefix. Defaults to the REPORTED hash (the last
+successfully applied patch), or genesis if nothing has been reported yet.
+.TP
+.BI \-n " N"
+Create a patch covering the last
+.I N
+blocks. Cannot be combined with
+.IR REF .
+.SS lch patch show
+Show the contents of the
+.B .leech2/PATCH
+file. Requires a prior
+.BR "lch patch create" .
+.SS lch patch sql
+Convert the
+.B .leech2/PATCH
+file to SQL statements. Delta payloads generate DELETE, INSERT, and UPDATE
+statements. State payloads generate TRUNCATE followed by INSERT statements. All
+statements are wrapped in BEGIN / COMMIT. Requires a prior
+.BR "lch patch create" .
+.SS lch patch applied
+Mark the current patch as applied by saving its head hash to the REPORTED file.
+Future patches will start from this point. Requires a prior
+.BR "lch patch create" .
+.SS lch patch failed
+Mark the current patch as failed by removing the REPORTED file. The next
+.B lch patch create
+will produce a full state patch (TRUNCATE + INSERT for all tables).
+.SS Aliases
+The following top-level aliases are provided for convenience. They emit a
+deprecation warning and may change in future versions; use the full form in
+scripts.
+.TP
+.B lch log
+Alias for
+.BR "lch block log" .
+.TP
+.B lch sql
+Alias for
+.BR "lch patch sql" .
+.TP
+.B lch applied
+Alias for
+.BR "lch patch applied" .
+.TP
+.B lch failed
+Alias for
+.BR "lch patch failed" .
+.SH CONFIGURATION
+Configuration is read from
+.B config.toml
+or
+.B config.json
+inside the
+.B .leech2
+work directory.
+.SS Tables
+Each table is defined under
+.BR [tables.\fIname\fR] .
+.TP
+.BI source " = \(dqpath.csv\(dq"
+Path to the CSV file, relative to the work directory or absolute.
+.TP
+.BI header " = true"
+When true, the first CSV row is treated as a header and fields are matched by
+name (columns may appear in any order; extra CSV columns are ignored). When
+false (the default), columns are mapped to fields by position.
+.PP
+Each table must define one or more fields, each with a
+.BR name ,
+.BR type ,
+and optionally
+.BR primary\-key .
+At least one field must have
+.BR "primary\-key = true" .
+Field names within a table must be unique.
+.PP
+Supported field types:
+.TP
+.B TEXT
+Quoted as a single-quoted SQL string literal with escaping.
+.TP
+.B NUMBER
+Emitted as a bare numeric literal. Validated as a finite
+.BR f64 .
+.TP
+.B BOOLEAN
+Emitted as
+.B TRUE
+or
+.BR FALSE .
+Accepts
+.BR true / false ,
+.BR 1 / 0 ,
+.BR t / f ,
+.BR yes / no .
+.PP
+These types control SQL quoting only. Your target database may use any
+compatible column type (e.g.
+.BR INTEGER ,
+.BR FLOAT ,
+.BR TIMESTAMP ).
+.PP
+Fields can have an optional
+.B null
+sentinel that specifies which CSV value should be emitted as SQL
+.B NULL
+instead of a typed literal. This is not allowed on primary-key fields.
+.SS Injected fields
+Optional
+.B [[injected\-fields]]
+entries add static columns to all generated SQL. Each entry becomes an extra
+column in INSERT statements and an extra condition in DELETE/UPDATE WHERE
+clauses. When any injected fields are configured, state-payload patches use
+.B "DELETE FROM ... WHERE ..."
+instead of
+.B TRUNCATE
+so that other agents' data is preserved.
+.PP
+Each entry requires
+.BR name ,
+.BR type ,
+and
+.BR value .
+The
+.B type
+field accepts the same values as table field types.
+.SS Filters
+An optional
+.B [filters]
+section drops records at CSV load time. Filtered records never enter state,
+deltas, or SQL output.
+.TP
+.BI max\-field\-length " = N"
+Drop records where any field value exceeds
+.I N
+characters.
+.PP
+.B [[filters.exclude]]
+entries define exclusion rules.
+Each rule specifies a
+.B field
+name and one or both of:
+.TP
+.BI equals " = \(dqvalue\(dq"
+Drop records where the field exactly matches the value.
+.TP
+.BI contains " = \(dqvalue\(dq"
+Drop records where the field contains the value as a substring.
+.PP
+When both are set, either matching is sufficient to drop the record. An optional
+.B table
+list restricts the rule to specific tables; when omitted, the rule applies to
+all tables. If the named field does not exist in a table, the rule is silently
+skipped.
+.PP
+Filtering happens before state computation. When a previously-included record
+starts matching a filter, it appears as a DELETE in the next delta. When a
+previously-filtered record stops matching, it appears as an INSERT.
+.SS Compression
+An optional
+.B [compression]
+section controls patch compression. Patches are compressed with zstd by default.
+.TP
+.BI enable " = true"
+Enable or disable zstd compression (default: true).
+.TP
+.BI level " = 3"
+Compression level (defaults to zstd default).
+.SS History truncation
+An optional
+.B [truncate]
+section controls automatic pruning of old block files after every
+.BR "lch block create" .
+All fields are optional and independent.
+.TP
+.BI max\-blocks " = N"
+Keep at most
+.I N
+blocks in the chain (must be >= 1).
+.TP
+.BI max\-age " = \(dq7d\(dq"
+Remove blocks older than the given duration. Supported suffixes:
+.B s
+(seconds),
+.B m
+(minutes),
+.B h
+(hours),
+.B d
+(days),
+.B w
+(weeks).
+.TP
+.BI remove\-orphans " = true"
+Remove blocks on disk that are not reachable from HEAD (default: true).
+.TP
+.BI truncate\-reported " = true"
+Remove blocks older than the last reported position (default: true).
+.SH ENVIRONMENT
+.TP
+.B LEECH2_LOG
+Controls the log level for messages written to stderr. Accepted values:
+.BR error ,
+.BR warn ,
+.BR info ,
+.BR debug ,
+.BR trace .
+Trace messages are only emitted in debug builds.
+.TP
+.B PAGER
+Program used to paginate output when it exceeds the terminal height and stdout
+is a terminal. Defaults too
+.B less
+on Unix and
+.B more
+on Windows.
+.SH FILES
+.TP
+.B .leech2/
+Work directory created by
+.BR "lch init" .
+Contains all configuration, state, and block files.
+.TP
+.B .leech2/config.toml
+Table definitions, field schemas, filters, compression settings, and history
+truncation configuration. May also be
+.BR config.json .
+.TP
+.B .leech2/HEAD
+Current block hash (the tip of the chain).
+.TP
+.B .leech2/REPORTED
+Hash of the last successfully applied patch. Used as the default starting point
+for
+.BR "lch patch create" .
+Removed by
+.BR "lch patch failed" .
+.TP
+.B .leech2/STATE
+Protobuf-encoded snapshot of all table states.
+.TP
+.B .leech2/PATCH
+Last generated patch, written by
+.BR "lch patch create" .
+.TP
+.BI .leech2/ hash
+Block files, named by their SHA-1 content hash.
+.SH EXIT STATUS
+.TP
+.B 0
+Success.
+.TP
+.B 1
+An error occurred. The error message is printed to stderr.
+.SH EXAMPLES
+Initialize a work directory and create the first block:
+.PP
+.RS
+.nf
+$ lch init
+Initialized .leech2
+
+$ lch block create
+a1b2c3d4e5f6...
+.fi
+.RE
+.PP
+Edit the CSV, create another block, and generate SQL:
+.PP
+.RS
+.nf
+$ vim .leech2/products.csv
+$ lch block create
+f7e8d9c0b1a2...
+
+$ lch patch create
+$ lch patch sql
+BEGIN;
+INSERT INTO products (id, name, price) VALUES (4, 'Headphones', 59.99);
+COMMIT;
+
+$ lch patch applied
+f7e8d9c0b1a2...
+.fi
+.RE
+.PP
+If SQL application fails, reset to force a full state on the next patch:
+.PP
+.RS
+.nf
+$ lch patch failed
+REPORTED removed; next patch will be a full state
+.fi
+.RE
+.SH SEE ALSO
+.BR libleech2 (3)
+.PP
+Full documentation and source code:
+.UR https://github.com/larsewi/leech2
+.UE

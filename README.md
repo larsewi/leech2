@@ -245,6 +245,11 @@ See [`include/leech2.h`](include/leech2.h) for the full API. Available levels:
 `LCH_LOG_DEBUG` (4), `LCH_LOG_TRACE` (5). Trace messages are only emitted in
 debug builds; release builds strip them at compile time.
 
+## Man pages
+
+Man pages are included in `.deb` and `.rpm` packages and in release tarballs.
+After installing, run `man lch` or `man libleech2` for full documentation.
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for architecture details, data flow, and
