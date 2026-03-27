@@ -267,10 +267,6 @@ Domain types have `From` impls to convert to/from their proto counterparts.
 All protobuf types implement `Display`, so you can print them directly to
 inspect their contents (e.g. `println!("{}", block)`, `println!("{}", patch)`).
 
-**Note:** leech2 has not been released yet, so there are no
-backwards-compatibility constraints on the proto specs. Reusing or renumbering
-wire fields is fine.
-
 ## Delta merging rules
 
 The 15 merge rules in `src/delta.rs` are fully specified in

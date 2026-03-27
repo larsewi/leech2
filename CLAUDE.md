@@ -41,5 +41,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for full architecture details, source lay
 
 Key notes for development:
 
-- Proto definitions have no backwards-compatibility constraints yet. Reusing or renumbering wire fields is fine.
 - The 15 delta merge rules in `src/delta.rs` are specified in [DELTA_MERGING_RULES.md](DELTA_MERGING_RULES.md).
