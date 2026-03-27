@@ -4,10 +4,6 @@
  *
  * leech2 tracks CSV data sources, computes diffs between snapshots, and
  * produces SQL patches that can be applied to a downstream database.
- *
- * All functions (except lch_init, lch_deinit, lch_patch_free, and lch_sql_free)
- * return LCH_SUCCESS on success and LCH_FAILURE on error. Call lch_log_init()
- * to receive log messages through a callback.
  */
 
 #ifndef __LEECH2_H__
