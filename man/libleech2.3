@@ -4,21 +4,21 @@ libleech2 \- C API for tracking CSV changes and producing SQL patches
 .SH SYNOPSIS
 .B #include <leech2.h>
 .PP
-.BI "void lch_log_init(lch_log_callback_t " callback ", void *" user_data );
+.BI "void lch_log_init(lch_log_callback_t " callback ", void *" usr_data );
 .PP
 .BI "lch_config_t *lch_init(const char *" work_dir );
 .br
-.BI "void lch_deinit(lch_config_t *" config );
+.BI "void lch_deinit(lch_config_t *" cfg );
 .PP
-.BI "int lch_block_create(const lch_config_t *" config );
+.BI "int lch_block_create(const lch_config_t *" cfg );
 .PP
-.BI "int lch_patch_create(const lch_config_t *" config ", const char *" hash ", uint8_t **" buf ", size_t *" len );
+.BI "int lch_patch_create(const lch_config_t *" cfg ", const char *" hash ", uint8_t **" buf ", size_t *" len );
 .br
-.BI "int lch_patch_to_sql(const lch_config_t *" config ", const uint8_t *" buf ", size_t " len ", char **" sql );
+.BI "int lch_patch_to_sql(const lch_config_t *" cfg ", const uint8_t *" buf ", size_t " len ", char **" sql );
 .br
-.BI "int lch_patch_applied(const lch_config_t *" config ", const uint8_t *" buf ", size_t " len );
+.BI "int lch_patch_applied(const lch_config_t *" cfg ", const uint8_t *" buf ", size_t " len );
 .br
-.BI "int lch_patch_failed(const lch_config_t *" config );
+.BI "int lch_patch_failed(const lch_config_t *" cfg );
 .PP
 .BI "void lch_patch_free(uint8_t *" buf ", size_t " len );
 .br
@@ -40,7 +40,7 @@ for configuration details.
 .SH FUNCTIONS
 .SS Logging
 .TP
-.BI "void lch_log_init(lch_log_callback_t " callback ", void *" user_data )
+.BI "void lch_log_init(lch_log_callback_t " callback ", void *" usr_data )
 Install a custom logger that delivers all log messages through
 .IR callback .
 Must be called before
@@ -49,7 +49,7 @@ for the callback to receive messages from initialization. May be called again to
 replace the callback.
 .I callback
 must not be NULL.
-.I user_data
+.I usr_data
 is an opaque pointer forwarded to every callback invocation.
 .SS Lifecycle
 .TP
@@ -62,20 +62,20 @@ eventually free the handle with
 .I work_dir
 must not be NULL.
 .TP
-.BI "void lch_deinit(lch_config_t *" config )
+.BI "void lch_deinit(lch_config_t *" cfg )
 Free all resources associated with
-.IR config .
+.IR cfg .
 Passing NULL is a safe no-op. After this call the handle is invalid and must not
 be used.
 .SS Block creation
 .TP
-.BI "int lch_block_create(const lch_config_t *" config )
+.BI "int lch_block_create(const lch_config_t *" cfg )
 Read the configured CSV sources, compute the new state, diff it against the
 previous state, and write a new block together with updated STATE and HEAD
 files. History truncation is performed afterwards.
 .SS Patch operations
 .TP
-.BI "int lch_patch_create(const lch_config_t *" config ", const char *" hash ", uint8_t **" buf ", size_t *" len )
+.BI "int lch_patch_create(const lch_config_t *" cfg ", const char *" hash ", uint8_t **" buf ", size_t *" len )
 Walk the block chain from HEAD back to
 .I hash
 and produce a consolidated patch. The patch is encoded (protobuf + optional zstd
@@ -97,7 +97,7 @@ system for tracking which blocks have been reported.
 The buffer must eventually be freed with
 .BR lch_patch_free ().
 .TP
-.BI "int lch_patch_to_sql(const lch_config_t *" config ", const uint8_t *" buf ", size_t " len ", char **" sql )
+.BI "int lch_patch_to_sql(const lch_config_t *" cfg ", const uint8_t *" buf ", size_t " len ", char **" sql )
 Decode the patch in
 .I buf
 and produce SQL statements that apply the patch to a downstream database. Delta
@@ -112,11 +112,11 @@ is set to NULL and the function returns
 Otherwise, the string must be freed with
 .BR lch_sql_free ().
 .TP
-.BI "int lch_patch_applied(const lch_config_t *" config ", const uint8_t *" buf ", size_t " len )
+.BI "int lch_patch_applied(const lch_config_t *" cfg ", const uint8_t *" buf ", size_t " len )
 Mark a patch as applied by updating the REPORTED file with the patch's head
 hash. Future truncation uses this to know which blocks are safe to remove.
 .TP
-.BI "int lch_patch_failed(const lch_config_t *" config )
+.BI "int lch_patch_failed(const lch_config_t *" cfg )
 Mark a patch as failed by removing the REPORTED file. The next
 .BR lch_patch_create ()
 will produce a full state patch (TRUNCATE + INSERT for all tables). Safe to call
@@ -153,9 +153,9 @@ compile time.
 .TP
 .B lch_log_callback_t
 Callback function type:
-.BI "void (*)(lch_log_level_t " level ", const char *" message ", void *" user_data )."
+.BI "void (*)(lch_log_level_t " level ", const char *" msg ", void *" usr_data )."
 The
-.I message
+.I msg
 string is only valid for the duration of the callback invocation.
 .SH RETURN VALUES
 Functions returning
