@@ -37,11 +37,11 @@ typedef enum {
  * Callback type for receiving log messages.
  *
  * @param level      Severity level of the message.
- * @param message    Null-terminated log message string. Only valid for the
+ * @param msg        Null-terminated log message string. Only valid for the
  *                   duration of the callback invocation.
  * @param user_data  Opaque pointer passed to lch_log_init().
  */
-typedef void (*lch_log_callback_t)(lch_log_level_t level, const char *message,
+typedef void (*lch_log_callback_t)(lch_log_level_t level, const char *msg,
                                    void *user_data);
 
 /**
