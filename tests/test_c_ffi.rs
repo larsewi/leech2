@@ -20,7 +20,7 @@ fn build_test(cpp: bool) -> PathBuf {
     let lib_dir = lib_dir();
     let source = tests_dir.join("test_c_ffi.c");
 
-    let suffix = if cpp { "_cpp" } else { "" };
+    let name = if cpp { "test_cpp_ffi" } else { "test_c_ffi" };
 
     // opt_level is required because the cc crate reads OPT_LEVEL from the
     // environment, which is only set by cargo for build scripts.
@@ -32,8 +32,8 @@ fn build_test(cpp: bool) -> PathBuf {
         .get_compiler();
 
     if compiler.is_like_msvc() {
-        let obj = tests_dir.join(format!("test_c_ffi{suffix}.obj"));
-        let bin = tests_dir.join(format!("test_c_ffi{suffix}.exe"));
+        let obj = tests_dir.join(format!("{name}.obj"));
+        let bin = tests_dir.join(format!("{name}.exe"));
 
         // Compile
         let output = compiler
@@ -68,11 +68,11 @@ fn build_test(cpp: bool) -> PathBuf {
 
         bin
     } else {
-        let obj = tests_dir.join(format!("test_c_ffi{suffix}.o"));
+        let obj = tests_dir.join(format!("{name}.o"));
         let bin = tests_dir.join(if cfg!(target_os = "windows") {
-            format!("test_c_ffi{suffix}.exe")
+            format!("{name}.exe")
         } else {
-            format!("test_c_ffi{suffix}")
+            name.to_string()
         });
 
         // Compile
