@@ -48,6 +48,9 @@ jobs:
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             artifact: windows-x86_64
+          - target: aarch64-pc-windows-msvc
+            os: windows-11-arm
+            artifact: windows-aarch64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
