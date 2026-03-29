@@ -10,24 +10,30 @@ fn lib_dir() -> PathBuf {
     project_root().join("target").join(env!("LEECH2_PROFILE"))
 }
 
-fn build_c_test() -> PathBuf {
+/// Build the test binary using the given compiler configuration.
+///
+/// If `cpp` is true, compiles as C++ to test extern "C" compatibility.
+fn build_test(cpp: bool) -> PathBuf {
     let root = project_root();
     let tests_dir = root.join("tests");
     let include_dir = root.join("include");
     let lib_dir = lib_dir();
     let source = tests_dir.join("test_c_ffi.c");
 
+    let suffix = if cpp { "_cpp" } else { "" };
+
     // opt_level is required because the cc crate reads OPT_LEVEL from the
     // environment, which is only set by cargo for build scripts.
     let compiler = cc::Build::new()
+        .cpp(cpp)
         .target(env!("LEECH2_TARGET"))
         .host(env!("LEECH2_HOST"))
         .opt_level(0)
         .get_compiler();
 
     if compiler.is_like_msvc() {
-        let obj = tests_dir.join("test_c_ffi.obj");
-        let bin = tests_dir.join("test_c_ffi.exe");
+        let obj = tests_dir.join(format!("test_c_ffi{suffix}.obj"));
+        let bin = tests_dir.join(format!("test_c_ffi{suffix}.exe"));
 
         // Compile
         let output = compiler
@@ -62,11 +68,11 @@ fn build_c_test() -> PathBuf {
 
         bin
     } else {
-        let obj = tests_dir.join("test_c_ffi.o");
+        let obj = tests_dir.join(format!("test_c_ffi{suffix}.o"));
         let bin = tests_dir.join(if cfg!(target_os = "windows") {
-            "test_c_ffi.exe"
+            format!("test_c_ffi{suffix}.exe")
         } else {
-            "test_c_ffi"
+            format!("test_c_ffi{suffix}")
         });
 
         // Compile
@@ -106,14 +112,20 @@ fn build_c_test() -> PathBuf {
 /// Get the compiled C test binary, building it at most once.
 fn get_c_test_binary() -> &'static PathBuf {
     static BIN: OnceLock<PathBuf> = OnceLock::new();
-    BIN.get_or_init(build_c_test)
+    BIN.get_or_init(|| build_test(false))
 }
 
-/// Create a [`Command`] for the C test binary.
+/// Get the compiled C++ test binary, building it at most once.
+fn get_cpp_test_binary() -> &'static PathBuf {
+    static BIN: OnceLock<PathBuf> = OnceLock::new();
+    BIN.get_or_init(|| build_test(true))
+}
+
+/// Create a [`Command`] for a test binary.
 ///
 /// On Windows, prepends the library directory to `PATH` so the dynamic linker
 /// can find `leech2.dll` at runtime (there is no rpath on Windows).
-fn c_test_cmd(bin: &Path) -> Command {
+fn test_cmd(bin: &Path) -> Command {
     let mut cmd = Command::new(bin);
     if cfg!(target_os = "windows") {
         let path = std::env::var_os("PATH").unwrap_or_default();
@@ -147,7 +159,7 @@ fn test_c_ffi() {
     let bin = get_c_test_binary();
     let tmp = setup_workdir();
 
-    let output = c_test_cmd(bin)
+    let output = test_cmd(bin)
         .arg(tmp.path().to_str().unwrap())
         .output()
         .expect("failed to run C test binary");
@@ -191,5 +203,23 @@ fn test_c_ffi_valgrind() {
         output.status.code(),
         String::from_utf8_lossy(&output.stdout),
         stderr,
+    );
+}
+
+#[test]
+fn test_cpp_ffi() {
+    let bin = get_cpp_test_binary();
+    let tmp = setup_workdir();
+
+    let output = test_cmd(bin)
+        .arg(tmp.path().to_str().unwrap())
+        .output()
+        .expect("failed to run C++ test binary");
+    assert!(
+        output.status.success(),
+        "C++ FFI test failed (exit code {:?}):\nstdout: {}\nstderr: {}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
     );
 }
