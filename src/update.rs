@@ -37,7 +37,7 @@ impl Update {
     /// show only changed columns, with `"_"` for unchanged ones.
     pub fn format_columns(&self, num_subsidiary: usize) -> Vec<String> {
         let has_old = !self.old_value.is_empty();
-        if self.changed_indices.is_empty() && !self.new_value.is_empty() {
+        if self.changed_indices.is_empty() {
             return self.format_full_columns(num_subsidiary, has_old);
         }
         self.format_sparse_columns(num_subsidiary, has_old)
