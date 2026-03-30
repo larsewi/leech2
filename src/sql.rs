@@ -296,8 +296,15 @@ fn delta_to_sql(
     // UPDATEs
     for update in &delta.updates {
         let subsidiary_fields = schema.subsidiary_fields();
-        let set_parts: Vec<String> = update
-            .changed_indices
+        // Sparse updates list changed column indices explicitly; full
+        // updates (empty changed_indices) include all subsidiary columns.
+        let indices: Vec<u32> = if update.changed_indices.is_empty() {
+            (0..subsidiary_fields.len() as u32).collect()
+        } else {
+            update.changed_indices.clone()
+        };
+
+        let set_parts: Vec<String> = indices
             .iter()
             .zip(update.new_value.iter())
             .map(|(index, value)| {

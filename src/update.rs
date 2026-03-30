@@ -11,12 +11,20 @@ impl Update {
         if self.changed_indices.is_empty() {
             return;
         }
+
+        // Pre-allocate full-length vectors so we can index into arbitrary
+        // column positions. Unchanged columns remain as empty strings.
         let mut old_expanded = vec![String::new(); num_values];
         let mut new_expanded = vec![String::new(); num_values];
+
+        // Move each sparse value into its true column position, using
+        // mem::take to avoid cloning (the source vectors are overwritten
+        // below anyway).
         for (sparse_index, &column_index) in self.changed_indices.iter().enumerate() {
             old_expanded[column_index as usize] = mem::take(&mut self.old_value[sparse_index]);
             new_expanded[column_index as usize] = mem::take(&mut self.new_value[sparse_index]);
         }
+
         self.old_value = old_expanded;
         self.new_value = new_expanded;
         self.changed_indices.clear();
@@ -85,8 +93,16 @@ impl Update {
                 sparse_new.push(new_value.clone());
             }
         }
-        self.changed_indices = changed_indices;
+
+        // If all columns changed, sparse encoding adds index overhead
+        // without saving any values — just drop old_value and keep
+        // new_value as-is.
         self.old_value.clear();
+        if changed_indices.len() == self.new_value.len() {
+            return;
+        }
+
+        self.changed_indices = changed_indices;
         self.new_value = sparse_new;
     }
 }
@@ -173,7 +189,8 @@ mod tests {
     fn test_sparse_encode_all_changed() {
         let mut update = make_update(&["k"], &[], &["a", "b"], &["x", "y"]);
         update.sparse_encode();
-        assert_eq!(update.changed_indices, vec![0, 1]);
+        assert!(update.changed_indices.is_empty());
+        assert!(update.old_value.is_empty());
         assert_eq!(update.new_value, vec!["x", "y"]);
     }
 

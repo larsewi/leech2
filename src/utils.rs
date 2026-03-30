@@ -9,15 +9,22 @@ pub fn compute_hash(data: &[u8]) -> String {
 }
 
 /// Indent all lines after the first by prepending `prefix`.
+///
+/// The `Display` trait has no way to pass an indentation level, so nested
+/// types format themselves starting at column 0. The parent calls this
+/// function on the child's output to shift subsequent lines to the correct
+/// depth. The first line is left unchanged because the parent already
+/// positions it.
 pub fn indent(text: &str, prefix: &str) -> String {
     text.replace('\n', &format!("\n{}", prefix))
 }
 
 /// Format a protobuf timestamp as a human-readable UTC string.
 pub fn format_timestamp(timestamp: &prost_types::Timestamp) -> String {
-    chrono::DateTime::from_timestamp(timestamp.seconds, 0).map_or("N/A".into(), |datetime| {
-        datetime.format("%Y-%m-%d %H:%M:%S UTC").to_string()
-    })
+    match chrono::DateTime::from_timestamp(timestamp.seconds, 0) {
+        Some(datetime) => datetime.format("%Y-%m-%d %H:%M:%S UTC").to_string(),
+        None => "N/A".to_string(),
+    }
 }
 
 #[cfg(test)]
