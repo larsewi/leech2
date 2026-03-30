@@ -37,47 +37,45 @@ impl Update {
     /// show only changed columns, with `"_"` for unchanged ones.
     pub fn format_columns(&self, num_subsidiary: usize) -> Vec<String> {
         let has_old = !self.old_value.is_empty();
-        if self.changed_indices.is_empty() && !self.new_value.is_empty() {
+        if self.changed_indices.is_empty() {
             return self.format_full_columns(num_subsidiary, has_old);
         }
         self.format_sparse_columns(num_subsidiary, has_old)
     }
 
     fn format_full_columns(&self, num_subsidiary: usize, has_old: bool) -> Vec<String> {
-        (0..num_subsidiary)
-            .map(|i| {
-                let new = self
-                    .new_value
-                    .get(i)
-                    .map(|s| s.as_str())
-                    .unwrap_or("<missing>");
-                let old = has_old.then(|| {
-                    self.old_value
-                        .get(i)
-                        .map(|s| s.as_str())
-                        .unwrap_or("<missing>")
-                });
-                format_update_column(new, old)
-            })
-            .collect()
+        let mut columns = Vec::with_capacity(num_subsidiary);
+        for i in 0..num_subsidiary {
+            let new = self.new_value.get(i).map_or("<missing>", String::as_str);
+            let old = if has_old {
+                Some(self.old_value.get(i).map_or("<missing>", String::as_str))
+            } else {
+                None
+            };
+            columns.push(format_update_column(new, old));
+        }
+        columns
     }
 
     fn format_sparse_columns(&self, num_subsidiary: usize, has_old: bool) -> Vec<String> {
         let changed: HashSet<u32> = self.changed_indices.iter().copied().collect();
         let mut new_iter = self.new_value.iter();
         let mut old_iter = self.old_value.iter();
-        (0..num_subsidiary as u32)
-            .map(|i| {
-                if changed.contains(&i) {
-                    let new = new_iter.next().map(|s| s.as_str()).unwrap_or("<missing>");
-                    let old =
-                        has_old.then(|| old_iter.next().map(|s| s.as_str()).unwrap_or("<missing>"));
-                    format_update_column(new, old)
-                } else {
-                    "_".to_string()
-                }
-            })
-            .collect()
+        let mut columns = Vec::with_capacity(num_subsidiary);
+        for i in 0..num_subsidiary as u32 {
+            if !changed.contains(&i) {
+                columns.push("_".to_string());
+                continue;
+            }
+            let new = new_iter.next().map_or("<missing>", String::as_str);
+            let old = if has_old {
+                Some(old_iter.next().map_or("<missing>", String::as_str))
+            } else {
+                None
+            };
+            columns.push(format_update_column(new, old));
+        }
+        columns
     }
 
     /// Sparse-encode an update: keep only the indices and values of columns that
@@ -85,9 +83,9 @@ impl Update {
     pub fn sparse_encode(&mut self) {
         let mut changed_indices = Vec::new();
         let mut sparse_new = Vec::new();
-        for (i, (old_value, new_value)) in
-            self.old_value.iter().zip(self.new_value.iter()).enumerate()
-        {
+
+        let pairs = self.old_value.iter().zip(self.new_value.iter());
+        for (i, (old_value, new_value)) in pairs.enumerate() {
             if old_value != new_value {
                 changed_indices.push(i as u32);
                 sparse_new.push(new_value.clone());
