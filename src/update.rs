@@ -11,12 +11,20 @@ impl Update {
         if self.changed_indices.is_empty() {
             return;
         }
+
+        // Pre-allocate full-length vectors so we can index into arbitrary
+        // column positions. Unchanged columns remain as empty strings.
         let mut old_expanded = vec![String::new(); num_values];
         let mut new_expanded = vec![String::new(); num_values];
+
+        // Move each sparse value into its true column position, using
+        // mem::take to avoid cloning (the source vectors are overwritten
+        // below anyway).
         for (sparse_index, &column_index) in self.changed_indices.iter().enumerate() {
             old_expanded[column_index as usize] = mem::take(&mut self.old_value[sparse_index]);
             new_expanded[column_index as usize] = mem::take(&mut self.new_value[sparse_index]);
         }
+
         self.old_value = old_expanded;
         self.new_value = new_expanded;
         self.changed_indices.clear();
