@@ -44,22 +44,17 @@ impl Update {
     }
 
     fn format_full_columns(&self, num_subsidiary: usize, has_old: bool) -> Vec<String> {
-        (0..num_subsidiary)
-            .map(|i| {
-                let new = self
-                    .new_value
-                    .get(i)
-                    .map(|s| s.as_str())
-                    .unwrap_or("<missing>");
-                let old = has_old.then(|| {
-                    self.old_value
-                        .get(i)
-                        .map(|s| s.as_str())
-                        .unwrap_or("<missing>")
-                });
-                format_update_column(new, old)
-            })
-            .collect()
+        let mut columns = Vec::with_capacity(num_subsidiary);
+        for i in 0..num_subsidiary {
+            let new = self.new_value.get(i).map_or("<missing>", String::as_str);
+            let old = if has_old {
+                Some(self.old_value.get(i).map_or("<missing>", String::as_str))
+            } else {
+                None
+            };
+            columns.push(format_update_column(new, old));
+        }
+        columns
     }
 
     fn format_sparse_columns(&self, num_subsidiary: usize, has_old: bool) -> Vec<String> {
