@@ -194,7 +194,7 @@ after every `lch_block_create()` / `lch block create`:
 [truncate]
 max-blocks = 100          # keep at most 100 blocks in the chain (>= 1)
 max-age = "7d"            # remove blocks older than this duration
-remove-orphans = true     # remove blocks not reachable from HEAD (default: true)
+remove-orphans = true     # remove blocks not reachable from HEAD (default: true, recommended)
 truncate-reported = true  # remove blocks older than last reported (default: true)
 ```
 
@@ -204,7 +204,9 @@ All fields are optional and independent. Supported duration suffixes: `s`
 By default, truncation removes orphaned blocks (on disk but not reachable from
 HEAD) and blocks older than the last reported position (see `lch_patch_applied`).
 Set `remove-orphans = false` or `truncate-reported = false` to disable these
-behaviors.
+behaviors. Disabling orphan removal is not recommended — corrupt blocks are
+detected during the chain walk and left unreachable so that orphan removal can
+clean them up.
 
 ## C API
 

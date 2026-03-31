@@ -7,6 +7,8 @@ use anyhow::{Context, Result};
 
 use crate::config::{FilterConfig, TableConfig};
 
+type ProtoTable = crate::proto::table::Table;
+
 /// A table with records stored in a hash map for efficient lookup.
 /// Fields are ordered with primary key columns first, followed by subsidiary columns.
 #[derive(Debug, Clone, PartialEq)]
@@ -17,8 +19,8 @@ pub struct Table {
     pub records: HashMap<Vec<String>, Vec<String>>,
 }
 
-impl From<crate::proto::table::Table> for Table {
-    fn from(proto: crate::proto::table::Table) -> Self {
+impl From<ProtoTable> for Table {
+    fn from(proto: ProtoTable) -> Self {
         let records = proto.entries.into_iter().map(Into::into).collect();
         Table {
             fields: proto.fields,
@@ -27,17 +29,17 @@ impl From<crate::proto::table::Table> for Table {
     }
 }
 
-impl From<Table> for crate::proto::table::Table {
+impl From<Table> for ProtoTable {
     fn from(table: Table) -> Self {
         let entries = table.records.into_iter().map(Into::into).collect();
-        crate::proto::table::Table {
+        ProtoTable {
             fields: table.fields,
             entries,
         }
     }
 }
 
-impl fmt::Display for crate::proto::table::Table {
+impl fmt::Display for ProtoTable {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "[{}]", self.fields.join(", "))?;
         for entry in &self.entries {

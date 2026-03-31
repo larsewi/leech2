@@ -13,7 +13,18 @@ use crate::utils::GENESIS_HASH;
 
 struct ChainEntry {
     hash: String,
-    created: Option<SystemTime>,
+    created: SystemTime,
+}
+
+/// Strips the leading `.` and trailing `.lock` from a lock file name,
+/// returning the inner block hash (e.g. `".abc123.lock"` → `"abc123"`).
+fn strip_lock_affixes(name: &str) -> Option<&str> {
+    name.strip_prefix(".")?.strip_suffix(".lock")
+}
+
+/// Returns `true` if `s` is a 40-character hexadecimal string (i.e. a SHA-1 hash).
+fn is_hex_hash(s: &str) -> bool {
+    s.len() == 40 && s.chars().all(|c| c.is_ascii_hexdigit())
 }
 
 /// Returns `(block_hashes, stale_lock_files)` by scanning the work directory.
@@ -29,20 +40,16 @@ fn scan_work_dir(work_dir: &Path) -> Result<(HashSet<String>, Vec<String>)> {
         let Some(name) = name.to_str() else {
             continue;
         };
-        if name.len() == 40 && name.chars().all(|c| c.is_ascii_hexdigit()) {
+        if is_hex_hash(name) {
             blocks.insert(name.to_string());
-        } else if let Some(base) = name.strip_suffix(".lock")
-            && let Some(base) = base.strip_prefix(".")
-            && base.len() == 40
-            && base.chars().all(|c| c.is_ascii_hexdigit())
-        {
+        } else if strip_lock_affixes(name).is_some_and(is_hex_hash) {
             lock_files.push(name.to_string());
         }
     }
 
     // Keep only lock files whose block is not on disk
     lock_files.retain(|name| {
-        let base = name.strip_suffix(".lock").and_then(|s| s.strip_prefix("."));
+        let base = strip_lock_affixes(name);
         match base {
             Some(base) => !blocks.contains(base),
             None => false,
@@ -52,31 +59,36 @@ fn scan_work_dir(work_dir: &Path) -> Result<(HashSet<String>, Vec<String>)> {
     Ok((blocks, lock_files))
 }
 
-pub fn run(config: &Config) -> Result<()> {
-    let work_dir = &config.work_dir;
-    let head_hash = head::load(work_dir)?;
-
-    // Walk chain from HEAD → GENESIS, building ordered list and reachable set together
+/// Walk the block chain from HEAD back towards GENESIS, returning an ordered
+/// list of chain entries and the set of reachable block hashes.
+fn walk_chain(work_dir: &Path, head_hash: &str) -> (Vec<ChainEntry>, HashSet<String>) {
     let mut chain = Vec::new();
     let mut reachable = HashSet::new();
 
-    let mut current_hash = head_hash.clone();
+    let mut current_hash = head_hash.to_string();
     while current_hash != GENESIS_HASH {
-        let header = match Block::load_header(work_dir, &current_hash) {
-            Ok(header) => header,
-            Err(_) => {
-                // Block was previously truncated — end of reachable chain
-                log::trace!(
-                    "Block '{:.7}...' not found (previously truncated), stopping chain walk",
-                    current_hash
-                );
-                break;
-            }
+        let Ok(header) = Block::load_header(work_dir, &current_hash) else {
+            // Reached end of chain
+            log::trace!(
+                "Block '{:.7}...' not found (previously truncated), stopping chain walk",
+                current_hash
+            );
+            break;
         };
-        let created = header.created.map(|ts| {
-            SystemTime::UNIX_EPOCH
-                + std::time::Duration::new(ts.seconds.max(0) as u64, ts.nanos.max(0) as u32)
-        });
+        let Some(created) = header.created else {
+            log::warn!(
+                "Block '{:.7}...' has no timestamp, stopping chain walk",
+                current_hash
+            );
+            break;
+        };
+        let Ok(created) = SystemTime::try_from(created) else {
+            log::warn!(
+                "Block '{:.7}...' has invalid timestamp, stopping chain walk",
+                current_hash
+            );
+            break;
+        };
         reachable.insert(current_hash.clone());
         chain.push(ChainEntry {
             hash: current_hash,
@@ -85,9 +97,17 @@ pub fn run(config: &Config) -> Result<()> {
         current_hash = header.parent;
     }
 
-    // Orphan removal: delete block files on disk not in reachable set,
-    // and stale lock files whose block no longer exists
+    (chain, reachable)
+}
+
+/// Remove orphaned blocks (not reachable from HEAD) and stale lock files
+/// (whose corresponding block no longer exists on disk). This also cleans up
+/// corrupt blocks, since `walk_chain` stops before adding them to the
+/// reachable set.
+fn remove_orphans(config: &Config, reachable: &HashSet<String>) -> Result<()> {
+    let work_dir = &config.work_dir;
     let (on_disk, stale_locks) = scan_work_dir(work_dir)?;
+
     if config.truncate.remove_orphans {
         for hash in &on_disk {
             if !reachable.contains(hash) {
@@ -99,41 +119,50 @@ pub fn run(config: &Config) -> Result<()> {
 
     for lock_file in &stale_locks {
         log::info!("Removing stale lock file '{}'", lock_file);
-        let _ = std::fs::remove_file(work_dir.join(lock_file));
+        if let Err(error) = std::fs::remove_file(work_dir.join(lock_file)) {
+            log::warn!(
+                "Failed to remove stale lock file '{}': {}",
+                lock_file,
+                error
+            );
+        }
     }
 
-    if chain.is_empty() {
-        return Ok(());
-    }
+    Ok(())
+}
 
-    // Precompute rule parameters
+/// Truncate blocks from the chain according to the configured rules
+/// (max_blocks, max_age, truncate_reported). Never deletes HEAD.
+fn truncate_chain(config: &Config, chain: &[ChainEntry]) -> Result<()> {
+    let work_dir = &config.work_dir;
+
     let reported_pos = if config.truncate.truncate_reported {
         match reported::load(work_dir)? {
-            Some(ref hash) => chain
+            Some(hash) => chain
                 .iter()
-                .position(|chain_entry| chain_entry.hash == *hash),
+                .position(|chain_entry| chain_entry.hash == hash),
             None => None,
         }
     } else {
         None
     };
 
-    let max_blocks = config.truncate.max_blocks.map(|m| m as usize);
-    let max_age_cutoff = match config.truncate.max_age.as_ref() {
-        Some(s) => Some(SystemTime::now() - parse_duration(s)?),
+    let max_blocks = config.truncate.max_blocks.map(|n| n as usize);
+    let max_age_cutoff = match &config.truncate.max_age {
+        Some(max_age) => Some(SystemTime::now() - parse_duration(max_age)?),
         None => None,
     };
 
-    // Single pass: check all removal rules for each block
-    let mut removed = 0u32;
+    let mut removed = 0;
     for (i, entry) in chain.iter().enumerate() {
         if i == 0 {
             continue; // Never delete HEAD
         }
 
-        let should_remove = reported_pos.is_some_and(|pos| i > pos)
-            || max_blocks.is_some_and(|max| i >= max)
-            || max_age_cutoff.is_some_and(|cutoff| entry.created.is_some_and(|c| c < cutoff));
+        let past_reported = reported_pos.is_some_and(|pos| i > pos);
+        let past_max_blocks = max_blocks.is_some_and(|max| i >= max);
+        let past_max_age = max_age_cutoff.is_some_and(|cutoff| entry.created < cutoff);
+        let should_remove = past_reported || past_max_blocks || past_max_age;
 
         if should_remove {
             log::info!("Truncating block '{:.7}...'", entry.hash);
@@ -145,6 +174,69 @@ pub fn run(config: &Config) -> Result<()> {
     if removed > 0 {
         log::info!("Truncated {} block(s)", removed);
     }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_strip_lock_affixes() {
+        assert_eq!(strip_lock_affixes(".abc123.lock"), Some("abc123"));
+        assert_eq!(strip_lock_affixes(".hello.lock"), Some("hello"));
+    }
+
+    #[test]
+    fn test_strip_lock_affixes_missing_prefix() {
+        assert_eq!(strip_lock_affixes("abc123.lock"), None);
+    }
+
+    #[test]
+    fn test_strip_lock_affixes_missing_suffix() {
+        assert_eq!(strip_lock_affixes(".abc123"), None);
+    }
+
+    #[test]
+    fn test_strip_lock_affixes_empty() {
+        assert_eq!(strip_lock_affixes(""), None);
+    }
+
+    #[test]
+    fn test_is_hex_hash() {
+        assert!(is_hex_hash("a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"));
+        assert!(is_hex_hash("0000000000000000000000000000000000000000"));
+    }
+
+    #[test]
+    fn test_is_hex_hash_too_short() {
+        assert!(!is_hex_hash("a1b2c3"));
+    }
+
+    #[test]
+    fn test_is_hex_hash_too_long() {
+        assert!(!is_hex_hash("a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2a"));
+    }
+
+    #[test]
+    fn test_is_hex_hash_non_hex() {
+        assert!(!is_hex_hash("g1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"));
+    }
+
+    #[test]
+    fn test_is_hex_hash_empty() {
+        assert!(!is_hex_hash(""));
+    }
+}
+
+pub fn run(config: &Config) -> Result<()> {
+    let work_dir = &config.work_dir;
+    let head_hash = head::load(work_dir)?;
+
+    let (chain, reachable) = walk_chain(work_dir, &head_hash);
+    remove_orphans(config, &reachable)?;
+    truncate_chain(config, &chain)?;
 
     Ok(())
 }
