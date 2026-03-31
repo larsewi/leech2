@@ -101,7 +101,9 @@ fn walk_chain(work_dir: &Path, head_hash: &str) -> (Vec<ChainEntry>, HashSet<Str
 }
 
 /// Remove orphaned blocks (not reachable from HEAD) and stale lock files
-/// (whose corresponding block no longer exists on disk).
+/// (whose corresponding block no longer exists on disk). This also cleans up
+/// corrupt blocks, since `walk_chain` stops before adding them to the
+/// reachable set.
 fn remove_orphans(config: &Config, reachable: &HashSet<String>) -> Result<()> {
     let work_dir = &config.work_dir;
     let (on_disk, stale_locks) = scan_work_dir(work_dir)?;
