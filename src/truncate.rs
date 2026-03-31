@@ -78,10 +78,7 @@ fn walk_chain(work_dir: &Path, head_hash: &str) -> (Vec<ChainEntry>, HashSet<Str
                 break;
             }
         };
-        let created = header.created.map(|ts| {
-            SystemTime::UNIX_EPOCH
-                + std::time::Duration::new(ts.seconds.max(0) as u64, ts.nanos.max(0) as u32)
-        });
+        let created = header.created.and_then(|ts| SystemTime::try_from(ts).ok());
         reachable.insert(current_hash.clone());
         chain.push(ChainEntry {
             hash: current_hash,
