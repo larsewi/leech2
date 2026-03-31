@@ -138,9 +138,9 @@ fn truncate_chain(config: &Config, chain: &[ChainEntry]) -> Result<()> {
 
     let reported_pos = if config.truncate.truncate_reported {
         match reported::load(work_dir)? {
-            Some(ref hash) => chain
+            Some(hash) => chain
                 .iter()
-                .position(|chain_entry| chain_entry.hash == *hash),
+                .position(|chain_entry| chain_entry.hash == hash),
             None => None,
         }
     } else {
