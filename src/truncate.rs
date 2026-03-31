@@ -147,7 +147,7 @@ fn truncate_chain(config: &Config, chain: &[ChainEntry]) -> Result<()> {
         None
     };
 
-    let max_blocks = config.truncate.max_blocks.map(|m| m as usize);
+    let max_blocks = config.truncate.max_blocks.map(|n| n as usize);
     let max_age_cutoff = match &config.truncate.max_age {
         Some(max_age) => Some(SystemTime::now() - parse_duration(max_age)?),
         None => None,
