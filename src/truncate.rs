@@ -178,6 +178,58 @@ fn truncate_chain(config: &Config, chain: &[ChainEntry]) -> Result<()> {
     Ok(())
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_strip_lock_affixes() {
+        assert_eq!(strip_lock_affixes(".abc123.lock"), Some("abc123"));
+        assert_eq!(strip_lock_affixes(".hello.lock"), Some("hello"));
+    }
+
+    #[test]
+    fn test_strip_lock_affixes_missing_prefix() {
+        assert_eq!(strip_lock_affixes("abc123.lock"), None);
+    }
+
+    #[test]
+    fn test_strip_lock_affixes_missing_suffix() {
+        assert_eq!(strip_lock_affixes(".abc123"), None);
+    }
+
+    #[test]
+    fn test_strip_lock_affixes_empty() {
+        assert_eq!(strip_lock_affixes(""), None);
+    }
+
+    #[test]
+    fn test_is_hex_hash() {
+        assert!(is_hex_hash("a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"));
+        assert!(is_hex_hash("0000000000000000000000000000000000000000"));
+    }
+
+    #[test]
+    fn test_is_hex_hash_too_short() {
+        assert!(!is_hex_hash("a1b2c3"));
+    }
+
+    #[test]
+    fn test_is_hex_hash_too_long() {
+        assert!(!is_hex_hash("a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2a"));
+    }
+
+    #[test]
+    fn test_is_hex_hash_non_hex() {
+        assert!(!is_hex_hash("g1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"));
+    }
+
+    #[test]
+    fn test_is_hex_hash_empty() {
+        assert!(!is_hex_hash(""));
+    }
+}
+
 pub fn run(config: &Config) -> Result<()> {
     let work_dir = &config.work_dir;
     let head_hash = head::load(work_dir)?;
