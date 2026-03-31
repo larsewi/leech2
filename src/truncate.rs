@@ -153,7 +153,7 @@ fn truncate_chain(config: &Config, chain: &[ChainEntry]) -> Result<()> {
         None => None,
     };
 
-    let mut removed = 0u32;
+    let mut removed = 0;
     for (i, entry) in chain.iter().enumerate() {
         if i == 0 {
             continue; // Never delete HEAD
