@@ -146,7 +146,7 @@ fn test_filter_exclude_scoped_to_table() {
         "config.toml",
         r#"
 [[filters.exclude]]
-table = ["users"]
+tables = ["users"]
 field = "status"
 equals = "inactive"
 

@@ -72,7 +72,7 @@ impl InjectedFieldConfig {
 #[derive(Debug, Deserialize)]
 pub struct ExcludeFilter {
     #[serde(default)]
-    pub table: Vec<String>,
+    pub tables: Vec<String>,
     pub field: String,
     pub equals: Option<String>,
     pub contains: Option<String>,
@@ -82,7 +82,7 @@ impl ExcludeFilter {
     /// Returns true if this rule applies to the given table.
     /// An empty `table` list means the rule applies to all tables.
     fn applies_to(&self, table_name: &str) -> bool {
-        self.table.is_empty() || self.table.iter().any(|name| name == table_name)
+        self.tables.is_empty() || self.tables.iter().any(|name| name == table_name)
     }
 
     /// Returns true if `value` matches this exclusion rule.
@@ -495,13 +495,13 @@ mod tests {
     }
 
     fn make_exclude(
-        table: Vec<&str>,
+        tables: Vec<&str>,
         field: &str,
         equals: Option<&str>,
         contains: Option<&str>,
     ) -> ExcludeFilter {
         ExcludeFilter {
-            table: table.into_iter().map(|s| s.to_string()).collect(),
+            tables: tables.into_iter().map(|s| s.to_string()).collect(),
             field: field.to_string(),
             equals: equals.map(|s| s.to_string()),
             contains: contains.map(|s| s.to_string()),

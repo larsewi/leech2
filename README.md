@@ -144,18 +144,18 @@ records never enter state, deltas, or SQL output.
 
 ```toml
 [filters]
-max-field-length = 1024     # drop records where a field exceeds this length
+max-field-length = 1024      # drop records where a field exceeds this length
 
 [[filters.exclude]]
-field = "status"            # field name to check
-equals = "inactive"         # records matching value are dropped
+field = "status"             # field name to check
+equals = "inactive"          # records matching value are dropped
 
 [[filters.exclude]]
 field = "description"
-contains = "DEPRECATED"     # records containing value are dropped
+contains = "DEPRECATED"      # records containing value are dropped
 
 [[filters.exclude]]
-table = ["staging_orders"]  # only apply to specific tables (default: all)
+tables = ["staging_orders"]  # only apply to specific tables (default: all)
 field = "region"
 equals = "test"
 ```
@@ -165,7 +165,7 @@ equals = "test"
 - `[[filters.exclude]]`: Optional list of exclusion rules. Each rule specifies a
   `field` and one or both of `equals` (exact match) and `contains` (substring
   match). When both are set, either matching is sufficient to drop the record.
-- `table`: Optional list of table names the rule applies to. When omitted, the
+- `tables`: Optional list of table names the rule applies to. When omitted, the
   rule applies to all tables. If the named field doesn't exist in a table, the
   rule is silently skipped.
 
