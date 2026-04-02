@@ -133,3 +133,129 @@ pub fn resolve_hash_prefix(work_dir: &Path, prefix: &str) -> Result<String> {
         ),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use fs2::FileExt;
+    use tempfile::tempdir;
+
+    #[test]
+    fn test_acquire_lock_creates_lock_file() {
+        let dir = tempdir().unwrap();
+        let _lock = acquire_lock(dir.path(), "foo", true).unwrap();
+        assert!(dir.path().join(".foo.lock").exists());
+    }
+
+    #[test]
+    fn test_shared_locks_do_not_block_each_other() {
+        let dir = tempdir().unwrap();
+        let _lock1 = acquire_lock(dir.path(), "foo", false).unwrap();
+        let _lock2 = acquire_lock(dir.path(), "foo", false).unwrap();
+    }
+
+    #[test]
+    fn test_exclusive_lock_blocks_exclusive_lock() {
+        let dir = tempdir().unwrap();
+        let _lock = acquire_lock(dir.path(), "foo", true).unwrap();
+
+        let lock_path = dir.path().join(".foo.lock");
+        let file = File::create(&lock_path).unwrap();
+        assert!(file.try_lock_exclusive().is_err());
+    }
+
+    #[test]
+    fn test_exclusive_lock_blocks_shared_lock() {
+        let dir = tempdir().unwrap();
+        let _lock = acquire_lock(dir.path(), "foo", true).unwrap();
+
+        let lock_path = dir.path().join(".foo.lock");
+        let file = File::create(&lock_path).unwrap();
+        assert!(file.try_lock_shared().is_err());
+    }
+
+    #[test]
+    fn test_shared_lock_blocks_exclusive_lock() {
+        let dir = tempdir().unwrap();
+        let _lock = acquire_lock(dir.path(), "foo", false).unwrap();
+
+        let lock_path = dir.path().join(".foo.lock");
+        let file = File::create(&lock_path).unwrap();
+        assert!(file.try_lock_exclusive().is_err());
+    }
+
+    #[test]
+    fn test_lock_released_on_drop() {
+        let dir = tempdir().unwrap();
+        {
+            let _lock = acquire_lock(dir.path(), "foo", true).unwrap();
+        }
+        let _lock = acquire_lock(dir.path(), "foo", true).unwrap();
+    }
+
+    #[test]
+    fn test_acquire_lock_invalid_dir() {
+        let result = acquire_lock(Path::new("/nonexistent/path"), "foo", true);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_resolve_hash_prefix_exact_match() {
+        let dir = tempdir().unwrap();
+        let hash = "abcdef1234567890abcdef1234567890abcdef12";
+        File::create(dir.path().join(hash)).unwrap();
+
+        let result = resolve_hash_prefix(dir.path(), "abcdef").unwrap();
+        assert_eq!(result, hash);
+    }
+
+    #[test]
+    fn test_resolve_hash_prefix_full_hash() {
+        let dir = tempdir().unwrap();
+        let hash = "abcdef1234567890abcdef1234567890abcdef12";
+        File::create(dir.path().join(hash)).unwrap();
+
+        let result = resolve_hash_prefix(dir.path(), hash).unwrap();
+        assert_eq!(result, hash);
+    }
+
+    #[test]
+    fn test_resolve_hash_prefix_no_match() {
+        let dir = tempdir().unwrap();
+        let hash = "abcdef1234567890abcdef1234567890abcdef12";
+        File::create(dir.path().join(hash)).unwrap();
+
+        let result = resolve_hash_prefix(dir.path(), "ffffff");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_resolve_hash_prefix_ambiguous() {
+        let dir = tempdir().unwrap();
+        File::create(dir.path().join("abcdef1234567890abcdef1234567890abcdef12")).unwrap();
+        File::create(dir.path().join("abcdef5678901234567890abcdef1234567890ab")).unwrap();
+
+        let result = resolve_hash_prefix(dir.path(), "abcdef");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_resolve_hash_prefix_genesis_hash() {
+        let dir = tempdir().unwrap();
+
+        let result = resolve_hash_prefix(dir.path(), "00000").unwrap();
+        assert_eq!(result, GENESIS_HASH);
+    }
+
+    #[test]
+    fn test_resolve_hash_prefix_ignores_non_hash_files() {
+        let dir = tempdir().unwrap();
+        // Too short to be a hash
+        File::create(dir.path().join("abcdef")).unwrap();
+        // Right length but contains non-hex characters
+        File::create(dir.path().join("abcdef1234567890abcdef1234567890abcdefGH")).unwrap();
+
+        let result = resolve_hash_prefix(dir.path(), "abcdef");
+        assert!(result.is_err());
+    }
+}
