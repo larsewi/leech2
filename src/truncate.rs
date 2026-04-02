@@ -178,6 +178,17 @@ fn truncate_chain(config: &Config, chain: &[ChainEntry]) -> Result<()> {
     Ok(())
 }
 
+pub fn run(config: &Config) -> Result<()> {
+    let work_dir = &config.work_dir;
+    let head_hash = head::load(work_dir)?;
+
+    let (chain, reachable) = walk_chain(work_dir, &head_hash);
+    remove_orphans(config, &reachable)?;
+    truncate_chain(config, &chain)?;
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -228,15 +239,4 @@ mod tests {
     fn test_is_hex_hash_empty() {
         assert!(!is_hex_hash(""));
     }
-}
-
-pub fn run(config: &Config) -> Result<()> {
-    let work_dir = &config.work_dir;
-    let head_hash = head::load(work_dir)?;
-
-    let (chain, reachable) = walk_chain(work_dir, &head_hash);
-    remove_orphans(config, &reachable)?;
-    truncate_chain(config, &chain)?;
-
-    Ok(())
 }
