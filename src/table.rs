@@ -123,6 +123,17 @@ impl Table {
         (primary_indices, subsidiary_indices)
     }
 
+    #[cfg(test)]
+    fn test_reader(csv_content: &str, has_headers: bool) -> csv::Reader<File> {
+        use std::io::Write;
+        let mut tmp = tempfile::NamedTempFile::new().unwrap();
+        tmp.write_all(csv_content.as_bytes()).unwrap();
+        tmp.flush().unwrap();
+        csv::ReaderBuilder::new()
+            .has_headers(has_headers)
+            .from_reader(File::open(tmp.path()).unwrap())
+    }
+
     fn parse_csv(
         table_name: &str,
         config: &TableConfig,
@@ -174,5 +185,149 @@ impl Table {
         }
 
         Ok(Table { fields, records })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::FieldConfig;
+
+    fn make_field(name: &str, primary_key: bool) -> FieldConfig {
+        FieldConfig {
+            name: name.to_string(),
+            sql_type: "TEXT".to_string(),
+            primary_key,
+            null: None,
+        }
+    }
+
+    fn make_config(fields: Vec<FieldConfig>, header: bool) -> TableConfig {
+        TableConfig {
+            source: "test.csv".to_string(),
+            header,
+            fields,
+        }
+    }
+
+    // -- compute_key_indices tests --
+
+    #[test]
+    fn test_compute_key_indices_single_primary_key() {
+        let field_names = ["id", "name", "email"].map(String::from).to_vec();
+        let primary_key = ["id"].map(String::from).to_vec();
+        let field_indices = vec![0, 1, 2];
+
+        let (primary_indices, subsidiary_indices) =
+            Table::compute_key_indices(&field_names, &primary_key, &field_indices);
+
+        assert_eq!(primary_indices, vec![0]);
+        assert_eq!(subsidiary_indices, vec![1, 2]);
+    }
+
+    #[test]
+    fn test_compute_key_indices_composite_primary_key() {
+        let field_names = ["region", "id", "name"].map(String::from).to_vec();
+        let primary_key = ["region", "id"].map(String::from).to_vec();
+        let field_indices = vec![0, 1, 2];
+
+        let (primary_indices, subsidiary_indices) =
+            Table::compute_key_indices(&field_names, &primary_key, &field_indices);
+
+        assert_eq!(primary_indices, vec![0, 1]);
+        assert_eq!(subsidiary_indices, vec![2]);
+    }
+
+    #[test]
+    fn test_compute_key_indices_reordered_columns() {
+        // CSV columns are in a different order than the config fields.
+        let field_names = ["id", "name", "email"].map(String::from).to_vec();
+        let primary_key = ["id"].map(String::from).to_vec();
+        let field_indices = vec![2, 0, 1]; // id->col2, name->col0, email->col1
+
+        let (primary_indices, subsidiary_indices) =
+            Table::compute_key_indices(&field_names, &primary_key, &field_indices);
+
+        assert_eq!(primary_indices, vec![2]);
+        assert_eq!(subsidiary_indices, vec![0, 1]);
+    }
+
+    #[test]
+    fn test_compute_key_indices_all_primary_keys() {
+        let field_names = ["a", "b"].map(String::from).to_vec();
+        let primary_key = ["a", "b"].map(String::from).to_vec();
+        let field_indices = vec![0, 1];
+
+        let (primary_indices, subsidiary_indices) =
+            Table::compute_key_indices(&field_names, &primary_key, &field_indices);
+
+        assert_eq!(primary_indices, vec![0, 1]);
+        assert!(subsidiary_indices.is_empty());
+    }
+
+    // -- resolve_field_indices tests --
+
+    #[test]
+    fn test_resolve_field_indices_no_header() {
+        let config = make_config(
+            vec![
+                make_field("id", true),
+                make_field("name", false),
+                make_field("email", false),
+            ],
+            false,
+        );
+        let mut reader = Table::test_reader("1,Alice,alice@example.com\n", false);
+
+        let indices = Table::resolve_field_indices(&config, &mut reader).unwrap();
+        assert_eq!(indices, vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn test_resolve_field_indices_with_header() {
+        let config = make_config(
+            vec![
+                make_field("id", true),
+                make_field("name", false),
+                make_field("email", false),
+            ],
+            true,
+        );
+        let mut reader = Table::test_reader("id,name,email\n1,Alice,alice@example.com\n", true);
+
+        let indices = Table::resolve_field_indices(&config, &mut reader).unwrap();
+        assert_eq!(indices, vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn test_resolve_field_indices_reordered_header() {
+        let config = make_config(
+            vec![
+                make_field("id", true),
+                make_field("name", false),
+                make_field("email", false),
+            ],
+            true,
+        );
+        // CSV columns in different order than config
+        let mut reader = Table::test_reader("email,name,id\na@b.com,Alice,1\n", true);
+
+        let indices = Table::resolve_field_indices(&config, &mut reader).unwrap();
+        assert_eq!(indices, vec![2, 1, 0]);
+    }
+
+    #[test]
+    fn test_resolve_field_indices_missing_field() {
+        let config = make_config(
+            vec![make_field("id", true), make_field("missing", false)],
+            true,
+        );
+        let mut reader = Table::test_reader("id,name\n1,Alice\n", true);
+
+        let err = Table::resolve_field_indices(&config, &mut reader).unwrap_err();
+        assert!(
+            err.to_string().contains("field 'missing' not found"),
+            "unexpected error: {err}"
+        );
     }
 }
