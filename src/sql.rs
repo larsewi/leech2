@@ -227,6 +227,24 @@ fn format_row(key: &[String], value: &[String], schema: &TableSchema) -> Result<
     Ok(literals)
 }
 
+/// Generate DELETE statements for a list of entries.
+fn emit_deletes(
+    entries: &[Entry],
+    schema: &TableSchema,
+    injected_fields: &[InjectedField],
+    quoted_table: &str,
+    out: &mut String,
+) -> Result<()> {
+    for entry in entries {
+        let where_clause = primary_key_where_clause(&entry.key, schema, injected_fields)?;
+        out.push_str(&format!(
+            "DELETE FROM {} WHERE {};\n",
+            quoted_table, where_clause
+        ));
+    }
+    Ok(())
+}
+
 /// Generate INSERT statements for a list of entries.
 fn emit_inserts(
     entries: &[Entry],
@@ -296,13 +314,7 @@ fn delta_to_sql(
     let schema = TableSchema::resolve(config, table_name)?;
     let table = quote_identifier(table_name);
 
-    // DELETEs
-    for entry in &delta.deletes {
-        let where_clause = primary_key_where_clause(&entry.key, &schema, injected_fields)?;
-        out.push_str(&format!("DELETE FROM {} WHERE {};\n", table, where_clause));
-    }
-
-    // INSERTs
+    emit_deletes(&delta.deletes, &schema, injected_fields, &table, out)?;
     emit_inserts(&delta.inserts, &schema, injected_fields, &table, out)?;
 
     // UPDATEs
