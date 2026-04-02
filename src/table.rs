@@ -104,6 +104,25 @@ impl Table {
         Ok(indices)
     }
 
+    /// Split field indices into primary-key and subsidiary groups based on
+    /// which fields are marked as primary keys in the config.
+    fn compute_key_indices(
+        field_names: &[String],
+        primary_key: &[String],
+        field_indices: &[usize],
+    ) -> (Vec<usize>, Vec<usize>) {
+        let mut primary_indices = Vec::new();
+        let mut subsidiary_indices = Vec::new();
+        for (config_index, name) in field_names.iter().enumerate() {
+            if primary_key.contains(name) {
+                primary_indices.push(field_indices[config_index]);
+            } else {
+                subsidiary_indices.push(field_indices[config_index]);
+            }
+        }
+        (primary_indices, subsidiary_indices)
+    }
+
     fn parse_csv(
         table_name: &str,
         config: &TableConfig,
@@ -113,23 +132,8 @@ impl Table {
         let field_names = config.field_names();
         let primary_key = config.primary_key();
         let field_indices = Self::resolve_field_indices(config, &mut reader)?;
-
-        let primary_indices: Vec<usize> = primary_key
-            .iter()
-            .filter_map(|primary_key_column| {
-                field_names
-                    .iter()
-                    .position(|name| name == primary_key_column)
-            })
-            .map(|config_index| field_indices[config_index])
-            .collect();
-
-        let subsidiary_indices: Vec<usize> = field_names
-            .iter()
-            .enumerate()
-            .filter(|(_, column)| !primary_key.contains(column))
-            .map(|(config_index, _)| field_indices[config_index])
-            .collect();
+        let (primary_indices, subsidiary_indices) =
+            Self::compute_key_indices(&field_names, &primary_key, &field_indices);
 
         let fields = config.ordered_field_names();
 
