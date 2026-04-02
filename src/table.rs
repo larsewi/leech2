@@ -81,6 +81,29 @@ impl Table {
         Ok(table)
     }
 
+    /// Map each config field to its CSV column index.
+    /// When header=true, match by name; otherwise, use positional order.
+    fn resolve_field_indices(
+        config: &TableConfig,
+        reader: &mut csv::Reader<File>,
+    ) -> Result<Vec<usize>> {
+        let field_names = config.field_names();
+        let mut indices = Vec::with_capacity(field_names.len());
+        if config.header {
+            let headers = reader.headers().context("failed to read CSV header")?;
+            for name in &field_names {
+                let index = headers
+                    .iter()
+                    .position(|h| h == name)
+                    .ok_or_else(|| anyhow::anyhow!("field '{}' not found in CSV header", name))?;
+                indices.push(index);
+            }
+        } else {
+            indices = Vec::from_iter(0..field_names.len());
+        }
+        Ok(indices)
+    }
+
     fn parse_csv(
         table_name: &str,
         config: &TableConfig,
@@ -89,24 +112,7 @@ impl Table {
     ) -> Result<Self> {
         let field_names = config.field_names();
         let primary_key = config.primary_key();
-
-        // Map each config field to its CSV column index.
-        // When header=true, match by name; otherwise, use positional order.
-        let mut field_indices = Vec::with_capacity(field_names.len());
-        if config.header {
-            let headers = reader.headers().context("failed to read CSV header")?;
-            for name in &field_names {
-                let index = headers
-                    .iter()
-                    .position(|h| h == name)
-                    .ok_or_else(|| anyhow::anyhow!("field '{}' not found in CSV header", name))?;
-                field_indices.push(index);
-            }
-        } else {
-            for i in 0..field_names.len() {
-                field_indices.push(i);
-            }
-        }
+        let field_indices = Self::resolve_field_indices(config, &mut reader)?;
 
         let primary_indices: Vec<usize> = primary_key
             .iter()
