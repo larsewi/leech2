@@ -125,16 +125,7 @@ impl Table {
             .map(|(config_index, _)| field_indices[config_index])
             .collect();
 
-        // Order fields with primary key columns first, then subsidiary columns.
-        let fields: Vec<String> = primary_key
-            .iter()
-            .chain(
-                field_names
-                    .iter()
-                    .filter(|name| !primary_key.contains(name)),
-            )
-            .cloned()
-            .collect();
+        let fields = config.ordered_field_names();
 
         let mut records: HashMap<Vec<String>, Vec<String>> = HashMap::new();
 
