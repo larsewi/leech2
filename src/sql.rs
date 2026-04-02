@@ -74,27 +74,31 @@ impl TableSchema {
             .with_context(|| format!("table '{}' not found in config", table_name))?;
 
         // Build a name→config lookup so we can resolve type/null for each field.
-        let field_configs: HashMap<&str, &FieldConfig> = table_config
+        let field_config_by_name: HashMap<&str, &FieldConfig> = table_config
             .fields
             .iter()
             .map(|field| (field.name.as_str(), field))
             .collect();
 
-        let primary_key = table_config.primary_key();
-        let field_names = table_config.field_names();
+        let primary_key_names = table_config.primary_key();
+        let all_field_names = table_config.field_names();
 
         let mut fields = Vec::new();
-        for name in &primary_key {
-            fields.push(field_configs[name.as_str()].try_into()?);
+
+        // Primary-key fields first.
+        for name in &primary_key_names {
+            fields.push(field_config_by_name[name.as_str()].try_into()?);
         }
-        for name in &field_names {
-            if !primary_key.contains(name) {
-                fields.push(field_configs[name.as_str()].try_into()?);
+
+        // Then subsidiary fields.
+        for name in &all_field_names {
+            if !primary_key_names.contains(name) {
+                fields.push(field_config_by_name[name.as_str()].try_into()?);
             }
         }
 
         Ok(TableSchema {
-            num_primary_keys: primary_key.len(),
+            num_primary_keys: primary_key_names.len(),
             fields,
         })
     }
