@@ -146,11 +146,11 @@ impl InjectedField {
     fn where_clause(&self) -> Result<String> {
         let literal = quote_literal(&self.value, &self.sql_type)
             .with_context(|| format!("injected field '{}' value", self.name))?;
-        Ok(format!("{} = {}", quote_ident(&self.name), literal))
+        Ok(format!("{} = {}", quote_identifier(&self.name), literal))
     }
 
     fn quoted_column(&self) -> String {
-        quote_ident(&self.name)
+        quote_identifier(&self.name)
     }
 
     fn quoted_value(&self) -> Result<String> {
@@ -160,7 +160,7 @@ impl InjectedField {
 }
 
 /// Double-quote a SQL identifier, escaping embedded double quotes.
-fn quote_ident(name: &str) -> String {
+fn quote_identifier(name: &str) -> String {
     format!("\"{}\"", name.replace('"', "\"\""))
 }
 
@@ -242,7 +242,7 @@ fn emit_inserts(
     let mut column_parts: Vec<String> = schema
         .fields
         .iter()
-        .map(|field| quote_ident(&field.name))
+        .map(|field| quote_identifier(&field.name))
         .collect();
 
     for (index, injected) in injected_fields.iter().enumerate() {
@@ -278,7 +278,7 @@ fn primary_key_where_clause(
         .map(|(value, field)| {
             let literal =
                 format_value(value, field).with_context(|| format!("field '{}'", field.name))?;
-            Ok(format!("{} = {}", quote_ident(&field.name), literal))
+            Ok(format!("{} = {}", quote_identifier(&field.name), literal))
         })
         .collect::<Result<Vec<_>>>()?;
 
@@ -298,7 +298,7 @@ fn delta_to_sql(
     out: &mut String,
 ) -> Result<()> {
     let schema = TableSchema::resolve(config, table_name)?;
-    let table = quote_ident(table_name);
+    let table = quote_identifier(table_name);
 
     // DELETEs
     for entry in &delta.deletes {
@@ -327,7 +327,7 @@ fn delta_to_sql(
                 let field = &subsidiary_fields[*index as usize];
                 let literal = format_value(value, field)
                     .with_context(|| format!("field '{}'", field.name))?;
-                Ok(format!("{} = {}", quote_ident(&field.name), literal))
+                Ok(format!("{} = {}", quote_identifier(&field.name), literal))
             })
             .collect::<Result<Vec<_>>>()?;
 
@@ -353,7 +353,7 @@ fn state_table_to_sql(
     out: &mut String,
 ) -> Result<()> {
     let schema = TableSchema::resolve(config, table_name)?;
-    let quoted_table = quote_ident(table_name);
+    let quoted_table = quote_identifier(table_name);
 
     if injected_fields.is_empty() {
         out.push_str(&format!("TRUNCATE {};\n", quoted_table));
@@ -466,10 +466,10 @@ mod tests {
     }
 
     #[test]
-    fn test_quote_ident() {
-        assert_eq!(quote_ident("simple"), "\"simple\"");
-        assert_eq!(quote_ident("has\"quote"), "\"has\"\"quote\"");
-        assert_eq!(quote_ident(""), "\"\"");
+    fn test_quote_identifier() {
+        assert_eq!(quote_identifier("simple"), "\"simple\"");
+        assert_eq!(quote_identifier("has\"quote"), "\"has\"\"quote\"");
+        assert_eq!(quote_identifier(""), "\"\"");
     }
 
     #[test]
