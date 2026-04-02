@@ -35,7 +35,8 @@ impl SqlType {
 struct FieldMeta {
     name: String,
     sql_type: SqlType,
-    /// If set, this CSV value is emitted as SQL `NULL` instead of a typed literal.
+    /// When a CSV field value equals this sentinel string, it is emitted as SQL
+    /// `NULL` instead of a typed literal.
     null: Option<String>,
 }
 
