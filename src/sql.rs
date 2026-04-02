@@ -77,7 +77,7 @@ impl TableSchema {
             .with_context(|| format!("table '{}' not found in config", table_name))?;
 
         // Build a name→config lookup so we can resolve type/null for each field.
-        let field_configs: std::collections::HashMap<&str, &FieldConfig> = table_config
+        let field_configs: HashMap<&str, &FieldConfig> = table_config
             .fields
             .iter()
             .map(|field| (field.name.as_str(), field))
