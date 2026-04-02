@@ -3,6 +3,7 @@ use std::fmt;
 
 use anyhow::{Context, Result, bail};
 
+use crate::proto::delta::Delta as ProtoDelta;
 use crate::state::State;
 use crate::table::Table;
 
@@ -22,10 +23,10 @@ pub struct Delta {
     pub updates: HashMap<Vec<String>, (Vec<String>, Vec<String>)>,
 }
 
-impl TryFrom<crate::proto::delta::Delta> for Delta {
+impl TryFrom<ProtoDelta> for Delta {
     type Error = anyhow::Error;
 
-    fn try_from(proto: crate::proto::delta::Delta) -> Result<Self> {
+    fn try_from(proto: ProtoDelta) -> Result<Self> {
         let num_subsidiary = proto.num_subsidiary().context("corrupt delta")?;
 
         // Updates are stored sparsely on the wire: only changed column
@@ -49,9 +50,9 @@ impl TryFrom<crate::proto::delta::Delta> for Delta {
     }
 }
 
-impl From<Delta> for crate::proto::delta::Delta {
+impl From<Delta> for ProtoDelta {
     fn from(delta: Delta) -> Self {
-        crate::proto::delta::Delta {
+        ProtoDelta {
             column_names: delta.column_names,
             inserts: delta.inserts.into_iter().map(Into::into).collect(),
             deletes: delta.deletes.into_iter().map(Into::into).collect(),
@@ -60,7 +61,7 @@ impl From<Delta> for crate::proto::delta::Delta {
     }
 }
 
-impl crate::proto::delta::Delta {
+impl ProtoDelta {
     /// Number of subsidiary (non-key) columns.
     ///
     /// The proto format stores keys and values separately, but `column_names`
@@ -146,7 +147,7 @@ impl crate::proto::delta::Delta {
     }
 }
 
-impl fmt::Display for crate::proto::delta::Delta {
+impl fmt::Display for ProtoDelta {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "[{}]", self.column_names.join(", "))?;
         let num_subsidiary = match self.num_subsidiary() {

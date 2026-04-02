@@ -12,7 +12,9 @@ use crate::block::Block;
 use crate::config::{Config, InjectedFieldConfig};
 use crate::delta::Delta;
 use crate::head;
+use crate::proto::delta::Delta as ProtoDelta;
 use crate::proto::injected::Field;
+use crate::proto::table::Table as ProtoTable;
 use crate::state;
 use crate::utils;
 use crate::utils::GENESIS_HASH;
@@ -139,8 +141,8 @@ fn merge_block_deltas(
 type ConsolidateResult = (
     Option<Timestamp>,
     u32,
-    HashMap<String, crate::proto::delta::Delta>,
-    HashMap<String, crate::proto::table::Table>,
+    HashMap<String, ProtoDelta>,
+    HashMap<String, ProtoTable>,
 );
 
 fn try_consolidate(work_dir: &Path, head: &str, last_known: &str) -> Result<ConsolidateResult> {
@@ -176,8 +178,7 @@ fn try_consolidate(work_dir: &Path, head: &str, last_known: &str) -> Result<Cons
 
     // Load state for per-table size comparison and fallback.
     let state = state::State::load(work_dir)?;
-    let state_tables: HashMap<String, crate::proto::table::Table> =
-        state.map(|s| s.into()).unwrap_or_default();
+    let state_tables: HashMap<String, ProtoTable> = state.map(|s| s.into()).unwrap_or_default();
 
     let mut result_deltas = HashMap::new();
     let mut result_states = HashMap::new();
@@ -193,7 +194,7 @@ fn try_consolidate(work_dir: &Path, head: &str, last_known: &str) -> Result<Cons
     }
 
     for (table_name, merged) in running_deltas {
-        let mut merged_delta = crate::proto::delta::Delta::from(merged);
+        let mut merged_delta = ProtoDelta::from(merged);
 
         // Strip data the receiver doesn't need.
         for delete in &mut merged_delta.deletes {

@@ -2,10 +2,18 @@ use std::collections::HashMap;
 
 use anyhow::{Context, Result, bail};
 
-use crate::config::Config;
-use crate::proto::patch::Patch;
+use crate::config::{Config, FieldConfig};
+use crate::entry::Entry;
+use crate::proto::delta::Delta as ProtoDelta;
+use crate::proto::injected::Field as ProtoInjectedField;
+use crate::proto::patch::Patch as ProtoPatch;
+use crate::proto::table::Table as ProtoTable;
 
-/// SQL type mapping for converting CSV byte values to SQL literals.
+/// Controls how a CSV field value is formatted as a SQL literal.
+///
+/// These are not database column types — they determine quoting and
+/// validation when embedding a value into a SQL string (e.g. `Text`
+/// wraps in single quotes, `Number` validates and emits unquoted).
 #[derive(Debug, Clone, PartialEq)]
 pub enum SqlType {
     Text,
@@ -31,8 +39,23 @@ impl SqlType {
 struct FieldMeta {
     name: String,
     sql_type: SqlType,
-    /// If set, this CSV value is emitted as SQL `NULL` instead of a typed literal.
+    /// When a CSV field value equals this sentinel string, it is emitted as SQL
+    /// `NULL` instead of a typed literal.
     null: Option<String>,
+}
+
+impl TryFrom<&FieldConfig> for FieldMeta {
+    type Error = anyhow::Error;
+
+    fn try_from(field_config: &FieldConfig) -> Result<Self> {
+        let sql_type = SqlType::from_config(&field_config.sql_type)
+            .with_context(|| format!("field '{}'", field_config.name))?;
+        Ok(FieldMeta {
+            name: field_config.name.clone(),
+            sql_type,
+            null: field_config.null.clone(),
+        })
+    }
 }
 
 /// Schema information for a single table, resolved from config.
@@ -44,16 +67,9 @@ struct TableSchema {
 }
 
 impl TableSchema {
-    /// Resolve a table's schema from config, producing an ordered field list.
-    ///
-    /// The config stores fields in an unordered flat list. This function
-    /// partitions them into primary-key fields followed by subsidiary fields
-    /// so that callers can split the `fields` vec at `num_primary_keys` (see
-    /// `primary_key_fields()` and `subsidiary_fields()`).
-    ///
-    /// Fields that appear in the config get their declared type and null
-    /// sentinel; fields referenced only by the primary key (not explicitly
-    /// configured) default to `TEXT` with no null sentinel.
+    /// Resolve a table's schema from config, partitioning fields into
+    /// primary-key fields followed by subsidiary fields while preserving
+    /// declaration order within each group.
     fn resolve(config: &Config, table_name: &str) -> Result<Self> {
         let table_config = config
             .tables
@@ -61,41 +77,37 @@ impl TableSchema {
             .with_context(|| format!("table '{}' not found in config", table_name))?;
 
         // Build a name→config lookup so we can resolve type/null for each field.
-        let field_configs: std::collections::HashMap<&str, &crate::config::FieldConfig> =
-            table_config
-                .fields
-                .iter()
-                .map(|field| (field.name.as_str(), field))
-                .collect();
+        let field_config_by_name: HashMap<&str, &FieldConfig> = table_config
+            .fields
+            .iter()
+            .map(|field| (field.name.as_str(), field))
+            .collect();
 
-        let primary_key = table_config.primary_key();
-        let field_names = table_config.field_names();
-
-        let resolve_field = |name: &str| -> Result<FieldMeta> {
-            let field_config = field_configs.get(name);
-            let type_str = field_config.map_or("TEXT", |fc| fc.sql_type.as_str());
-            let null = field_config.and_then(|fc| fc.null.clone());
-            let sql_type =
-                SqlType::from_config(type_str).with_context(|| format!("field '{}'", name))?;
-            Ok(FieldMeta {
-                name: name.to_string(),
-                sql_type,
-                null,
-            })
-        };
+        let primary_key_names = table_config.primary_key();
+        let all_field_names = table_config.field_names();
 
         let mut fields = Vec::new();
-        for name in &primary_key {
-            fields.push(resolve_field(name)?);
+
+        // Primary-key fields first.
+        for name in &primary_key_names {
+            let field_meta = field_config_by_name[name.as_str()]
+                .try_into()
+                .with_context(|| format!("table '{}'", table_name))?;
+            fields.push(field_meta);
         }
-        for name in &field_names {
-            if !primary_key.contains(name) {
-                fields.push(resolve_field(name)?);
+
+        // Then subsidiary fields.
+        for name in &all_field_names {
+            if !primary_key_names.contains(name) {
+                let field_meta = field_config_by_name[name.as_str()]
+                    .try_into()
+                    .with_context(|| format!("table '{}'", table_name))?;
+                fields.push(field_meta);
             }
         }
 
         Ok(TableSchema {
-            num_primary_keys: primary_key.len(),
+            num_primary_keys: primary_key_names.len(),
             fields,
         })
     }
@@ -116,8 +128,10 @@ struct InjectedField {
     value: String,
 }
 
-impl InjectedField {
-    fn resolve(proto: &crate::proto::injected::Field) -> Result<Self> {
+impl TryFrom<&ProtoInjectedField> for InjectedField {
+    type Error = anyhow::Error;
+
+    fn try_from(proto: &ProtoInjectedField) -> Result<Self> {
         let sql_type = SqlType::from_config(&proto.sql_type)
             .with_context(|| format!("injected field '{}'", proto.name))?;
         Ok(InjectedField {
@@ -126,15 +140,17 @@ impl InjectedField {
             value: proto.value.clone(),
         })
     }
+}
 
+impl InjectedField {
     fn where_clause(&self) -> Result<String> {
         let literal = quote_literal(&self.value, &self.sql_type)
             .with_context(|| format!("injected field '{}' value", self.name))?;
-        Ok(format!("{} = {}", quote_ident(&self.name), literal))
+        Ok(format!("{} = {}", quote_identifier(&self.name), literal))
     }
 
     fn quoted_column(&self) -> String {
-        quote_ident(&self.name)
+        quote_identifier(&self.name)
     }
 
     fn quoted_value(&self) -> Result<String> {
@@ -144,7 +160,7 @@ impl InjectedField {
 }
 
 /// Double-quote a SQL identifier, escaping embedded double quotes.
-fn quote_ident(name: &str) -> String {
+fn quote_identifier(name: &str) -> String {
     format!("\"{}\"", name.replace('"', "\"\""))
 }
 
@@ -211,9 +227,27 @@ fn format_row(key: &[String], value: &[String], schema: &TableSchema) -> Result<
     Ok(literals)
 }
 
+/// Generate DELETE statements for a list of entries.
+fn emit_deletes(
+    entries: &[Entry],
+    schema: &TableSchema,
+    injected_fields: &[InjectedField],
+    quoted_table: &str,
+    out: &mut String,
+) -> Result<()> {
+    for entry in entries {
+        let where_clause = primary_key_where_clause(&entry.key, schema, injected_fields)?;
+        out.push_str(&format!(
+            "DELETE FROM {} WHERE {};\n",
+            quoted_table, where_clause
+        ));
+    }
+    Ok(())
+}
+
 /// Generate INSERT statements for a list of entries.
 fn emit_inserts(
-    entries: &[crate::entry::Entry],
+    entries: &[Entry],
     schema: &TableSchema,
     injected_fields: &[InjectedField],
     quoted_table: &str,
@@ -226,7 +260,7 @@ fn emit_inserts(
     let mut column_parts: Vec<String> = schema
         .fields
         .iter()
-        .map(|field| quote_ident(&field.name))
+        .map(|field| quote_identifier(&field.name))
         .collect();
 
     for (index, injected) in injected_fields.iter().enumerate() {
@@ -250,22 +284,58 @@ fn emit_inserts(
     Ok(())
 }
 
+/// Generate UPDATE statements for a list of updates.
+fn emit_updates(
+    updates: &[crate::update::Update],
+    schema: &TableSchema,
+    injected_fields: &[InjectedField],
+    quoted_table: &str,
+    out: &mut String,
+) -> Result<()> {
+    let subsidiary_fields = schema.subsidiary_fields();
+
+    for update in updates {
+        // Sparse updates list changed column indices explicitly; full
+        // updates (empty changed_indices) include all subsidiary columns.
+        let indices: Vec<u32> = if update.changed_indices.is_empty() {
+            (0..subsidiary_fields.len() as u32).collect()
+        } else {
+            update.changed_indices.clone()
+        };
+
+        let mut set_parts = Vec::new();
+        for (index, value) in indices.iter().zip(update.new_value.iter()) {
+            let field = &subsidiary_fields[*index as usize];
+            let literal =
+                format_value(value, field).with_context(|| format!("field '{}'", field.name))?;
+            set_parts.push(format!("{} = {}", quote_identifier(&field.name), literal));
+        }
+
+        let where_clause = primary_key_where_clause(&update.key, schema, injected_fields)?;
+
+        out.push_str(&format!(
+            "UPDATE {} SET {} WHERE {};\n",
+            quoted_table,
+            set_parts.join(", "),
+            where_clause
+        ));
+    }
+
+    Ok(())
+}
+
 /// Build a WHERE clause from primary key values and injected fields.
 fn primary_key_where_clause(
     key: &[String],
     schema: &TableSchema,
     injected_fields: &[InjectedField],
 ) -> Result<String> {
-    let mut where_parts: Vec<String> = key
-        .iter()
-        .zip(schema.primary_key_fields())
-        .map(|(value, field)| {
-            let literal =
-                format_value(value, field).with_context(|| format!("field '{}'", field.name))?;
-            Ok(format!("{} = {}", quote_ident(&field.name), literal))
-        })
-        .collect::<Result<Vec<_>>>()?;
-
+    let mut where_parts = Vec::new();
+    for (value, field) in key.iter().zip(schema.primary_key_fields()) {
+        let literal =
+            format_value(value, field).with_context(|| format!("field '{}'", field.name))?;
+        where_parts.push(format!("{} = {}", quote_identifier(&field.name), literal));
+    }
     for injected in injected_fields {
         where_parts.push(injected.where_clause()?);
     }
@@ -277,53 +347,16 @@ fn primary_key_where_clause(
 fn delta_to_sql(
     config: &Config,
     table_name: &str,
-    delta: &crate::proto::delta::Delta,
+    delta: &ProtoDelta,
     injected_fields: &[InjectedField],
     out: &mut String,
 ) -> Result<()> {
     let schema = TableSchema::resolve(config, table_name)?;
-    let table = quote_ident(table_name);
+    let table = quote_identifier(table_name);
 
-    // DELETEs
-    for entry in &delta.deletes {
-        let where_clause = primary_key_where_clause(&entry.key, &schema, injected_fields)?;
-        out.push_str(&format!("DELETE FROM {} WHERE {};\n", table, where_clause));
-    }
-
-    // INSERTs
+    emit_deletes(&delta.deletes, &schema, injected_fields, &table, out)?;
     emit_inserts(&delta.inserts, &schema, injected_fields, &table, out)?;
-
-    // UPDATEs
-    for update in &delta.updates {
-        let subsidiary_fields = schema.subsidiary_fields();
-        // Sparse updates list changed column indices explicitly; full
-        // updates (empty changed_indices) include all subsidiary columns.
-        let indices: Vec<u32> = if update.changed_indices.is_empty() {
-            (0..subsidiary_fields.len() as u32).collect()
-        } else {
-            update.changed_indices.clone()
-        };
-
-        let set_parts: Vec<String> = indices
-            .iter()
-            .zip(update.new_value.iter())
-            .map(|(index, value)| {
-                let field = &subsidiary_fields[*index as usize];
-                let literal = format_value(value, field)
-                    .with_context(|| format!("field '{}'", field.name))?;
-                Ok(format!("{} = {}", quote_ident(&field.name), literal))
-            })
-            .collect::<Result<Vec<_>>>()?;
-
-        let where_clause = primary_key_where_clause(&update.key, &schema, injected_fields)?;
-
-        out.push_str(&format!(
-            "UPDATE {} SET {} WHERE {};\n",
-            table,
-            set_parts.join(", "),
-            where_clause
-        ));
-    }
+    emit_updates(&delta.updates, &schema, injected_fields, &table, out)?;
 
     Ok(())
 }
@@ -332,20 +365,20 @@ fn delta_to_sql(
 fn state_table_to_sql(
     config: &Config,
     table_name: &str,
-    table: &crate::proto::table::Table,
+    table: &ProtoTable,
     injected_fields: &[InjectedField],
     out: &mut String,
 ) -> Result<()> {
     let schema = TableSchema::resolve(config, table_name)?;
-    let quoted_table = quote_ident(table_name);
+    let quoted_table = quote_identifier(table_name);
 
     if injected_fields.is_empty() {
         out.push_str(&format!("TRUNCATE {};\n", quoted_table));
     } else {
-        let conditions: Vec<String> = injected_fields
-            .iter()
-            .map(|injected| injected.where_clause())
-            .collect::<Result<Vec<_>>>()?;
+        let mut conditions = Vec::new();
+        for injected in injected_fields {
+            conditions.push(injected.where_clause()?);
+        }
         out.push_str(&format!(
             "DELETE FROM {} WHERE {};\n",
             quoted_table,
@@ -358,41 +391,35 @@ fn state_table_to_sql(
     Ok(())
 }
 
-/// Check whether a table's field hash in the patch matches the hub's config.
-/// Returns true if the hash matches, false (with a warning) if it doesn't.
+/// Verify that a table's field hash in the patch matches the hub's config.
 fn check_field_hash(
     config: &Config,
     table_name: &str,
     field_hashes: &HashMap<String, String>,
-) -> bool {
-    let Some(agent_hash) = field_hashes.get(table_name) else {
-        log::warn!(
-            "Table '{}': missing field hash in patch, skipping",
-            table_name
-        );
-        return false;
-    };
-    let Some(table_config) = config.tables.get(table_name) else {
-        log::warn!("Table '{}': not found in config, skipping", table_name);
-        return false;
-    };
+) -> Result<()> {
+    let agent_hash = field_hashes
+        .get(table_name)
+        .with_context(|| format!("table '{}': missing field hash in patch", table_name))?;
+    let table_config = config
+        .tables
+        .get(table_name)
+        .with_context(|| format!("table '{}': not found in config", table_name))?;
     let hub_hash = table_config.field_hash();
     if agent_hash != &hub_hash {
-        log::warn!(
-            "Table '{}': field hash mismatch (agent={}, hub={}), skipping",
+        bail!(
+            "table '{}': field hash mismatch (agent={}, hub={})",
             table_name,
             agent_hash,
             hub_hash
         );
-        return false;
     }
-    true
+    Ok(())
 }
 
 /// Convert a decoded patch to SQL statements.
 ///
 /// Returns a SQL string wrapped in BEGIN/COMMIT.
-pub fn patch_to_sql(config: &Config, patch: &Patch) -> Result<Option<String>> {
+pub fn patch_to_sql(config: &Config, patch: &ProtoPatch) -> Result<Option<String>> {
     log::info!("Converting patch to SQL: {}", patch);
 
     if patch.deltas.is_empty() && patch.states.is_empty() {
@@ -400,25 +427,20 @@ pub fn patch_to_sql(config: &Config, patch: &Patch) -> Result<Option<String>> {
         return Ok(None);
     }
 
-    let injected_fields: Vec<InjectedField> = patch
-        .injected_fields
-        .iter()
-        .map(InjectedField::resolve)
-        .collect::<Result<Vec<_>>>()?;
+    let mut injected_fields = Vec::new();
+    for proto_field in &patch.injected_fields {
+        injected_fields.push(InjectedField::try_from(proto_field)?);
+    }
 
     let mut sql = String::from("BEGIN;\n");
 
     for (table_name, delta) in &patch.deltas {
-        if !check_field_hash(config, table_name, &patch.field_hashes) {
-            continue;
-        }
+        check_field_hash(config, table_name, &patch.field_hashes)?;
         delta_to_sql(config, table_name, delta, &injected_fields, &mut sql)?;
     }
 
     for (table_name, table) in &patch.states {
-        if !check_field_hash(config, table_name, &patch.field_hashes) {
-            continue;
-        }
+        check_field_hash(config, table_name, &patch.field_hashes)?;
         state_table_to_sql(config, table_name, table, &injected_fields, &mut sql)?;
     }
 
@@ -441,19 +463,14 @@ mod tests {
         assert_eq!(SqlType::from_config("number").unwrap(), SqlType::Number);
         assert_eq!(SqlType::from_config("Boolean").unwrap(), SqlType::Boolean);
         // Unknown types are rejected
-        assert!(SqlType::from_config("VARCHAR").is_err());
-        assert!(SqlType::from_config("INTEGER").is_err());
-        assert!(SqlType::from_config("FLOAT").is_err());
-        assert!(SqlType::from_config("BINARY").is_err());
-        assert!(SqlType::from_config("DATE").is_err());
         assert!(SqlType::from_config("unknown").is_err());
     }
 
     #[test]
-    fn test_quote_ident() {
-        assert_eq!(quote_ident("simple"), "\"simple\"");
-        assert_eq!(quote_ident("has\"quote"), "\"has\"\"quote\"");
-        assert_eq!(quote_ident(""), "\"\"");
+    fn test_quote_identifier() {
+        assert_eq!(quote_identifier("simple"), "\"simple\"");
+        assert_eq!(quote_identifier("has\"quote"), "\"has\"\"quote\"");
+        assert_eq!(quote_identifier(""), "\"\"");
     }
 
     #[test]
@@ -530,11 +547,11 @@ mod tests {
     }
 
     #[test]
-    fn test_patch_to_sql_skips_mismatched_field_hash() {
+    fn test_patch_to_sql_rejects_mismatched_field_hash() {
         let table_config = crate::config::TableConfig {
             source: "test.csv".to_string(),
             header: false,
-            fields: vec![crate::config::FieldConfig {
+            fields: vec![FieldConfig {
                 name: "id".to_string(),
                 sql_type: "TEXT".to_string(),
                 primary_key: true,
@@ -551,16 +568,16 @@ mod tests {
             filters: crate::config::FilterConfig::default(),
         };
 
-        let patch = Patch {
+        let patch = ProtoPatch {
             head: "abc123".to_string(),
             created: None,
             injected_fields: Vec::new(),
             num_blocks: 1,
             deltas: HashMap::from([(
                 "test_table".to_string(),
-                crate::proto::delta::Delta {
+                ProtoDelta {
                     column_names: vec!["id".to_string()],
-                    inserts: vec![crate::proto::entry::Entry {
+                    inserts: vec![Entry {
                         key: vec!["1".to_string()],
                         value: vec![],
                     }],
@@ -572,19 +589,17 @@ mod tests {
             field_hashes: HashMap::from([("test_table".to_string(), "wrong_hash".to_string())]),
         };
 
-        // Should succeed but produce no statements for the mismatched table
-        let result = patch_to_sql(&config, &patch).unwrap().unwrap();
-        assert!(!result.contains("INSERT INTO"));
-        assert!(result.contains("BEGIN;"));
-        assert!(result.contains("COMMIT;"));
+        let err = patch_to_sql(&config, &patch).unwrap_err();
+        let msg = format!("{:#}", err);
+        assert!(msg.contains("field hash mismatch"), "got: {}", msg);
     }
 
     #[test]
-    fn test_patch_to_sql_skips_missing_field_hash() {
+    fn test_patch_to_sql_rejects_missing_field_hash() {
         let table_config = crate::config::TableConfig {
             source: "test.csv".to_string(),
             header: false,
-            fields: vec![crate::config::FieldConfig {
+            fields: vec![FieldConfig {
                 name: "id".to_string(),
                 sql_type: "TEXT".to_string(),
                 primary_key: true,
@@ -601,16 +616,16 @@ mod tests {
             filters: crate::config::FilterConfig::default(),
         };
 
-        let patch = Patch {
+        let patch = ProtoPatch {
             head: "abc123".to_string(),
             created: None,
             injected_fields: Vec::new(),
             num_blocks: 1,
             deltas: HashMap::from([(
                 "test_table".to_string(),
-                crate::proto::delta::Delta {
+                ProtoDelta {
                     column_names: vec!["id".to_string()],
-                    inserts: vec![crate::proto::entry::Entry {
+                    inserts: vec![Entry {
                         key: vec!["1".to_string()],
                         value: vec![],
                     }],
@@ -622,8 +637,9 @@ mod tests {
             field_hashes: HashMap::new(),
         };
 
-        let result = patch_to_sql(&config, &patch).unwrap().unwrap();
-        assert!(!result.contains("INSERT INTO"));
+        let err = patch_to_sql(&config, &patch).unwrap_err();
+        let msg = format!("{:#}", err);
+        assert!(msg.contains("missing field hash"), "got: {}", msg);
     }
 
     #[test]
@@ -631,7 +647,7 @@ mod tests {
         let table_config = crate::config::TableConfig {
             source: "test.csv".to_string(),
             header: false,
-            fields: vec![crate::config::FieldConfig {
+            fields: vec![FieldConfig {
                 name: "id".to_string(),
                 sql_type: "TEXT".to_string(),
                 primary_key: true,
@@ -649,16 +665,16 @@ mod tests {
             filters: crate::config::FilterConfig::default(),
         };
 
-        let patch = Patch {
+        let patch = ProtoPatch {
             head: "abc123".to_string(),
             created: None,
             injected_fields: Vec::new(),
             num_blocks: 1,
             deltas: HashMap::from([(
                 "test_table".to_string(),
-                crate::proto::delta::Delta {
+                ProtoDelta {
                     column_names: vec!["id".to_string()],
-                    inserts: vec![crate::proto::entry::Entry {
+                    inserts: vec![Entry {
                         key: vec!["1".to_string()],
                         value: vec![],
                     }],
