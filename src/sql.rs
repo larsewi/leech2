@@ -306,8 +306,22 @@ fn delta_to_sql(
     emit_inserts(&delta.inserts, &schema, injected_fields, &table, out)?;
 
     // UPDATEs
-    for update in &delta.updates {
-        let subsidiary_fields = schema.subsidiary_fields();
+    emit_updates(&delta.updates, &schema, injected_fields, &table, out)?;
+
+    Ok(())
+}
+
+/// Generate UPDATE statements for a list of updates.
+fn emit_updates(
+    updates: &[crate::update::Update],
+    schema: &TableSchema,
+    injected_fields: &[InjectedField],
+    quoted_table: &str,
+    out: &mut String,
+) -> Result<()> {
+    let subsidiary_fields = schema.subsidiary_fields();
+
+    for update in updates {
         // Sparse updates list changed column indices explicitly; full
         // updates (empty changed_indices) include all subsidiary columns.
         let indices: Vec<u32> = if update.changed_indices.is_empty() {
@@ -324,11 +338,11 @@ fn delta_to_sql(
             set_parts.push(format!("{} = {}", quote_identifier(&field.name), literal));
         }
 
-        let where_clause = primary_key_where_clause(&update.key, &schema, injected_fields)?;
+        let where_clause = primary_key_where_clause(&update.key, schema, injected_fields)?;
 
         out.push_str(&format!(
             "UPDATE {} SET {} WHERE {};\n",
-            table,
+            quoted_table,
             set_parts.join(", "),
             where_clause
         ));
