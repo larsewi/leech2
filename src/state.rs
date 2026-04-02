@@ -10,6 +10,9 @@ use crate::storage;
 use crate::table::Table;
 use crate::utils::indent;
 
+type ProtoState = crate::proto::state::State;
+type ProtoTable = crate::proto::table::Table;
+
 const STATE_FILE: &str = "STATE";
 
 /// State represents a snapshot of all tables at a point in time.
@@ -19,8 +22,8 @@ pub struct State {
     pub tables: HashMap<String, Table>,
 }
 
-impl From<crate::proto::state::State> for State {
-    fn from(proto: crate::proto::state::State) -> Self {
+impl From<ProtoState> for State {
+    fn from(proto: ProtoState) -> Self {
         let tables = proto
             .tables
             .into_iter()
@@ -30,28 +33,28 @@ impl From<crate::proto::state::State> for State {
     }
 }
 
-impl From<State> for HashMap<String, crate::proto::table::Table> {
+impl From<State> for HashMap<String, ProtoTable> {
     fn from(state: State) -> Self {
         state
             .tables
             .into_iter()
-            .map(|(name, table)| (name, crate::proto::table::Table::from(table)))
+            .map(|(name, table)| (name, ProtoTable::from(table)))
             .collect()
     }
 }
 
-impl From<State> for crate::proto::state::State {
+impl From<State> for ProtoState {
     fn from(state: State) -> Self {
         let tables = state
             .tables
             .into_iter()
-            .map(|(name, table)| (name, crate::proto::table::Table::from(table)))
+            .map(|(name, table)| (name, ProtoTable::from(table)))
             .collect();
-        crate::proto::state::State { tables }
+        ProtoState { tables }
     }
 }
 
-impl fmt::Display for crate::proto::state::State {
+impl fmt::Display for ProtoState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "State ({} tables):", self.tables.len())?;
         for (name, table) in &self.tables {
@@ -68,7 +71,7 @@ impl State {
             return Ok(None);
         };
 
-        let proto_state = crate::proto::state::State::decode(data.as_slice())?;
+        let proto_state = ProtoState::decode(data.as_slice())?;
         log::info!(
             "Loaded previous state with {} tables",
             proto_state.tables.len()
@@ -88,12 +91,12 @@ impl State {
 
         let state = State { tables };
         log::info!("Computed current state from {} tables", state.tables.len());
-        log::trace!("{}", crate::proto::state::State::from(state.clone()));
+        log::trace!("{}", ProtoState::from(state.clone()));
         Ok(state)
     }
 
     pub fn store(&self, work_dir: &Path) -> Result<()> {
-        let proto_state = crate::proto::state::State::from(self.clone());
+        let proto_state = ProtoState::from(self.clone());
         let mut buf = Vec::new();
         proto_state.encode(&mut buf)?;
         storage::store(work_dir, STATE_FILE, &buf)?;
