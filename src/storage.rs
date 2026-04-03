@@ -83,22 +83,25 @@ pub fn remove(work_dir: &Path, name: &str) -> Result<()> {
 /// Loads data from a file in the work directory with a shared lock.
 pub fn load(work_dir: &Path, name: &str) -> Result<Option<Vec<u8>>> {
     let path = work_dir.join(name);
-    if !path.exists() {
-        log::trace!("File '{}' does not exist", path.display());
-        return Ok(None);
-    }
 
     let _lock = acquire_lock(work_dir, name, false)?;
 
-    let mut data = Vec::new();
-    File::open(&path)
-        .with_context(|| format!("failed to open file '{}'", path.display()))?
-        .read_to_end(&mut data)
-        .with_context(|| format!("failed to read from '{}'", path.display()))?;
-
-    // _lock dropped here, releasing shared lock.
-    log::trace!("Loaded {} bytes from '{}'", data.len(), path.display());
-    Ok(Some(data))
+    match File::open(&path) {
+        Ok(mut file) => {
+            let mut data = Vec::new();
+            file.read_to_end(&mut data)
+                .with_context(|| format!("failed to read from '{}'", path.display()))?;
+            log::trace!("Loaded {} bytes from '{}'", data.len(), path.display());
+            Ok(Some(data))
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            log::trace!("File '{}' does not exist", path.display());
+            Ok(None)
+        }
+        Err(e) => {
+            Err(anyhow::Error::new(e).context(format!("failed to open file '{}'", path.display())))
+        }
+    }
 }
 
 pub fn resolve_hash_prefix(work_dir: &Path, prefix: &str) -> Result<String> {
