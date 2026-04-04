@@ -79,12 +79,12 @@ fn collect_block_hashes(work_dir: &Path, head: &str, last_known: &str) -> Result
     let mut hashes = vec![head.to_string()];
     let mut parent = Block::load_parent_hash(work_dir, head)?;
 
-    while parent != GENESIS_HASH && !parent.starts_with(last_known) {
+    while parent != GENESIS_HASH && parent != last_known {
         hashes.push(parent.clone());
         parent = Block::load_parent_hash(work_dir, &parent)?;
     }
 
-    if !parent.starts_with(last_known) {
+    if parent != last_known {
         bail!("block starting with '{}' not found in chain", last_known);
     }
 
