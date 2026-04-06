@@ -295,15 +295,15 @@ fn format_update(
 ) -> Result<String> {
     // Sparse updates list changed column indices explicitly; full
     // updates (empty changed_indices) include all subsidiary columns.
-    let indices: Vec<u32> = if update.changed_indices.is_empty() {
+    let indices = if update.changed_indices.is_empty() {
         (0..subsidiary_fields.len() as u32).collect()
     } else {
         update.changed_indices.clone()
     };
 
     let mut set_parts = Vec::new();
-    for (index, value) in indices.iter().zip(update.new_value.iter()) {
-        let field = &subsidiary_fields[*index as usize];
+    for (&index, value) in indices.iter().zip(update.new_value.iter()) {
+        let field = &subsidiary_fields[index as usize];
         let literal =
             format_value(value, field).with_context(|| format!("field '{}'", field.name))?;
         set_parts.push(format!("{} = {}", quote_identifier(&field.name), literal));
