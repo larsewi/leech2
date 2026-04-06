@@ -243,7 +243,11 @@ impl TableConfig {
         for field in sorted_fields {
             data.extend_from_slice(field.name.as_bytes());
             data.push(0);
-            data.extend_from_slice(field.sql_type.as_bytes());
+            // Normalize to uppercase so that case differences (e.g. "text"
+            // vs "TEXT") produce the same hash — SqlType::from_config is
+            // case-insensitive, so the hash should be too.
+            let normalized = field.sql_type.to_uppercase();
+            data.extend_from_slice(normalized.as_bytes());
             data.push(0);
             data.push(u8::from(field.primary_key));
             data.push(0);
