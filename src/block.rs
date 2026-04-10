@@ -74,8 +74,8 @@ impl Block {
         Ok(header)
     }
 
-    /// Load only the parent hash from a block without reading or decoding the
-    /// full payload.
+    /// Load only the parent hash from a block by decoding just the header,
+    /// avoiding the heavier full-payload parse.
     pub fn load_parent_hash(work_dir: &Path, hash: &str) -> Result<String> {
         Ok(Self::load_header(work_dir, hash)?.parent)
     }
