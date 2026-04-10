@@ -92,46 +92,46 @@ fn collect_block_hashes(work_dir: &Path, head: &str, last_known: &str) -> Result
 
 /// Merge a single block's deltas into per-table running results. The block is
 /// the older (parent) side and the running results are the newer (child) side,
-/// so the merge direction is `parent.merge(child)`. When `running_deltas` is
+/// so the merge direction is `parent.merge(child)`. When `merged_deltas` is
 /// empty (first block), this simply extracts the block's deltas.
 ///
 /// Tables whose layout changed (delta is `None`) or whose merge failed are
-/// added to `reset_tables` so they fall back to full state.
+/// added to `skipped_tables` and fall back to full state.
 fn merge_block_deltas(
     block: Block,
-    running_deltas: &mut HashMap<String, Delta>,
-    reset_tables: &mut HashSet<String>,
+    merged_deltas: &mut HashMap<String, Delta>,
+    skipped_tables: &mut HashSet<String>,
 ) {
-    for (name, change) in block.payload {
-        if reset_tables.contains(&name) {
+    for (table_name, payload) in block.payload {
+        if skipped_tables.contains(&table_name) {
             continue;
         }
-        match change.delta {
-            Some(proto_delta) => {
-                let result = Delta::try_from(proto_delta).and_then(|mut parent| {
-                    if let Some(child) = running_deltas.remove(&name) {
-                        parent.merge(child)?;
-                    }
-                    Ok(parent)
-                });
-                match result {
-                    Ok(delta) => {
-                        running_deltas.insert(name, delta);
-                    }
-                    Err(e) => {
-                        log::warn!(
-                            "Merge failed for table '{}', falling back to full state: {}",
-                            name,
-                            e
-                        );
-                        running_deltas.remove(&name);
-                        reset_tables.insert(name);
-                    }
-                }
+
+        let Some(proto_delta) = payload.delta else {
+            merged_deltas.remove(&table_name);
+            skipped_tables.insert(table_name);
+            continue;
+        };
+
+        let result = Delta::try_from(proto_delta).and_then(|mut parent| {
+            if let Some(child) = merged_deltas.remove(&table_name) {
+                parent.merge(child)?;
             }
-            None => {
-                running_deltas.remove(&name);
-                reset_tables.insert(name);
+            Ok(parent)
+        });
+
+        match result {
+            Ok(delta) => {
+                merged_deltas.insert(table_name, delta);
+            }
+            Err(e) => {
+                log::warn!(
+                    "Merge failed for table '{}', falling back to full state: {}",
+                    table_name,
+                    e
+                );
+                merged_deltas.remove(&table_name);
+                skipped_tables.insert(table_name);
             }
         }
     }
@@ -161,8 +161,8 @@ fn try_consolidate(work_dir: &Path, head: &str, last_known: &str) -> Result<Cons
     // Load blocks one at a time oldest-first, merging deltas incrementally.
     // Only one block's payload and the per-table running results are in
     // memory at a time.
-    let mut running_deltas: HashMap<String, Delta> = HashMap::new();
-    let mut reset_tables: HashSet<String> = HashSet::new();
+    let mut merged_deltas: HashMap<String, Delta> = HashMap::new();
+    let mut skipped_tables: HashSet<String> = HashSet::new();
 
     for (index, hash) in block_hashes.iter().enumerate() {
         log::trace!(
@@ -172,7 +172,7 @@ fn try_consolidate(work_dir: &Path, head: &str, last_known: &str) -> Result<Cons
             hash
         );
         let block = Block::load(work_dir, hash)?;
-        merge_block_deltas(block, &mut running_deltas, &mut reset_tables);
+        merge_block_deltas(block, &mut merged_deltas, &mut skipped_tables);
     }
 
     // Load state for per-table size comparison and fallback.
@@ -182,8 +182,8 @@ fn try_consolidate(work_dir: &Path, head: &str, last_known: &str) -> Result<Cons
     let mut result_deltas = HashMap::new();
     let mut result_states = HashMap::new();
 
-    // Tables marked for reset go directly to full state.
-    for table_name in &reset_tables {
+    // Skipped tables fall back to full state.
+    for table_name in &skipped_tables {
         if let Some(state_table) = state_tables.get(table_name) {
             log::info!("Table '{}': using full state (layout changed)", table_name);
             result_states.insert(table_name.clone(), state_table.clone());
@@ -192,7 +192,7 @@ fn try_consolidate(work_dir: &Path, head: &str, last_known: &str) -> Result<Cons
         }
     }
 
-    for (table_name, merged) in running_deltas {
+    for (table_name, merged) in merged_deltas {
         let mut merged_delta = ProtoDelta::from(merged);
 
         // Strip data the receiver doesn't need.
