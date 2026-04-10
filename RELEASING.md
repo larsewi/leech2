@@ -25,12 +25,13 @@ version **MAJOR.MINOR.PATCH**, increment the:
 
    The workflow will:
    - Read the version from `Cargo.toml`
-   - Build release binaries for five targets:
+   - Build release binaries for six targets:
      - Linux x86_64
      - Linux aarch64
      - macOS x86_64
      - macOS aarch64
      - Windows x86_64
+     - Windows aarch64
    - Package `.deb`, `.rpm` and `.msi` files for Linux and Windows targets
    - Create `.tar.gz` or `.zip` archives for all targets
    - Run virus scan on all build artifacts
@@ -46,6 +47,7 @@ version **MAJOR.MINOR.PATCH**, increment the:
    - `leech2-X.Y.Z-linux-x86_64.tar.gz`
    - `leech2-X.Y.Z-macos-aarch64.tar.gz`
    - `leech2-X.Y.Z-macos-x86_64.tar.gz`
+   - `leech2-X.Y.Z-windows-aarch64.zip`
    - `leech2-X.Y.Z-windows-x86_64.zip`
    - `leech2-X.Y.Z-x86_64.msi`
    - `leech2_X.Y.Z-1_amd64.deb`
