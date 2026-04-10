@@ -29,6 +29,25 @@ impl From<&InjectedFieldConfig> for Field {
     }
 }
 
+fn fmt_payload<T: fmt::Display>(
+    payload: &HashMap<String, T>,
+    label: &str,
+    f: &mut fmt::Formatter<'_>,
+) -> fmt::Result {
+    if !payload.is_empty() {
+        write!(f, "\n  {} ({}):", label, payload.len())?;
+        for (name, value) in payload {
+            write!(
+                f,
+                "\n    '{}' {}",
+                name,
+                utils::indent(&value.to_string(), "    ")
+            )?;
+        }
+    }
+    Ok(())
+}
+
 impl fmt::Display for Patch {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Patch:")?;
@@ -42,28 +61,8 @@ impl fmt::Display for Patch {
             write!(f, "\n  Injected: {} = {}", field.name, field.value)?;
         }
         write!(f, "\n  Blocks: {}", self.num_blocks)?;
-        if !self.deltas.is_empty() {
-            write!(f, "\n  Deltas ({}):", self.deltas.len())?;
-            for (name, delta) in &self.deltas {
-                write!(
-                    f,
-                    "\n    '{}' {}",
-                    name,
-                    utils::indent(&delta.to_string(), "    ")
-                )?;
-            }
-        }
-        if !self.states.is_empty() {
-            write!(f, "\n  States ({}):", self.states.len())?;
-            for (name, table) in &self.states {
-                write!(
-                    f,
-                    "\n    '{}' {}",
-                    name,
-                    utils::indent(&table.to_string(), "    ")
-                )?;
-            }
-        }
+        fmt_payload(&self.deltas, "Deltas", f)?;
+        fmt_payload(&self.states, "States", f)?;
         if self.deltas.is_empty() && self.states.is_empty() {
             write!(f, "\n  Payload: None")?;
         }
