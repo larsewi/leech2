@@ -33,16 +33,6 @@ impl From<ProtoState> for State {
     }
 }
 
-impl From<State> for HashMap<String, ProtoTable> {
-    fn from(state: State) -> Self {
-        state
-            .tables
-            .into_iter()
-            .map(|(name, table)| (name, ProtoTable::from(table)))
-            .collect()
-    }
-}
-
 impl From<State> for ProtoState {
     fn from(state: State) -> Self {
         let tables = state
