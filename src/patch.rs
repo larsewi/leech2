@@ -71,9 +71,10 @@ impl fmt::Display for Patch {
 }
 
 /// Walk the chain from `head` back to (but not including) `last_known`,
-/// collecting only the block hashes. Uses `Block::load_parent_hash` to read
-/// just 42 bytes per block instead of decoding the full payload. Returns hashes
-/// in chain order (newest-first); callers that need oldest-first should reverse.
+/// collecting only the block hashes. Uses `Block::load_parent_hash` which
+/// decodes only the block header, avoiding the heavier full-payload parse.
+/// Returns hashes in chain order (newest-first); callers that need
+/// oldest-first should reverse.
 fn collect_block_hashes(work_dir: &Path, head: &str, last_known: &str) -> Result<Vec<String>> {
     let mut hashes = vec![head.to_string()];
     let mut parent = Block::load_parent_hash(work_dir, head)?;
@@ -152,8 +153,8 @@ fn try_consolidate(work_dir: &Path, head: &str, last_known: &str) -> Result<Cons
         return Ok((created, 0, HashMap::new(), HashMap::new()));
     }
 
-    // Collect block hashes by walking the chain newest-to-oldest. Only 42
-    // bytes per block are read from disk (just the parent hash field).
+    // Collect block hashes by walking the chain newest-to-oldest. Only the
+    // block header is decoded per block (not the full payload).
     let mut block_hashes = collect_block_hashes(work_dir, head, last_known)?;
     let num_blocks = block_hashes.len() as u32;
     block_hashes.reverse();
