@@ -73,7 +73,7 @@ impl fmt::Display for Patch {
 /// Load the head block header and walk the chain back to (but not including)
 /// `last_known`, collecting block hashes. Only the block header is decoded
 /// per block, avoiding the heavier full-payload parse. Returns the head
-/// block's timestamp and the hashes in oldest-first order. If `head` matches
+/// block's timestamp and the hashes in newest-first order. If `head` matches
 /// `last_known`, returns an empty hash list.
 fn collect_block_hashes(
     work_dir: &Path,
@@ -99,7 +99,6 @@ fn collect_block_hashes(
         bail!("block starting with '{}' not found in chain", last_known);
     }
 
-    hashes.reverse();
     Ok((created, hashes))
 }
 
@@ -178,7 +177,7 @@ fn try_consolidate(work_dir: &Path, head: &str, last_known: &str) -> Result<Cons
     let mut merged_deltas: HashMap<String, Delta> = HashMap::new();
     let mut skipped_tables: HashSet<String> = HashSet::new();
 
-    for (index, hash) in block_hashes.iter().enumerate() {
+    for (index, hash) in block_hashes.iter().rev().enumerate() {
         log::trace!(
             "Merging block {}/{}: '{:.7}...'",
             index + 1,
