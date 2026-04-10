@@ -73,9 +73,8 @@ impl fmt::Display for Patch {
 /// Load the head block header and walk the chain back to (but not including)
 /// `last_known`, collecting block hashes. Only the block header is decoded
 /// per block, avoiding the heavier full-payload parse. Returns the head
-/// block's timestamp and the hashes in chain order (newest-first); callers
-/// that need oldest-first should reverse. If `head` matches `last_known`,
-/// returns an empty hash list.
+/// block's timestamp and the hashes in oldest-first order. If `head` matches
+/// `last_known`, returns an empty hash list.
 fn collect_block_hashes(
     work_dir: &Path,
     head: &str,
@@ -100,6 +99,7 @@ fn collect_block_hashes(
         bail!("block starting with '{}' not found in chain", last_known);
     }
 
+    hashes.reverse();
     Ok((created, hashes))
 }
 
@@ -164,14 +164,13 @@ type ConsolidateResult = (
 );
 
 fn try_consolidate(work_dir: &Path, head: &str, last_known: &str) -> Result<ConsolidateResult> {
-    let (created, mut block_hashes) = collect_block_hashes(work_dir, head, last_known)?;
+    let (created, block_hashes) = collect_block_hashes(work_dir, head, last_known)?;
 
     if block_hashes.is_empty() {
         return Ok((created, 0, HashMap::new(), HashMap::new()));
     }
 
     let num_blocks = block_hashes.len() as u32;
-    block_hashes.reverse();
 
     // Load blocks one at a time oldest-first, merging deltas incrementally.
     // Only one block's payload and the per-table running results are in
