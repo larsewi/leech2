@@ -46,6 +46,7 @@ depends = "libc6"
 assets = [
     ["target/release/lch", "usr/bin/", "755"],
     ["target/release/libleech2.so", "usr/lib/", "755"],
+    ["target/release/leech2-deb.pc", "usr/lib/pkgconfig/leech2.pc", "644"],
     ["include/leech2.h", "usr/include/", "644"],
     ["README.md", "usr/share/doc/leech2/", "644"],
     ["man/lch.1", "usr/share/man/man1/", "644"],
@@ -56,6 +57,7 @@ assets = [
 assets = [
     { source = "target/release/lch", dest = "/usr/bin/lch", mode = "755" },
     { source = "target/release/libleech2.so", dest = "/usr/lib64/libleech2.so", mode = "755" },
+    { source = "target/release/leech2-rpm.pc", dest = "/usr/lib64/pkgconfig/leech2.pc", mode = "644" },
     { source = "include/leech2.h", dest = "/usr/include/leech2.h", mode = "644" },
     { source = "README.md", dest = "/usr/share/doc/leech2/README.md", mode = "644" },
     { source = "man/lch.1", dest = "/usr/share/man/man1/lch.1", mode = "644" },
