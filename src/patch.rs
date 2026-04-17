@@ -16,6 +16,7 @@ use crate::proto::delta::Delta as ProtoDelta;
 use crate::proto::injected::Field;
 use crate::proto::state::State as ProtoState;
 use crate::proto::table::Table as ProtoTable;
+use crate::sql::SqlType;
 use crate::utils;
 use crate::utils::GENESIS_HASH;
 
@@ -328,5 +329,129 @@ impl Patch {
 
         log::trace!("Built patch:\n{}", patch);
         Ok(patch)
+    }
+
+    /// Add or overwrite an injected field on this patch. Validates that the
+    /// name is non-empty and the sql_type is one of TEXT, NUMBER, or BOOLEAN.
+    /// If a field with the same name already exists (whether from static
+    /// config or a previous inject_field call), both its value and sql_type
+    /// are replaced so the caller specifies the complete triple; a warning is
+    /// logged when the replacement actually changes one of them.
+    pub fn inject_field(&mut self, name: &str, value: &str, sql_type: &str) -> Result<()> {
+        if name.is_empty() {
+            bail!("inject_field: name must not be empty");
+        }
+        SqlType::from_config(sql_type).context("inject_field: invalid sql_type")?;
+
+        if let Some(existing) = self.injected_fields.iter_mut().find(|f| f.name == name) {
+            if existing.value != value || existing.sql_type != sql_type {
+                log::warn!(
+                    "inject_field: overwriting '{}' (was {} '{}', now {} '{}')",
+                    name,
+                    existing.sql_type,
+                    existing.value,
+                    sql_type,
+                    value
+                );
+            }
+            existing.value = value.to_string();
+            existing.sql_type = sql_type.to_string();
+        } else {
+            self.injected_fields.push(Field {
+                name: name.to_string(),
+                sql_type: sql_type.to_string(),
+                value: value.to_string(),
+            });
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn empty_patch() -> Patch {
+        Patch {
+            head: String::new(),
+            created: None,
+            injected_fields: Vec::new(),
+            num_blocks: 0,
+            deltas: HashMap::new(),
+            states: HashMap::new(),
+            field_hashes: HashMap::new(),
+        }
+    }
+
+    #[test]
+    fn test_inject_field_add_text() {
+        let mut patch = empty_patch();
+        patch.inject_field("hostkey", "abc", "TEXT").unwrap();
+        assert_eq!(patch.injected_fields.len(), 1);
+        assert_eq!(patch.injected_fields[0].name, "hostkey");
+        assert_eq!(patch.injected_fields[0].value, "abc");
+        assert_eq!(patch.injected_fields[0].sql_type, "TEXT");
+    }
+
+    #[test]
+    fn test_inject_field_add_number() {
+        let mut patch = empty_patch();
+        patch.inject_field("count", "42", "NUMBER").unwrap();
+        assert_eq!(patch.injected_fields[0].sql_type, "NUMBER");
+        assert_eq!(patch.injected_fields[0].value, "42");
+    }
+
+    #[test]
+    fn test_inject_field_add_boolean() {
+        let mut patch = empty_patch();
+        patch.inject_field("enabled", "true", "BOOLEAN").unwrap();
+        assert_eq!(patch.injected_fields[0].sql_type, "BOOLEAN");
+        assert_eq!(patch.injected_fields[0].value, "true");
+    }
+
+    #[test]
+    fn test_inject_field_overwrite_replaces_value_and_type() {
+        let mut patch = empty_patch();
+        patch.injected_fields.push(Field {
+            name: "host".to_string(),
+            sql_type: "NUMBER".to_string(),
+            value: "1".to_string(),
+        });
+        patch.inject_field("host", "new-value", "TEXT").unwrap();
+        assert_eq!(patch.injected_fields.len(), 1);
+        assert_eq!(patch.injected_fields[0].name, "host");
+        assert_eq!(patch.injected_fields[0].value, "new-value");
+        assert_eq!(patch.injected_fields[0].sql_type, "TEXT");
+    }
+
+    #[test]
+    fn test_inject_field_multiple_distinct_names_append() {
+        let mut patch = empty_patch();
+        patch.inject_field("a", "1", "TEXT").unwrap();
+        patch.inject_field("b", "2", "TEXT").unwrap();
+        assert_eq!(patch.injected_fields.len(), 2);
+        assert_eq!(patch.injected_fields[0].name, "a");
+        assert_eq!(patch.injected_fields[1].name, "b");
+    }
+
+    #[test]
+    fn test_inject_field_rejects_empty_name() {
+        let mut patch = empty_patch();
+        let err = patch.inject_field("", "value", "TEXT").unwrap_err();
+        assert!(err.to_string().contains("name must not be empty"));
+    }
+
+    #[test]
+    fn test_inject_field_rejects_invalid_type() {
+        let mut patch = empty_patch();
+        let err = patch.inject_field("foo", "bar", "BOGUS").unwrap_err();
+        assert!(err.to_string().contains("invalid sql_type"));
+    }
+
+    #[test]
+    fn test_inject_field_invalid_type_does_not_mutate() {
+        let mut patch = empty_patch();
+        let _ = patch.inject_field("foo", "bar", "BOGUS");
+        assert!(patch.injected_fields.is_empty());
     }
 }

@@ -252,6 +252,141 @@ fields = [
 }
 
 #[test]
+fn test_runtime_inject_without_static_fields() {
+    common::init_logging();
+    let tmp = tempfile::tempdir().unwrap();
+    let work_dir = tmp.path();
+
+    common::write_config(
+        work_dir,
+        "config.toml",
+        r#"
+[tables.users]
+source = "users.csv"
+fields = [
+    { name = "id", type = "NUMBER", primary-key = true },
+    { name = "name", type = "TEXT" },
+]
+"#,
+    );
+
+    common::write_csv(work_dir, "users.csv", "1,Alice\n");
+    let config = Config::load(work_dir).unwrap();
+    Block::create(&config).unwrap();
+
+    let mut patch = Patch::create(&config, GENESIS_HASH).unwrap();
+    patch.inject_field("hostkey", "abc123", "TEXT").unwrap();
+
+    let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
+
+    assert!(
+        sql.contains(r#""hostkey""#),
+        "SQL should contain hostkey column"
+    );
+    assert!(sql.contains("'abc123'"), "SQL should contain hostkey value");
+    // Runtime injection should trigger the same state-payload partitioning as
+    // static injection: DELETE WHERE instead of TRUNCATE.
+    assert!(
+        !sql.contains("TRUNCATE"),
+        "With a runtime-injected field, state payload should use DELETE WHERE"
+    );
+
+    common::assert_wire_roundtrip(&config, &patch);
+}
+
+#[test]
+fn test_runtime_inject_appends_alongside_static() {
+    common::init_logging();
+    let tmp = tempfile::tempdir().unwrap();
+    let work_dir = tmp.path();
+
+    common::write_config(
+        work_dir,
+        "config.toml",
+        r#"
+[[injected-fields]]
+name = "host"
+type = "TEXT"
+value = "agent-1"
+
+[tables.users]
+source = "users.csv"
+fields = [
+    { name = "id", type = "NUMBER", primary-key = true },
+    { name = "name", type = "TEXT" },
+]
+"#,
+    );
+
+    common::write_csv(work_dir, "users.csv", "1,Alice\n");
+    let config = Config::load(work_dir).unwrap();
+    Block::create(&config).unwrap();
+
+    let mut patch = Patch::create(&config, GENESIS_HASH).unwrap();
+    patch.inject_field("hub_id", "hub-1", "TEXT").unwrap();
+
+    let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
+
+    // Static field remains present.
+    assert!(
+        sql.contains(r#""host""#) && sql.contains("'agent-1'"),
+        "SQL should contain the statically declared host field"
+    );
+    // Runtime-injected field is also present.
+    assert!(
+        sql.contains(r#""hub_id""#) && sql.contains("'hub-1'"),
+        "SQL should contain the runtime-injected hub_id field"
+    );
+
+    common::assert_wire_roundtrip(&config, &patch);
+}
+
+#[test]
+fn test_runtime_inject_overrides_static_value() {
+    common::init_logging();
+    let tmp = tempfile::tempdir().unwrap();
+    let work_dir = tmp.path();
+
+    common::write_config(
+        work_dir,
+        "config.toml",
+        r#"
+[[injected-fields]]
+name = "host"
+type = "TEXT"
+value = "agent-claimed"
+
+[tables.users]
+source = "users.csv"
+fields = [
+    { name = "id", type = "NUMBER", primary-key = true },
+    { name = "name", type = "TEXT" },
+]
+"#,
+    );
+
+    common::write_csv(work_dir, "users.csv", "1,Alice\n");
+    let config = Config::load(work_dir).unwrap();
+    Block::create(&config).unwrap();
+
+    let mut patch = Patch::create(&config, GENESIS_HASH).unwrap();
+    patch.inject_field("host", "hub-verified", "TEXT").unwrap();
+
+    let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
+
+    assert!(
+        sql.contains("'hub-verified'"),
+        "SQL should contain the runtime-injected host value"
+    );
+    assert!(
+        !sql.contains("'agent-claimed'"),
+        "SQL should not contain the overridden static host value"
+    );
+
+    common::assert_wire_roundtrip(&config, &patch);
+}
+
+#[test]
 fn test_multiple_injected_fields_state_sql() {
     common::init_logging();
     let tmp = tempfile::tempdir().unwrap();

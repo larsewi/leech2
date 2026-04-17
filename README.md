@@ -137,6 +137,17 @@ value = "production"
 The `type` field accepts the same values as table field types (`TEXT`, `NUMBER`,
 `BOOLEAN`).
 
+Fields can also be injected at runtime via `lch patch inject` or the
+`lch_patch_inject` C API. Runtime injection is useful when the authoritative
+value is only known to the receiver (e.g. a hub that derives it from an
+authenticated connection); values provided at runtime overwrite any
+statically declared field with the same name.
+
+```sh
+lch patch inject hostkey abc123  # defaults to TEXT
+lch patch inject count 42 NUMBER
+```
+
 ### Filters
 
 An optional `[filters]` section drops records at CSV load time. Filtered

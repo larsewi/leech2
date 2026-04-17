@@ -16,6 +16,8 @@ libleech2 \- C API for tracking CSV changes and producing SQL patches
 .br
 .BI "int lch_patch_to_sql(const lch_config_t *" cfg ", const uint8_t *" buf ", size_t " len ", char **" sql );
 .br
+.BI "int lch_patch_inject(const lch_config_t *" cfg ", const uint8_t *" in_buf ", size_t " in_len ", const char *" name ", const char *" value ", const char *" sql_type ", uint8_t **" out_buf ", size_t *" out_len );
+.br
 .BI "int lch_patch_applied(const lch_config_t *" cfg ", const uint8_t *" buf ", size_t " len );
 .br
 .BI "int lch_patch_failed(const lch_config_t *" cfg );
@@ -111,6 +113,41 @@ is set to NULL and the function returns
 .BR LCH_SUCCESS .
 Otherwise, the string must be freed with
 .BR lch_sql_free ().
+.TP
+.BI "int lch_patch_inject(const lch_config_t *" cfg ", const uint8_t *" in_buf ", size_t " in_len ", const char *" name ", const char *" value ", const char *" sql_type ", uint8_t **" out_buf ", size_t *" out_len )
+Decode the patch in
+.IR in_buf ,
+add or overwrite an injected field with the given
+.IR name ,
+.IR value ,
+and
+.IR sql_type ,
+and write a newly encoded patch to
+.I out_buf
+and
+.IR out_len .
+The input buffer is not modified; the caller manages its lifetime independently.
+.IP
+.I sql_type
+must be
+.BR TEXT ,
+.BR NUMBER ,
+or
+.BR BOOLEAN
+(case-insensitive) and controls how
+.I value
+is formatted as a SQL literal — the same values accepted for table field
+types.
+.IP
+If a field with the same
+.I name
+is already present on the patch — whether from static configuration or a
+prior injection — both its value and type are replaced.
+.IP
+The buffer written to
+.I out_buf
+must eventually be freed with
+.BR lch_patch_free ().
 .TP
 .BI "int lch_patch_applied(const lch_config_t *" cfg ", const uint8_t *" buf ", size_t " len )
 Mark a patch as applied by updating the REPORTED file with the patch's head

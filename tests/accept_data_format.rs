@@ -123,12 +123,10 @@ fields = [
     // Patch from genesis with empty table: no data to insert
     let patch = Patch::create(&config, GENESIS_HASH).unwrap();
     let sql = sql::patch_to_sql(&config, &patch).unwrap();
-    match sql {
-        Some(s) => {
-            assert_eq!(common::count_sql(&s, "INSERT INTO"), 0);
-            assert_eq!(common::count_sql(&s, "DELETE FROM"), 0);
-        }
-        None => {} // Also acceptable: no payload at all
+    // None is also acceptable: no payload at all
+    if let Some(s) = sql {
+        assert_eq!(common::count_sql(&s, "INSERT INTO"), 0);
+        assert_eq!(common::count_sql(&s, "DELETE FROM"), 0);
     }
 
     // Block 2: add rows to previously empty table

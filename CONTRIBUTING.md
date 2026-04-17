@@ -153,7 +153,10 @@ When a patch carries injected fields (see `[[injected-fields]]` config section i
 [README.md](README.md)), those columns are injected into all SQL output:
 `INSERT` values include them, `DELETE`/`UPDATE` WHERE clauses are scoped by them,
 and state payloads use `DELETE FROM ... WHERE ...` instead of `TRUNCATE` so that
-other agents' data is preserved.
+other agents' data is preserved. Injected fields can also be added or
+overwritten after the fact via `Patch::inject_field()` (and its CLI /
+C FFI counterparts), which the receiving side of a connection can use to
+attach authoritative values derived from the authenticated peer.
 
 ### Patch::applied()
 

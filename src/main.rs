@@ -78,6 +78,16 @@ enum PatchCmd {
     Show,
     /// Convert the .leech2/PATCH file to SQL
     Sql,
+    /// Inject a field into the .leech2/PATCH file
+    Inject {
+        /// Column name
+        name: String,
+        /// Value
+        value: String,
+        /// SQL type: TEXT, NUMBER, or BOOLEAN
+        #[arg(default_value = "TEXT")]
+        sql_type: String,
+    },
     /// Mark the current patch as applied (saves head hash to REPORTED)
     Applied,
     /// Mark the current patch as failed (removes REPORTED to force full state)
@@ -264,6 +274,17 @@ fn cmd_patch_sql(config: &Config) -> Result<String> {
     }
 }
 
+fn cmd_patch_inject(config: &Config, name: &str, value: &str, sql_type: &str) -> Result<()> {
+    let mut patch = load_patch(config)?;
+    patch.inject_field(name, value, sql_type)?;
+
+    let encoded = leech2::wire::encode_patch(config, &patch)?;
+    leech2::storage::store(&config.work_dir, PATCH_FILE, &encoded)?;
+
+    println!("{}", patch);
+    Ok(())
+}
+
 fn cmd_patch_applied(config: &Config) -> Result<()> {
     let patch = load_patch(config)?;
     leech2::reported::save(&config.work_dir, &patch.head)?;
@@ -347,6 +368,13 @@ fn run(cli: Cli) -> Result<()> {
             PatchCmd::Sql => {
                 let output = cmd_patch_sql(&config)?;
                 print_with_pager(&output);
+            }
+            PatchCmd::Inject {
+                name,
+                value,
+                sql_type,
+            } => {
+                cmd_patch_inject(&config, name, value, sql_type)?;
             }
             PatchCmd::Applied => {
                 cmd_patch_applied(&config)?;

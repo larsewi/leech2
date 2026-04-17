@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include <leech2.h>
 
@@ -67,14 +68,38 @@ int main(int argc, char *argv[]) {
     return EXIT_FAILURE;
   }
 
-  char *sql = NULL;
-  ret = lch_patch_to_sql(cfg, buf, len, &sql);
+  uint8_t *injected_buf = NULL;
+  size_t injected_len = 0;
+  ret = lch_patch_inject(cfg, buf, len, "hostkey", "abc123", "TEXT",
+                         &injected_buf, &injected_len);
   if (ret == LCH_FAILURE) {
-    fprintf(stderr, "lch_patch_to_sql failed\n");
+    fprintf(stderr, "lch_patch_inject failed\n");
     lch_patch_free(buf, len);
     lch_deinit(cfg);
     return EXIT_FAILURE;
   }
+
+  char *sql = NULL;
+  ret = lch_patch_to_sql(cfg, injected_buf, injected_len, &sql);
+  if (ret == LCH_FAILURE) {
+    fprintf(stderr, "lch_patch_to_sql failed\n");
+    lch_patch_free(injected_buf, injected_len);
+    lch_patch_free(buf, len);
+    lch_deinit(cfg);
+    return EXIT_FAILURE;
+  }
+
+  if (sql == NULL || strstr(sql, "\"hostkey\"") == NULL ||
+      strstr(sql, "'abc123'") == NULL) {
+    fprintf(stderr, "lch_patch_inject: injected field not present in SQL\n");
+    lch_sql_free(sql);
+    lch_patch_free(injected_buf, injected_len);
+    lch_patch_free(buf, len);
+    lch_deinit(cfg);
+    return EXIT_FAILURE;
+  }
+
+  lch_patch_free(injected_buf, injected_len);
 
   ret = lch_patch_applied(cfg, buf, len);
   if (ret == LCH_FAILURE) {

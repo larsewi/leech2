@@ -100,6 +100,24 @@ file to SQL statements. Delta payloads generate DELETE, INSERT, and UPDATE
 statements. State payloads generate TRUNCATE followed by INSERT statements. All
 statements are wrapped in BEGIN / COMMIT. Requires a prior
 .BR "lch patch create" .
+.SS lch patch inject \fINAME\fR \fIVALUE\fR [\fITYPE\fR]
+Add or overwrite an injected field on the
+.B .leech2/PATCH
+file. The patch is decoded, the field is inserted, and the patch is
+re-encoded in place. Repeat the command to inject multiple fields. If a
+field with the same
+.I NAME
+already exists — whether from static configuration or a prior injection —
+both its value and type are replaced.
+.I TYPE
+defaults to
+.B TEXT
+and accepts the same values as table field types
+.RB ( TEXT ,
+.BR NUMBER ,
+.BR BOOLEAN ).
+Requires a prior
+.BR "lch patch create" .
 .SS lch patch applied
 Mark the current patch as applied by saving its head hash to the REPORTED file.
 Future patches will start from this point. Requires a prior
@@ -207,6 +225,10 @@ and
 The
 .B type
 field accepts the same values as table field types.
+.PP
+Fields can also be injected at runtime with
+.BR "lch patch inject" ;
+runtime values overwrite any statically declared field with the same name.
 .SS Filters
 An optional
 .B [filters]
