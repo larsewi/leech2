@@ -1,6 +1,6 @@
 [package]
 name = "leech2"
-version = "1.0.0"
+version = "1.1.0"
 edition = "2024"
 authors = ["Lars Erik Wik <lars.erik.wik@northern.tech>"]
 description = "Track CSV changes and produce SQL patches via a git-like block chain"
