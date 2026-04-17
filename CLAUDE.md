@@ -9,14 +9,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Build the Rust library:** `cargo build`
 - **Run Rust tests:** `cargo build && cargo test` (the C FFI test links against the cdylib built by `cargo build`; without it, the linker may fail with undefined references)
 - **Run a single test:** `cargo test <test_name>` (e.g. `cargo test test_merge_rule5`)
-- **Format code:** `cargo fmt`, `clang-format -i`
-- **Lint:** `cargo clippy`
+- **Format code:** `cargo fmt`, `clang-format -i`, `shfmt -w -i 4`, `prettier --write "**/*.md"`
+- **Lint:** `cargo clippy -- -D warnings`, `cppcheck --error-exitcode=1 --enable=warning,style,performance,portability`, `shellcheck`
 
 ## Workflow
 
 - **Never commit directly to `master`.** When starting a new piece of work, first run `git fetch`, then create and check out a new branch that tracks `origin/master` (e.g. `git checkout -b <branch-name> origin/master`).
-- Always run `cargo fmt` and `cargo clippy` after changing Rust code.
-- Always run `clang-format -i` changing C code.
+- Always run `cargo fmt` and `cargo clippy -- -D warnings` after changing Rust code.
+- Always run `clang-format -i` and `cppcheck --error-exitcode=1 --enable=warning,style,performance,portability` after changing C code.
+- Always run `shfmt -w -i 4` and `shellcheck` after changing shell scripts.
+- Always run `prettier --write "**/*.md"` after changing Markdown files.
 - Update documentation ([README.md](README.md), [CONTRIBUTING.md](CONTRIBUTING.md), [DELTA_MERGING_RULES.md](DELTA_MERGING_RULES.md), [RELEASING.md](RELEASING.md)) when changing or adding features.
 - Update man pages ([man/lch.1](man/lch.1), [man/libleech2.3](man/libleech2.3)) when adding new features or making breaking changes to the CLI or C API.
 - Avoid `unwrap()`, `expect()`, and other panicking functions in production code. Use proper error handling (`?`, `ok_or_else`, pattern matching, etc.) instead. Panicking in tests is acceptable.
