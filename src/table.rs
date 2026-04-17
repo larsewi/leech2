@@ -65,6 +65,11 @@ impl Table {
         let path = work_dir.join(&config.source);
         let file =
             File::open(&path).with_context(|| format!("failed to open '{}'", path.display()))?;
+        // Shared advisory lock: defence-in-depth against a cooperating producer
+        // that takes an exclusive lock while rewriting the CSV in place. The
+        // lock is released when `file` (moved into the reader) is dropped.
+        file.lock_shared()
+            .with_context(|| format!("failed to acquire shared lock on '{}'", path.display()))?;
         let reader = csv::ReaderBuilder::new()
             .has_headers(config.header)
             .from_reader(file);

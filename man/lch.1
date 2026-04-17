@@ -328,6 +328,11 @@ Last generated patch, written by
 .TP
 .BI .leech2/ hash
 Block files, named by their SHA-1 content hash.
+.SH CONCURRENCY
+See
+.BR libleech2 (3)
+for details on safe concurrent use of a work directory and on the atomic-write
+contract expected of CSV source files.
 .SH EXIT STATUS
 .TP
 .B 0

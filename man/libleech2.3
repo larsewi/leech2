@@ -178,6 +178,34 @@ returns a pointer on success or NULL on failure.
 and
 .BR lch_sql_free ()
 do not return a value.
+.SH CONCURRENCY
+.B libleech2
+serializes concurrent access to its own work-directory state files with
+advisory
+.BR flock (2)
+locks, so multiple processes may share a
+.I work_dir
+safely.
+.PP
+The configured CSV source files are external inputs not owned by leech2. To
+prevent
+.BR lch_block_create ()
+from observing a half-written CSV, the producer must guarantee readers only
+ever see a complete file. The recommended approach is atomic replacement:
+write the new contents to a temporary file in the same directory, then
+.BR rename (2)
+it over the source path.
+.PP
+Alternatively, the producer may hold an exclusive
+.BR flock (2)
+on the CSV while rewriting it in place.
+.B libleech2
+takes a shared
+.BR flock (2)
+on each CSV source while reading, so it will wait for such a producer to
+finish.
+.PP
+No additional synchronization is required from FFI callers.
 .SH EXAMPLE
 .PP
 .RS

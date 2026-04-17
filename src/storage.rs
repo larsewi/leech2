@@ -5,7 +5,6 @@ use std::path::Path;
 use anyhow::{Context, Result, bail};
 
 use crate::utils::GENESIS_HASH;
-use fs2::FileExt;
 
 /// Acquires a lock on a separate `.<name>.lock` file for inter-process synchronization.
 /// Returns the lock file handle; the lock is released when the handle is dropped.
@@ -14,7 +13,7 @@ fn acquire_lock(dir: &Path, name: &str, exclusive: bool) -> Result<File> {
     let lock_file = File::create(&lock_path)
         .with_context(|| format!("failed to open lock file '{}'", lock_path.display()))?;
     if exclusive {
-        lock_file.lock_exclusive()
+        lock_file.lock()
     } else {
         lock_file.lock_shared()
     }
@@ -140,7 +139,6 @@ pub fn resolve_hash_prefix(work_dir: &Path, prefix: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fs2::FileExt;
     use tempfile::tempdir;
 
     #[test]
@@ -164,7 +162,7 @@ mod tests {
 
         let lock_path = dir.path().join(".foo.lock");
         let file = File::create(&lock_path).unwrap();
-        assert!(file.try_lock_exclusive().is_err());
+        assert!(file.try_lock().is_err());
     }
 
     #[test]
@@ -184,7 +182,7 @@ mod tests {
 
         let lock_path = dir.path().join(".foo.lock");
         let file = File::create(&lock_path).unwrap();
-        assert!(file.try_lock_exclusive().is_err());
+        assert!(file.try_lock().is_err());
     }
 
     #[test]
