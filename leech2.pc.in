@@ -1,0 +1,11 @@
+prefix=/usr
+exec_prefix=${prefix}
+libdir=${exec_prefix}/@LIBDIR@
+includedir=${prefix}/include
+
+Name: leech2
+Description: Track CSV changes and produce SQL patches via a git-like block chain
+URL: https://github.com/larsewi/leech2
+Version: @VERSION@
+Libs: -L${libdir} -lleech2
+Cflags: -I${includedir}

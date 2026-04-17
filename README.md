@@ -212,6 +212,9 @@ clean them up.
 
 See [`include/leech2.h`](include/leech2.h) for the full API reference.
 
+The `.deb` and `.rpm` packages install a `leech2.pc` file, so consumers can
+discover compile and link flags with `pkg-config --cflags --libs leech2`.
+
 ```c
 lch_config_t *cfg = lch_init("/path/to/workdir");
 
