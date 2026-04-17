@@ -229,7 +229,7 @@ src/
   head.rs       HEAD file read/write
   reported.rs   REPORTED file read/write/remove (last reported patch hash)
   truncate.rs   History truncation (orphan, reported, max-blocks, max-age)
-  storage.rs    File I/O with fs2 locking
+  storage.rs    File I/O with advisory locking
   wire.rs       Protobuf encode/decode + zstd compression
   sql.rs        Patch-to-SQL conversion with type mapping
   proto.rs      Generated protobuf code (via build.rs)
