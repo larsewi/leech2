@@ -80,3 +80,25 @@ jobs:
 
             Please review the changes before merging.
           delete-branch: true
+
+  markdown:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Format Markdown files
+        run: npx --yes prettier --write "**/*.md"
+
+      - name: Create pull request
+        uses: peter-evans/create-pull-request@v8
+        with:
+          token: ${{ secrets.PAT }}
+          commit-message: "Formatted Markdown files"
+          branch: auto/format-markdown
+          title: "Formatted Markdown files"
+          body: |
+            Automated Markdown formatting using `prettier`.
+
+            Please review the changes before merging.
+          delete-branch: true
