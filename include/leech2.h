@@ -146,6 +146,40 @@ extern int lch_patch_to_sql(const lch_config_t *cfg, const uint8_t *buf,
                             size_t len, char **sql);
 
 /**
+ * Inject a field into an encoded patch.
+ *
+ * Decodes the patch in @p in_buf, adds or overwrites an injected field with
+ * the given @p name, @p value, and @p sql_type, and encodes the result into a
+ * new caller-owned buffer written to @p out_buf and @p out_len. The input
+ * buffer is not modified; the caller manages its lifetime independently.
+ *
+ * @p sql_type controls how @p value is formatted as a SQL literal. It must be
+ * one of "TEXT" (single-quoted), "NUMBER" (numeric, unquoted), or "BOOLEAN"
+ * (emitted as TRUE/FALSE). Matching is case-insensitive.
+ *
+ * If a field with the same @p name is already present on the patch — whether
+ * from static configuration or a prior injection — both its value and sql_type
+ * are replaced.
+ *
+ * The buffer written to @p out_buf must eventually be freed with
+ * lch_patch_free().
+ *
+ * @param cfg           Valid config handle (must not be NULL).
+ * @param in_buf        Pointer to the encoded input patch (must not be NULL).
+ * @param in_len        Length of @p in_buf in bytes.
+ * @param name          Column name (non-empty, null-terminated).
+ * @param value         Value to inject (null-terminated).
+ * @param sql_type      "TEXT", "NUMBER", or "BOOLEAN" (null-terminated).
+ * @param[out] out_buf  Receives a pointer to the encoded output patch.
+ * @param[out] out_len  Receives the length of @p out_buf in bytes.
+ * @return LCH_SUCCESS on success, LCH_FAILURE on error.
+ */
+extern int lch_patch_inject(const lch_config_t *cfg, const uint8_t *in_buf,
+                            size_t in_len, const char *name, const char *value,
+                            const char *sql_type, uint8_t **out_buf,
+                            size_t *out_len);
+
+/**
  * Mark a patch as applied.
  *
  * Updates the REPORTED file with the patch's head hash so that future

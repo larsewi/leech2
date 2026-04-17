@@ -231,6 +231,100 @@ pub unsafe extern "C" fn lch_patch_to_sql(
 }
 
 /// # Safety
+/// `config` must be a valid, non-null pointer returned by `lch_init`.
+/// `in_buf` must be a valid, non-null pointer to `in_len` bytes.
+/// `name`, `value`, and `sql_type` must be valid, non-null, null-terminated C strings.
+/// `out_buf` and `out_len` must be valid, non-null pointers.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn lch_patch_inject(
+    config: *const config::Config,
+    in_buf: *const u8,
+    in_len: usize,
+    name: *const c_char,
+    value: *const c_char,
+    sql_type: *const c_char,
+    out_buf: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    if config.is_null() {
+        log::error!("lch_patch_inject(): Bad argument: config cannot be NULL");
+        return FAILURE;
+    }
+
+    if in_buf.is_null() {
+        log::error!("lch_patch_inject(): Bad argument: in_buf cannot be NULL");
+        return FAILURE;
+    }
+
+    if name.is_null() || value.is_null() || sql_type.is_null() {
+        log::error!("lch_patch_inject(): Bad argument: name, value, and sql_type cannot be NULL");
+        return FAILURE;
+    }
+
+    if out_buf.is_null() || out_len.is_null() {
+        log::error!("lch_patch_inject(): Bad argument: out_buf and out_len cannot be NULL");
+        return FAILURE;
+    }
+
+    let config = unsafe { &*config };
+    let data = unsafe { std::slice::from_raw_parts(in_buf, in_len) };
+
+    let name = match unsafe { CStr::from_ptr(name) }.to_str() {
+        Ok(s) => s,
+        Err(e) => {
+            log::error!("lch_patch_inject(): Bad argument: name: {e}");
+            return FAILURE;
+        }
+    };
+    let value = match unsafe { CStr::from_ptr(value) }.to_str() {
+        Ok(s) => s,
+        Err(e) => {
+            log::error!("lch_patch_inject(): Bad argument: value: {e}");
+            return FAILURE;
+        }
+    };
+    let sql_type = match unsafe { CStr::from_ptr(sql_type) }.to_str() {
+        Ok(s) => s,
+        Err(e) => {
+            log::error!("lch_patch_inject(): Bad argument: sql_type: {e}");
+            return FAILURE;
+        }
+    };
+
+    let mut patch = match wire::decode_patch(data) {
+        Ok(patch) => patch,
+        Err(e) => {
+            log::error!("lch_patch_inject(): Failed to decode patch: {:#}", e);
+            return FAILURE;
+        }
+    };
+
+    if let Err(e) = patch.inject_field(name, value, sql_type) {
+        log::error!("lch_patch_inject(): {:#}", e);
+        return FAILURE;
+    }
+
+    let buf = match wire::encode_patch(config, &patch) {
+        Ok(buf) => buf,
+        Err(e) => {
+            log::error!("lch_patch_inject(): Failed to encode patch: {:#}", e);
+            return FAILURE;
+        }
+    };
+
+    let buf = buf.into_boxed_slice();
+    let buf_len = buf.len();
+    let ptr = Box::into_raw(buf) as *mut u8;
+
+    unsafe {
+        *out_buf = ptr;
+        *out_len = buf_len;
+    }
+
+    SUCCESS
+}
+
+/// # Safety
 /// `ptr` must be null or a pointer previously returned by `lch_patch_to_sql`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn lch_sql_free(ptr: *mut c_char) {
