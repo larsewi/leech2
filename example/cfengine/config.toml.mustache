@@ -1,0 +1,68 @@
+[[injected-fields]]
+name = "host_key"
+type = "TEXT"
+value = "{{{sys.key_digest}}}"  # expands to SHA=... per host
+
+[tables.classes]
+source = "/var/cfengine/state/classes.csv"
+fields = [
+    { name = "name", type = "TEXT", primary-key = true },
+    { name = "meta", type = "TEXT" },
+]
+
+[tables.execution_log]
+source = "/var/cfengine/state/execution_log.csv"
+fields = [
+    { name = "promise_hash",     type = "TEXT",   primary-key = true },
+    { name = "policy_filename",  type = "TEXT" },
+    { name = "release_id",       type = "TEXT" },
+    { name = "promise_outcome",  type = "NUMBER" },
+    { name = "namespace",        type = "TEXT" },
+    { name = "bundle",           type = "TEXT" },
+    { name = "promise_type",     type = "TEXT" },
+    { name = "promiser",         type = "TEXT" },
+    { name = "stack_path",       type = "TEXT" },
+    { name = "handle",           type = "TEXT" },
+    { name = "promisee",         type = "TEXT" },
+    { name = "messages",         type = "TEXT" },
+    { name = "line_number",      type = "NUMBER" },
+    { name = "policy_file_hash", type = "TEXT" },
+]
+
+[tables.lastseen]
+source = "/var/cfengine/state/lastseen.csv"
+fields = [
+    { name = "direction", type = "TEXT",   primary-key = true },
+    { name = "hostkey",   type = "TEXT",   primary-key = true },
+    { name = "address",   type = "TEXT" },
+    { name = "interval",  type = "NUMBER" },
+    { name = "lastseen",  type = "NUMBER" },
+]
+
+[tables.software]
+source = "/var/cfengine/state/software.csv"
+fields = [
+    { name = "name",         type = "TEXT", primary-key = true },
+    { name = "version",      type = "TEXT", primary-key = true },
+    { name = "architecture", type = "TEXT", primary-key = true },
+]
+
+[tables.variables]
+source = "/var/cfengine/state/variables.csv"
+fields = [
+    { name = "namespace", type = "TEXT",   primary-key = true },
+    { name = "bundle",    type = "TEXT",   primary-key = true },
+    { name = "name",      type = "TEXT",   primary-key = true },
+    { name = "type",      type = "NUMBER" },
+    { name = "value",     type = "TEXT" },
+    { name = "meta",      type = "TEXT" },
+]
+
+[tables.patch]
+source = "/var/cfengine/state/patch.csv"
+fields = [
+    { name = "name",         type = "TEXT", primary-key = true },
+    { name = "version",      type = "TEXT", primary-key = true },
+    { name = "architecture", type = "TEXT", primary-key = true },
+    { name = "status",       type = "TEXT" },
+]

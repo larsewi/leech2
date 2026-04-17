@@ -1,0 +1,18 @@
+bundle agent leech2_config
+{
+  vars:
+      "template"
+        string => "$(sys.inputdir)/services/leech2/config.toml.mustache";
+      "target"
+        string => "/var/cfengine/leech2/config.toml";
+
+  files:
+      "/var/cfengine/leech2/."
+        create => "true";
+
+      "$(target)"
+        create          => "true",
+        edit_template   => "$(template)",
+        template_method => "mustache",
+        comment         => "Render per-host leech2 config";
+}
