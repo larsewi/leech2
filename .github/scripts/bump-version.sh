@@ -39,6 +39,17 @@ fi
 # Update version in Cargo.toml
 sed -i "s/^version = \".*\"/version = \"${NEW_VERSION}\"/" "$CARGO_TOML"
 
+# Replace the .TH header line (first line) of each man page
+LAST_COMMIT_DATE=$(git log -1 --format=%cs)
+replace_first_line() {
+    local file="$1"
+    local new_line="$2"
+    { echo "$new_line"; tail -n +2 "$file"; } >"${file}.tmp"
+    mv "${file}.tmp" "$file"
+}
+replace_first_line man/lch.1 ".TH LCH 1 \"${LAST_COMMIT_DATE}\" \"leech2 ${NEW_VERSION}\" \"User Commands\""
+replace_first_line man/libleech2.3 ".TH LIBLEECH2 3 \"${LAST_COMMIT_DATE}\" \"leech2 ${NEW_VERSION}\" \"Library Functions\""
+
 echo "Bumped version: ${CURRENT} -> ${NEW_VERSION}"
 echo "old_version=${CURRENT}" >>"$GITHUB_OUTPUT"
 echo "new_version=${NEW_VERSION}" >>"$GITHUB_OUTPUT"
