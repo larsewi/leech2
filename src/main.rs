@@ -26,12 +26,12 @@ struct Cli {
 enum Cmd {
     /// Initialize a new .leech2 work directory with an example table
     Init,
-    /// Create or show blocks
+    /// Operate on blocks
     Block {
         #[command(subcommand)]
         command: BlockCmd,
     },
-    /// Create, show, or convert patches
+    /// Operate on patches
     Patch {
         #[command(subcommand)]
         command: PatchCmd,
