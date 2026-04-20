@@ -27,6 +27,7 @@ jobs:
 
             Please review the changes to `Cargo.lock` before merging.
           delete-branch: true
+          reviewers: larsewi
 
   protoc:
     runs-on: ubuntu-latest
@@ -57,3 +58,4 @@ jobs:
 
             Please review the version bump before merging.
           delete-branch: true
+          reviewers: larsewi

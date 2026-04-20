@@ -40,3 +40,4 @@ jobs:
 
             Please review the changes before merging.
           delete-branch: true
+          reviewers: larsewi
