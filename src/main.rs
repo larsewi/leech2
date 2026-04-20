@@ -26,24 +26,16 @@ struct Cli {
 enum Cmd {
     /// Initialize a new .leech2 work directory with an example table
     Init,
-    /// Create or show blocks
+    /// Operate on blocks
     Block {
         #[command(subcommand)]
         command: BlockCmd,
     },
-    /// Create, show, or convert patches
+    /// Operate on patches
     Patch {
         #[command(subcommand)]
         command: PatchCmd,
     },
-    /// Alias for `block log`
-    Log,
-    /// Alias for `patch sql`
-    Sql,
-    /// Alias for `patch applied`
-    Applied,
-    /// Alias for `patch failed`
-    Failed,
 }
 
 #[derive(Subcommand)]
@@ -383,32 +375,6 @@ fn run(cli: Cli) -> Result<()> {
                 cmd_patch_failed(&config)?;
             }
         },
-        Cmd::Log => {
-            eprintln!(
-                "warning: `lch log` is an alias that may change; use `lch block log` in scripts"
-            );
-            let output = cmd_block_log(&config)?;
-            print_with_pager(&output);
-        }
-        Cmd::Sql => {
-            eprintln!(
-                "warning: `lch sql` is an alias that may change; use `lch patch sql` in scripts"
-            );
-            let output = cmd_patch_sql(&config)?;
-            print_with_pager(&output);
-        }
-        Cmd::Applied => {
-            eprintln!(
-                "warning: `lch applied` is an alias that may change; use `lch patch applied` in scripts"
-            );
-            cmd_patch_applied(&config)?;
-        }
-        Cmd::Failed => {
-            eprintln!(
-                "warning: `lch failed` is an alias that may change; use `lch patch failed` in scripts"
-            );
-            cmd_patch_failed(&config)?;
-        }
     }
 
     Ok(())

@@ -126,26 +126,6 @@ Future patches will start from this point. Requires a prior
 Mark the current patch as failed by removing the REPORTED file. The next
 .B lch patch create
 will produce a full state patch (TRUNCATE + INSERT for all tables).
-.SS Aliases
-The following top-level aliases are provided for convenience. They emit a
-deprecation warning and may change in future versions; use the full form in
-scripts.
-.TP
-.B lch log
-Alias for
-.BR "lch block log" .
-.TP
-.B lch sql
-Alias for
-.BR "lch patch sql" .
-.TP
-.B lch applied
-Alias for
-.BR "lch patch applied" .
-.TP
-.B lch failed
-Alias for
-.BR "lch patch failed" .
 .SH CONFIGURATION
 Configuration is read from
 .B config.toml
