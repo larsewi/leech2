@@ -79,7 +79,7 @@ impl InjectedFieldConfig {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct ExcludeFilter {
+pub struct FilterRule {
     #[serde(default)]
     pub tables: Vec<String>,
     pub field: String,
@@ -87,7 +87,7 @@ pub struct ExcludeFilter {
     pub regex: Regex,
 }
 
-impl ExcludeFilter {
+impl FilterRule {
     /// Returns true if this rule applies to the given table.
     /// An empty `table` list means the rule applies to all tables.
     fn applies_to(&self, table_name: &str) -> bool {
@@ -100,7 +100,7 @@ pub struct FilterConfig {
     #[serde(rename = "max-field-length")]
     pub max_field_length: Option<usize>,
     #[serde(default)]
-    pub exclude: Vec<ExcludeFilter>,
+    pub exclude: Vec<FilterRule>,
 }
 
 impl FilterConfig {
@@ -542,8 +542,8 @@ mod tests {
         assert_ne!(config_a.field_hash(), config_b.field_hash());
     }
 
-    fn make_exclude(tables: Vec<&str>, field: &str, regex: &str) -> ExcludeFilter {
-        ExcludeFilter {
+    fn make_rule(tables: Vec<&str>, field: &str, regex: &str) -> FilterRule {
+        FilterRule {
             tables: tables.into_iter().map(|s| s.to_string()).collect(),
             field: field.to_string(),
             regex: Regex::new(regex).unwrap(),
@@ -574,7 +574,7 @@ mod tests {
     fn test_should_filter_exclude_anchored_regex() {
         let filter = FilterConfig {
             max_field_length: None,
-            exclude: vec![make_exclude(vec![], "status", "^inactive$")],
+            exclude: vec![make_rule(vec![], "status", "^inactive$")],
         };
         let fields = vec!["id".to_string(), "status".to_string()];
 
@@ -600,7 +600,7 @@ mod tests {
     fn test_should_filter_exclude_unanchored_regex() {
         let filter = FilterConfig {
             max_field_length: None,
-            exclude: vec![make_exclude(vec![], "desc", "DEPRECATED")],
+            exclude: vec![make_rule(vec![], "desc", "DEPRECATED")],
         };
         let fields = vec!["id".to_string(), "desc".to_string()];
 
@@ -620,7 +620,7 @@ mod tests {
     fn test_should_filter_exclude_alternation_regex() {
         let filter = FilterConfig {
             max_field_length: None,
-            exclude: vec![make_exclude(vec![], "status", "^(inactive|archived)$")],
+            exclude: vec![make_rule(vec![], "status", "^(inactive|archived)$")],
         };
         let fields = vec!["id".to_string(), "status".to_string()];
 
@@ -647,7 +647,7 @@ mod tests {
     fn test_should_filter_exclude_skipped_when_field_not_in_table() {
         let filter = FilterConfig {
             max_field_length: None,
-            exclude: vec![make_exclude(vec![], "nonexistent", "^value$")],
+            exclude: vec![make_rule(vec![], "nonexistent", "^value$")],
         };
         let fields = vec!["id".to_string(), "name".to_string()];
 
@@ -662,7 +662,7 @@ mod tests {
     fn test_should_filter_exclude_table_scoped() {
         let filter = FilterConfig {
             max_field_length: None,
-            exclude: vec![make_exclude(vec!["users"], "status", "^inactive$")],
+            exclude: vec![make_rule(vec!["users"], "status", "^inactive$")],
         };
         let fields = vec!["id".to_string(), "status".to_string()];
 
@@ -684,11 +684,7 @@ mod tests {
     fn test_should_filter_exclude_multiple_tables() {
         let filter = FilterConfig {
             max_field_length: None,
-            exclude: vec![make_exclude(
-                vec!["users", "admins"],
-                "status",
-                "^inactive$",
-            )],
+            exclude: vec![make_rule(vec!["users", "admins"], "status", "^inactive$")],
         };
         let fields = vec!["id".to_string(), "status".to_string()];
 
