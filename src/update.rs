@@ -4,30 +4,57 @@ use std::collections::HashSet;
 use std::fmt;
 use std::mem;
 
+use anyhow::{Result, bail};
+
 impl Update {
-    /// Expand sparse old and new values back to full-length vectors in place.
+    /// Expand a sparse `new_value` back to a full-length vector in place.
     /// Positions not in `changed_indices` are filled with empty strings.
-    pub fn expand_sparse(&mut self, num_values: usize) {
+    ///
+    /// Expects the shape produced by `sparse_encode`: `new_value` length
+    /// equals `changed_indices` length, `old_value` is empty, and every
+    /// `changed_indices` entry is a valid column position in `0..num_values`.
+    /// Returns an error if the wire data violates any of these invariants.
+    pub fn expand_sparse(&mut self, num_values: usize) -> Result<()> {
         if self.changed_indices.is_empty() {
-            return;
+            return Ok(());
         }
 
-        // Pre-allocate full-length vectors so we can index into arbitrary
-        // column positions. Unchanged columns remain as empty strings.
-        let mut old_expanded = vec![String::new(); num_values];
-        let mut new_expanded = vec![String::new(); num_values];
+        let num_changed = self.changed_indices.len();
+        if self.new_value.len() != num_changed {
+            bail!(
+                "update: new_value has {} entries, expected {}",
+                self.new_value.len(),
+                num_changed
+            );
+        }
+        // sparse_encode always clears old_value, so a sparse update on the
+        // wire should have it empty. A populated old_value means the proto
+        // was corrupted in transit or produced by a buggy peer.
+        if !self.old_value.is_empty() {
+            bail!(
+                "update: old_value has {} entries on a sparse update, expected 0",
+                self.old_value.len()
+            );
+        }
 
-        // Move each sparse value into its true column position, using
-        // mem::take to avoid cloning (the source vectors are overwritten
-        // below anyway).
+        // Move each sparse value into its true column position. Unchanged
+        // columns are left as empty strings. Bounds-check column_index
+        // inside the loop so we fail fast on the first bad index.
+        let mut new_expanded = vec![String::new(); num_values];
         for (sparse_index, &column_index) in self.changed_indices.iter().enumerate() {
-            old_expanded[column_index as usize] = mem::take(&mut self.old_value[sparse_index]);
+            if (column_index as usize) >= num_values {
+                bail!(
+                    "update: changed_indices[{}] = {} is out of range (table has {} columns)",
+                    sparse_index,
+                    column_index,
+                    num_values
+                );
+            }
             new_expanded[column_index as usize] = mem::take(&mut self.new_value[sparse_index]);
         }
-
-        self.old_value = old_expanded;
         self.new_value = new_expanded;
         self.changed_indices.clear();
+        Ok(())
     }
 
     /// Format column values for display.
@@ -159,9 +186,10 @@ mod tests {
 
     #[test]
     fn test_expand_sparse() {
-        let mut update = make_update(&["k"], &[0, 2], &["a", "b"], &["x", "y"]);
-        update.expand_sparse(3);
-        assert_eq!(update.old_value, vec!["a", "", "b"]);
+        // Sparse-encoded shape: empty old_value, sparse new_value.
+        let mut update = make_update(&["k"], &[0, 2], &[], &["x", "y"]);
+        update.expand_sparse(3).unwrap();
+        assert!(update.old_value.is_empty());
         assert_eq!(update.new_value, vec!["x", "", "y"]);
         assert!(update.changed_indices.is_empty());
     }
@@ -169,9 +197,30 @@ mod tests {
     #[test]
     fn test_expand_sparse_no_changed_indices() {
         let mut update = make_update(&["k"], &[], &["a", "b"], &["a", "b"]);
-        update.expand_sparse(2);
+        update.expand_sparse(2).unwrap();
         assert_eq!(update.old_value, vec!["a", "b"]);
         assert_eq!(update.new_value, vec!["a", "b"]);
+    }
+
+    #[test]
+    fn test_expand_sparse_rejects_populated_old_value() {
+        let mut update = make_update(&["k"], &[0, 2], &["a", "b"], &["x", "y"]);
+        let err = update.expand_sparse(3).unwrap_err();
+        assert!(err.to_string().contains("old_value"));
+    }
+
+    #[test]
+    fn test_expand_sparse_rejects_new_value_length_mismatch() {
+        let mut update = make_update(&["k"], &[0, 2], &[], &["x"]);
+        let err = update.expand_sparse(3).unwrap_err();
+        assert!(err.to_string().contains("new_value"));
+    }
+
+    #[test]
+    fn test_expand_sparse_rejects_index_out_of_range() {
+        let mut update = make_update(&["k"], &[0, 5], &[], &["x", "y"]);
+        let err = update.expand_sparse(3).unwrap_err();
+        assert!(err.to_string().contains("out of range"));
     }
 
     #[test]

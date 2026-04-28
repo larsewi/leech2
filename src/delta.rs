@@ -32,14 +32,11 @@ impl TryFrom<ProtoDelta> for Delta {
         // Updates are stored sparsely on the wire: only changed column
         // indices and their values are included. Expand them back to
         // full-width value vectors (one element per subsidiary column).
-        let updates = proto
-            .updates
-            .into_iter()
-            .map(|mut update| {
-                update.expand_sparse(num_subsidiary);
-                (update.key, (update.old_value, update.new_value))
-            })
-            .collect();
+        let mut updates = HashMap::with_capacity(proto.updates.len());
+        for mut update in proto.updates {
+            update.expand_sparse(num_subsidiary)?;
+            updates.insert(update.key, (update.old_value, update.new_value));
+        }
 
         Ok(Delta {
             column_names: proto.column_names,
