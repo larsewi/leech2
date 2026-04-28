@@ -4,7 +4,7 @@ libleech2 \- C API for tracking CSV changes and producing SQL patches
 .SH SYNOPSIS
 .B #include <leech2.h>
 .PP
-.BI "void lch_log_init(lch_log_callback_t " callback ", void *" usr_data );
+.BI "int lch_log_init(lch_log_callback_t " callback ", void *" usr_data );
 .PP
 .BI "lch_config_t *lch_init(const char *" work_dir );
 .br
@@ -42,13 +42,17 @@ for configuration details.
 .SH FUNCTIONS
 .SS Logging
 .TP
-.BI "void lch_log_init(lch_log_callback_t " callback ", void *" usr_data )
+.BI "int lch_log_init(lch_log_callback_t " callback ", void *" usr_data )
 Install a custom logger that delivers all log messages through
 .IR callback .
 Must be called before
 .BR lch_init ()
 for the callback to receive messages from initialization. May be called again to
-replace the callback.
+replace the callback. Returns
+.B LCH_SUCCESS
+on success and
+.B LCH_FAILURE
+on error.
 .I callback
 must not be NULL.
 .I usr_data
@@ -256,7 +260,7 @@ static void log_cb(lch_log_level_t level, const char *msg, void *data) {
 }
 
 int main(void) {
-    lch_log_init(log_cb, NULL);
+    if (lch_log_init(log_cb, NULL) != LCH_SUCCESS) return 1;
 
     lch_config_t *cfg = lch_init("/path/to/.leech2");
     if (!cfg) return 1;

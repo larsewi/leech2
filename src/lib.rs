@@ -36,16 +36,20 @@ fn ffi_guard<T>(name: &str, default: T, body: impl FnOnce() -> T) -> T {
 }
 
 /// # Safety
-/// `callback` must be a valid function pointer.
+/// `callback` must be a valid function pointer; passing NULL returns `LCH_FAILURE`.
 /// `user_data` must be valid for the lifetime of the callback and safe to
 /// access from any thread.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn lch_log_init(
-    callback: unsafe extern "C" fn(i32, *const c_char, *mut c_void),
+    callback: Option<unsafe extern "C" fn(i32, *const c_char, *mut c_void)>,
     user_data: *mut c_void,
-) {
-    ffi_guard("lch_log_init", (), || {
+) -> i32 {
+    ffi_guard("lch_log_init", FAILURE, || {
+        let Some(callback) = callback else {
+            return FAILURE;
+        };
         logger::init(callback, user_data);
+        SUCCESS
     })
 }
 
@@ -443,7 +447,7 @@ pub unsafe extern "C" fn lch_patch_free(buf: *mut u8, len: usize) {
 
 #[cfg(test)]
 mod tests {
-    use super::{FAILURE, ffi_guard};
+    use super::{FAILURE, ffi_guard, lch_log_init};
 
     #[test]
     fn ffi_guard_passes_through_normal_returns() {
@@ -453,6 +457,12 @@ mod tests {
     #[test]
     fn ffi_guard_catches_panics_and_returns_default() {
         let result = ffi_guard("test", FAILURE, || -> i32 { panic!("intentional") });
+        assert_eq!(result, FAILURE);
+    }
+
+    #[test]
+    fn lch_log_init_rejects_null_callback() {
+        let result = unsafe { lch_log_init(None, std::ptr::null_mut()) };
         assert_eq!(result, FAILURE);
     }
 }

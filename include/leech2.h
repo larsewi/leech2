@@ -53,8 +53,9 @@ typedef void (*lch_log_callback_t)(lch_log_level_t level, const char *msg,
  *
  * @param callback  Function to receive log messages (must not be NULL).
  * @param usr_data  Opaque pointer forwarded to every callback invocation.
+ * @return LCH_SUCCESS on success, LCH_FAILURE on error.
  */
-extern void lch_log_init(lch_log_callback_t callback, void *usr_data);
+extern int lch_log_init(lch_log_callback_t callback, void *usr_data);
 
 /**
  * Opaque configuration handle.
