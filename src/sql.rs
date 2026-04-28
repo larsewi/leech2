@@ -483,6 +483,17 @@ mod tests {
     use super::*;
     use crate::config::TruncateConfig;
 
+    fn dummy_config(tables: HashMap<String, crate::config::TableConfig>) -> Config {
+        Config {
+            work_dir: std::path::PathBuf::from("/tmp"),
+            injected_fields: Vec::new(),
+            compression: crate::config::CompressionConfig::default(),
+            tables,
+            truncate: TruncateConfig::default(),
+            filters: crate::config::FilterConfig::default(),
+        }
+    }
+
     #[test]
     fn test_sql_type_from_config() {
         assert_eq!(SqlType::from_config("TEXT").unwrap(), SqlType::Text);
@@ -589,14 +600,7 @@ mod tests {
             }],
         };
 
-        let config = Config {
-            work_dir: std::path::PathBuf::from("/tmp"),
-            injected_fields: Vec::new(),
-            compression: crate::config::CompressionConfig::default(),
-            tables: HashMap::from([("test_table".to_string(), table_config)]),
-            truncate: TruncateConfig::default(),
-            filters: crate::config::FilterConfig::default(),
-        };
+        let config = dummy_config(HashMap::from([("test_table".to_string(), table_config)]));
 
         let patch = ProtoPatch {
             head: "abc123".to_string(),
@@ -637,14 +641,7 @@ mod tests {
             }],
         };
 
-        let config = Config {
-            work_dir: std::path::PathBuf::from("/tmp"),
-            injected_fields: Vec::new(),
-            compression: crate::config::CompressionConfig::default(),
-            tables: HashMap::from([("test_table".to_string(), table_config)]),
-            truncate: TruncateConfig::default(),
-            filters: crate::config::FilterConfig::default(),
-        };
+        let config = dummy_config(HashMap::from([("test_table".to_string(), table_config)]));
 
         let patch = ProtoPatch {
             head: "abc123".to_string(),
@@ -685,15 +682,7 @@ mod tests {
             }],
         };
         let correct_hash = table_config.field_hash();
-
-        let config = Config {
-            work_dir: std::path::PathBuf::from("/tmp"),
-            injected_fields: Vec::new(),
-            compression: crate::config::CompressionConfig::default(),
-            tables: HashMap::from([("test_table".to_string(), table_config)]),
-            truncate: TruncateConfig::default(),
-            filters: crate::config::FilterConfig::default(),
-        };
+        let config = dummy_config(HashMap::from([("test_table".to_string(), table_config)]));
 
         let patch = ProtoPatch {
             head: "abc123".to_string(),
@@ -743,15 +732,7 @@ mod tests {
             ],
         };
         let correct_hash = table_config.field_hash();
-
-        let config = Config {
-            work_dir: std::path::PathBuf::from("/tmp"),
-            injected_fields: Vec::new(),
-            compression: crate::config::CompressionConfig::default(),
-            tables: HashMap::from([("test_table".to_string(), table_config)]),
-            truncate: TruncateConfig::default(),
-            filters: crate::config::FilterConfig::default(),
-        };
+        let config = dummy_config(HashMap::from([("test_table".to_string(), table_config)]));
 
         let patch = ProtoPatch {
             head: "abc123".to_string(),
