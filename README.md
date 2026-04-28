@@ -155,22 +155,14 @@ records never enter state, deltas, or SQL output.
 
 ```toml
 [filters]
-max-field-length = 1024      # drop records where a field exceeds this length
+max-field-length = 1024      # drop records with any field longer than this
 
 [[filters.include]]
-field = "status"             # only keep records whose status matches the regex
+field = "status"             # whitelist: keep only matching records
 regex = "^(active|pending)$"
 
 [[filters.exclude]]
-field = "status"             # field name to check
-regex = "^inactive$"         # records whose field matches the regex are dropped
-
-[[filters.exclude]]
-field = "description"
-regex = "DEPRECATED"         # unanchored — matches any substring
-
-[[filters.exclude]]
-tables = ["staging_orders"]  # only apply to specific tables (default: all)
+tables = ["staging_orders"]  # restrict rule to specific tables (default: all)
 field = "region"
 regex = "^test$"
 
