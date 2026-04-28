@@ -220,16 +220,28 @@ Drop records where any field value exceeds
 .I N
 characters.
 .PP
-.B [[filters.exclude]]
-entries define exclusion rules.
+.B [[filters.include]]
+entries define inclusion rules (whitelist).
 Each rule specifies a
 .B field
 name and a
-.BR regex :
-.TP
-.BI regex " = \(dqpattern\(dq"
-Drop records where the field value matches the regular expression. Patterns
-are unanchored by default; use
+.BR regex .
+When one or more include rules apply to a table, a record is kept only if
+its field value matches at least one applicable rule; rules combine with
+OR. When a table has no applicable include rules, every record passes the
+include check.
+.PP
+.B [[filters.exclude]]
+entries define exclusion rules (blacklist).
+Each rule specifies a
+.B field
+name and a
+.BR regex ;
+records whose field value matches the regex are dropped. Exclude is
+evaluated after include, so on overlap exclude wins.
+.PP
+Include and exclude regexes share the same syntax: patterns are unanchored
+by default; use
 .B ^
 and
 .B $
@@ -239,7 +251,7 @@ crate.
 .PP
 An optional
 .B tables
-list restricts the rule to specific tables; when omitted, the rule applies to
+list restricts a rule to specific tables; when omitted, the rule applies to
 all tables. If the named field does not exist in a table, the rule is silently
 skipped.
 .PP
@@ -251,9 +263,11 @@ In TOML, use single-quoted literal strings to write regexes verbatim
 (e.g.
 .BR \(aq\(rsd+\(aq ).
 .PP
-Filtering happens before state computation. When a previously-included record
-starts matching a filter, it appears as a DELETE in the next delta. When a
-previously-filtered record stops matching, it appears as an INSERT.
+Filtering happens before state computation. When a record that previously
+passed the filters stops passing, by matching an exclude rule or by no
+longer matching the include rules, it appears as a DELETE in the next
+delta. When a previously-filtered record starts passing, it appears as an
+INSERT.
 .SS Compression
 An optional
 .B [compression]

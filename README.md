@@ -157,6 +157,10 @@ records never enter state, deltas, or SQL output.
 [filters]
 max-field-length = 1024      # drop records where a field exceeds this length
 
+[[filters.include]]
+field = "status"             # only keep records whose status matches the regex
+regex = "^(active|pending)$"
+
 [[filters.exclude]]
 field = "status"             # field name to check
 regex = "^inactive$"         # records whose field matches the regex are dropped
@@ -177,22 +181,32 @@ regex = '^\d{6}$'            # TOML literal string — no escaping needed
 
 - `max-field-length`: Optional. Any record where any field value exceeds this
   character length is dropped.
-- `[[filters.exclude]]`: Optional list of exclusion rules. Each rule specifies a
-  `field` and a `regex`. Records whose field value matches the regex are
-  dropped. Patterns are unanchored by default — use `^` and `$` for exact
-  matches. Syntax follows the Rust [`regex`](https://docs.rs/regex/) crate.
-- `tables`: Optional list of table names the rule applies to. When omitted, the
+- `[[filters.include]]` (whitelist): Optional list of inclusion rules. Each
+  rule specifies a `field` and a `regex`. When one or more include rules
+  apply to a table, a record is kept only if its field value matches at
+  least one applicable rule (rules combine with OR). When a table has no
+  applicable include rules, every record passes the include check.
+- `[[filters.exclude]]` (blacklist): Optional list of exclusion rules. Each
+  rule specifies a `field` and a `regex`. Records whose field value matches
+  the regex are dropped. Exclude is evaluated after include, so on overlap
+  exclude wins.
+- `tables`: Optional list of table names a rule applies to. When omitted, the
   rule applies to all tables. If the named field doesn't exist in a table, the
   rule is silently skipped.
+
+Include and exclude regexes share the same syntax: patterns are unanchored
+by default — use `^` and `$` for exact matches — and follow the Rust
+[`regex`](https://docs.rs/regex/) crate.
 
 **Escaping regex patterns:** In JSON, backslashes in a regex must be
 doubled: `"\\d+"` means `\d+`. In TOML, use single-quoted literal strings
 to write regexes verbatim: `'\d+'`.
 
-Filtering happens before state computation. When a previously-included record
-starts matching a filter (e.g., a status field changes to an excluded value), it
-appears as a DELETE in the next delta. When a previously-filtered record stops
-matching, it appears as an INSERT.
+Filtering happens before state computation. When a record that previously
+passed the filters stops passing — by matching an exclude rule, or by no
+longer matching the include rules — it appears as a DELETE in the next
+delta. When a previously-filtered record starts passing, it appears as an
+INSERT.
 
 ### Compression
 
