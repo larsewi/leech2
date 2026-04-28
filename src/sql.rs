@@ -512,6 +512,24 @@ mod tests {
         }
     }
 
+    /// Build a ProtoPatch for tests. Defaults `head`, `created`,
+    /// `injected_fields`, `num_blocks`, and `states`; the caller supplies
+    /// the deltas and field hashes that distinguish the test case.
+    fn dummy_patch(
+        deltas: HashMap<String, ProtoDelta>,
+        field_hashes: HashMap<String, String>,
+    ) -> ProtoPatch {
+        ProtoPatch {
+            head: "abc123".to_string(),
+            created: None,
+            injected_fields: Vec::new(),
+            num_blocks: 1,
+            deltas,
+            states: HashMap::new(),
+            field_hashes,
+        }
+    }
+
     #[test]
     fn test_sql_type_from_config() {
         assert_eq!(SqlType::from_config("TEXT").unwrap(), SqlType::Text);
@@ -610,12 +628,8 @@ mod tests {
         let table_config = dummy_table(&[("id", true)]);
         let config = dummy_config(HashMap::from([("test_table".to_string(), table_config)]));
 
-        let patch = ProtoPatch {
-            head: "abc123".to_string(),
-            created: None,
-            injected_fields: Vec::new(),
-            num_blocks: 1,
-            deltas: HashMap::from([(
+        let patch = dummy_patch(
+            HashMap::from([(
                 "test_table".to_string(),
                 ProtoDelta {
                     column_names: vec!["id".to_string()],
@@ -627,9 +641,8 @@ mod tests {
                     updates: vec![],
                 },
             )]),
-            states: HashMap::new(),
-            field_hashes: HashMap::from([("test_table".to_string(), "wrong_hash".to_string())]),
-        };
+            HashMap::from([("test_table".to_string(), "wrong_hash".to_string())]),
+        );
 
         let err = patch_to_sql(&config, &patch).unwrap_err();
         let msg = format!("{:#}", err);
@@ -641,12 +654,8 @@ mod tests {
         let table_config = dummy_table(&[("id", true)]);
         let config = dummy_config(HashMap::from([("test_table".to_string(), table_config)]));
 
-        let patch = ProtoPatch {
-            head: "abc123".to_string(),
-            created: None,
-            injected_fields: Vec::new(),
-            num_blocks: 1,
-            deltas: HashMap::from([(
+        let patch = dummy_patch(
+            HashMap::from([(
                 "test_table".to_string(),
                 ProtoDelta {
                     column_names: vec!["id".to_string()],
@@ -658,9 +667,8 @@ mod tests {
                     updates: vec![],
                 },
             )]),
-            states: HashMap::new(),
-            field_hashes: HashMap::new(),
-        };
+            HashMap::new(),
+        );
 
         let err = patch_to_sql(&config, &patch).unwrap_err();
         let msg = format!("{:#}", err);
@@ -673,12 +681,8 @@ mod tests {
         let correct_hash = table_config.field_hash();
         let config = dummy_config(HashMap::from([("test_table".to_string(), table_config)]));
 
-        let patch = ProtoPatch {
-            head: "abc123".to_string(),
-            created: None,
-            injected_fields: Vec::new(),
-            num_blocks: 1,
-            deltas: HashMap::from([(
+        let patch = dummy_patch(
+            HashMap::from([(
                 "test_table".to_string(),
                 ProtoDelta {
                     column_names: vec!["id".to_string()],
@@ -690,9 +694,8 @@ mod tests {
                     updates: vec![],
                 },
             )]),
-            states: HashMap::new(),
-            field_hashes: HashMap::from([("test_table".to_string(), correct_hash)]),
-        };
+            HashMap::from([("test_table".to_string(), correct_hash)]),
+        );
 
         let result = patch_to_sql(&config, &patch).unwrap().unwrap();
         assert!(result.contains("INSERT INTO"));
@@ -706,12 +709,8 @@ mod tests {
         let correct_hash = table_config.field_hash();
         let config = dummy_config(HashMap::from([("test_table".to_string(), table_config)]));
 
-        let patch = ProtoPatch {
-            head: "abc123".to_string(),
-            created: None,
-            injected_fields: Vec::new(),
-            num_blocks: 1,
-            deltas: HashMap::from([(
+        let patch = dummy_patch(
+            HashMap::from([(
                 "test_table".to_string(),
                 ProtoDelta {
                     column_names: vec!["id".to_string(), "name".to_string()],
@@ -725,9 +724,8 @@ mod tests {
                     }],
                 },
             )]),
-            states: HashMap::new(),
-            field_hashes: HashMap::from([("test_table".to_string(), correct_hash)]),
-        };
+            HashMap::from([("test_table".to_string(), correct_hash)]),
+        );
 
         let err = patch_to_sql(&config, &patch).unwrap_err();
         let msg = format!("{:#}", err);
