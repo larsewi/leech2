@@ -330,51 +330,51 @@ fn print_with_pager(content: &str) {
 fn run(cli: Cli) -> Result<()> {
     let work_dir = work_dir(&cli);
 
-    if let Cmd::Init = &cli.command {
-        return cmd_init(&work_dir);
-    }
-
-    let config = Config::load(&work_dir)?;
-
     match &cli.command {
-        Cmd::Init => unreachable!(),
-        Cmd::Block { command } => match command {
-            BlockCmd::Create => cmd_block_create(&config)?,
-            BlockCmd::Show { reference, n } => {
-                let output = cmd_block_show(&config, reference.as_deref(), *n)?;
-                print_with_pager(&output);
+        Cmd::Init => cmd_init(&work_dir)?,
+        Cmd::Block { command } => {
+            let config = Config::load(&work_dir)?;
+            match command {
+                BlockCmd::Create => cmd_block_create(&config)?,
+                BlockCmd::Show { reference, n } => {
+                    let output = cmd_block_show(&config, reference.as_deref(), *n)?;
+                    print_with_pager(&output);
+                }
+                BlockCmd::Log => {
+                    let output = cmd_block_log(&config)?;
+                    print_with_pager(&output);
+                }
             }
-            BlockCmd::Log => {
-                let output = cmd_block_log(&config)?;
-                print_with_pager(&output);
+        }
+        Cmd::Patch { command } => {
+            let config = Config::load(&work_dir)?;
+            match command {
+                PatchCmd::Create { reference, n } => {
+                    cmd_patch_create(&config, reference.as_deref(), *n)?;
+                }
+                PatchCmd::Show => {
+                    let output = cmd_patch_show(&config)?;
+                    print_with_pager(&output);
+                }
+                PatchCmd::Sql => {
+                    let output = cmd_patch_sql(&config)?;
+                    print_with_pager(&output);
+                }
+                PatchCmd::Inject {
+                    name,
+                    value,
+                    sql_type,
+                } => {
+                    cmd_patch_inject(&config, name, value, sql_type)?;
+                }
+                PatchCmd::Applied => {
+                    cmd_patch_applied(&config)?;
+                }
+                PatchCmd::Failed => {
+                    cmd_patch_failed(&config)?;
+                }
             }
-        },
-        Cmd::Patch { command } => match command {
-            PatchCmd::Create { reference, n } => {
-                cmd_patch_create(&config, reference.as_deref(), *n)?;
-            }
-            PatchCmd::Show => {
-                let output = cmd_patch_show(&config)?;
-                print_with_pager(&output);
-            }
-            PatchCmd::Sql => {
-                let output = cmd_patch_sql(&config)?;
-                print_with_pager(&output);
-            }
-            PatchCmd::Inject {
-                name,
-                value,
-                sql_type,
-            } => {
-                cmd_patch_inject(&config, name, value, sql_type)?;
-            }
-            PatchCmd::Applied => {
-                cmd_patch_applied(&config)?;
-            }
-            PatchCmd::Failed => {
-                cmd_patch_failed(&config)?;
-            }
-        },
+        }
     }
 
     Ok(())
