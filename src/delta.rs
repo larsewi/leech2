@@ -387,7 +387,6 @@ impl Delta {
         previous_table: Option<&Table>,
         current_table: &Table,
     ) -> (RecordMap, RecordMap, UpdateMap) {
-        let mut inserts = HashMap::new();
         let mut deletes = HashMap::new();
         let mut updates = HashMap::new();
 
@@ -396,6 +395,8 @@ impl Delta {
             let inserts = current_table.records.clone();
             return (inserts, deletes, updates);
         };
+
+        let mut inserts = HashMap::new();
 
         // Keys in previous but not current -> deletes
         for (key, value) in &previous_table.records {
