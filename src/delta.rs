@@ -16,11 +16,11 @@ pub struct Delta {
     /// The names of all columns, primary key columns first.
     pub column_names: Vec<String>,
     /// Entries that were added (key -> value).
-    pub inserts: HashMap<Vec<String>, Vec<String>>,
+    pub inserts: RecordMap,
     /// Entries that were removed (key -> value).
-    pub deletes: HashMap<Vec<String>, Vec<String>>,
+    pub deletes: RecordMap,
     /// Entries that were modified (key -> (old_value, new_value)).
-    pub updates: HashMap<Vec<String>, (Vec<String>, Vec<String>)>,
+    pub updates: UpdateMap,
 }
 
 impl TryFrom<ProtoDelta> for Delta {
