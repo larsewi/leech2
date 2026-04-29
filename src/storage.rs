@@ -32,10 +32,14 @@ pub fn store(work_dir: &Path, name: &str, data: &[u8]) -> Result<()> {
     let tmp_path = work_dir.join(format!("{}.tmp", name));
     let path = work_dir.join(name);
 
-    File::create(&tmp_path)
-        .with_context(|| format!("failed to create temp file '{}'", tmp_path.display()))?
-        .write_all(data)
+    let mut file = File::create(&tmp_path)
+        .with_context(|| format!("failed to create temp file '{}'", tmp_path.display()))?;
+    file.write_all(data)
         .with_context(|| format!("failed to write to '{}'", tmp_path.display()))?;
+    file.sync_all()
+        .with_context(|| format!("failed to sync temp file '{}'", tmp_path.display()))?;
+    drop(file);
+
     fs::rename(&tmp_path, &path).with_context(|| {
         format!(
             "failed to rename '{}' to '{}'",
@@ -43,6 +47,24 @@ pub fn store(work_dir: &Path, name: &str, data: &[u8]) -> Result<()> {
             path.display()
         )
     })?;
+
+    // Fsync the parent directory so the rename is durable. Per fsync(2),
+    // an fsync of the file does not flush its directory entry; without
+    // this the rename can be lost on power loss even though the file's
+    // contents made it to disk. Unix only: opening a directory handle
+    // for fsync is a POSIX idiom, and on Windows File::open on a
+    // directory fails with ERROR_ACCESS_DENIED.
+    #[cfg(unix)]
+    {
+        let dir = File::open(work_dir).with_context(|| {
+            format!(
+                "failed to open work directory '{}' for fsync",
+                work_dir.display()
+            )
+        })?;
+        dir.sync_all()
+            .with_context(|| format!("failed to fsync work directory '{}'", work_dir.display()))?;
+    }
 
     // _lock dropped here, releasing exclusive lock.
     log::trace!("Stored {} bytes to '{}'", data.len(), path.display());
