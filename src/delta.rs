@@ -179,8 +179,8 @@ impl Delta {
             self.merge_delete(key, value)
                 .context("failed to merge deletes")?;
         }
-        for (key, (old_value, new_value)) in child.updates {
-            self.merge_update(key, old_value, new_value)
+        for (key, (child_old, child_new)) in child.updates {
+            self.merge_update(key, child_old, child_new)
                 .context("failed to merge updates")?;
         }
         Ok(())
@@ -245,49 +245,56 @@ impl Delta {
     fn merge_update(
         &mut self,
         key: Vec<String>,
-        old_value: Vec<String>,
-        new_value: Vec<String>,
+        child_old: Vec<String>,
+        child_new: Vec<String>,
     ) -> Result<()> {
         if let Some(insert_value) = self.inserts.get_mut(&key) {
             // Rule 7: insert then update → insert(new_value)
             log::trace!("Rule 7: insert + update becomes insert for key {:?}", key);
-            *insert_value = new_value;
+            *insert_value = child_new;
         } else if self.deletes.contains_key(&key) {
             // Rule 11: update after delete → error
             bail!("rule 11: key {:?} deleted in parent, updated in child", key);
-        } else if let Some(update) = self.updates.get_mut(&key) {
-            // Rule 15: update then update → update(old1 → new2)
-            // Merge sparse-expanded updates: only touch positions that actually
-            // changed in the child update.
+        } else if let Some((merged_old, merged_new)) = self.updates.get_mut(&key) {
+            // Rule 15: combine parent and child updates per column. Keep
+            // the earliest "before" and the latest "after" for each
+            // column.
             log::trace!("Rule 15: update + update merged for key {:?}", key);
-            if update.0.len() != update.1.len()
-                || update.0.len() != old_value.len()
-                || update.0.len() != new_value.len()
+            if merged_old.len() != merged_new.len()
+                || merged_old.len() != child_old.len()
+                || merged_old.len() != child_new.len()
             {
                 bail!(
                     "rule 15: vector length mismatch for key {:?}: \
                      parent old/new = {}/{}, child old/new = {}/{}",
                     key,
-                    update.0.len(),
-                    update.1.len(),
-                    old_value.len(),
-                    new_value.len()
+                    merged_old.len(),
+                    merged_new.len(),
+                    child_old.len(),
+                    child_new.len()
                 );
             }
-            for i in 0..update.0.len() {
-                let parent_changed = update.0[i] != update.1[i];
-                let child_changed = old_value[i] != new_value[i];
-                if child_changed {
-                    update.1[i] = new_value[i].clone();
-                    if !parent_changed {
-                        update.0[i] = old_value[i].clone();
+            for i in 0..merged_old.len() {
+                let parent_changed = merged_old[i] != merged_new[i];
+                let child_changed = child_old[i] != child_new[i];
+                match (parent_changed, child_changed) {
+                    // Both changed: keep parent's "before", take child's "after".
+                    (true, true) => merged_new[i] = child_new[i].clone(),
+                    // Only parent changed: existing pair is correct.
+                    (true, false) => {}
+                    // Only child changed: adopt child's pair.
+                    (false, true) => {
+                        merged_old[i] = child_old[i].clone();
+                        merged_new[i] = child_new[i].clone();
                     }
+                    // Neither changed: nothing to do.
+                    (false, false) => {}
                 }
             }
         } else {
             // Rule 3: pass through
             log::trace!("Rule 3: update passes through for key {:?}", key);
-            self.updates.insert(key, (old_value, new_value));
+            self.updates.insert(key, (child_old, child_new));
         }
         Ok(())
     }
