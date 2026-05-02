@@ -5,7 +5,8 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 
-use crate::config::{FilterConfig, TableConfig};
+use crate::config::{FieldConfig, FilterConfig, TableConfig};
+use crate::sql::{SqlType, normalize_boolean, normalize_number};
 
 type ProtoTable = crate::proto::table::Table;
 
@@ -151,6 +152,15 @@ impl Table {
         let (primary_indices, subsidiary_indices) =
             Self::compute_key_indices(&field_names, &primary_key, &field_indices);
 
+        // Field configs split by primary-key flag in declaration order. This
+        // matches the ordering of `primary_indices` / `subsidiary_indices` —
+        // both are derived from `config.fields` in declaration order — so
+        // zipping the two pairs lines up the right config with each value.
+        let primary_field_configs: Vec<&FieldConfig> =
+            config.fields.iter().filter(|f| f.primary_key).collect();
+        let subsidiary_field_configs: Vec<&FieldConfig> =
+            config.fields.iter().filter(|f| !f.primary_key).collect();
+
         let fields = config.ordered_field_names();
 
         let mut records: HashMap<Vec<String>, Vec<String>> = HashMap::new();
@@ -174,15 +184,11 @@ impl Table {
                 continue;
             }
 
-            let primary_key: Vec<String> = primary_indices
-                .iter()
-                .map(|&i| record[i].to_string())
-                .collect();
-
-            let subsidiary: Vec<String> = subsidiary_indices
-                .iter()
-                .map(|&i| record[i].to_string())
-                .collect();
+            let primary_key = normalize_columns(&record, &primary_indices, &primary_field_configs)
+                .with_context(|| format!("row {}", row_num + 1))?;
+            let subsidiary =
+                normalize_columns(&record, &subsidiary_indices, &subsidiary_field_configs)
+                    .with_context(|| format!("row {}", row_num + 1))?;
 
             if records.insert(primary_key.clone(), subsidiary).is_some() {
                 anyhow::bail!("duplicate primary key {:?}", primary_key);
@@ -191,6 +197,40 @@ impl Table {
 
         Ok(Table { fields, records })
     }
+}
+
+/// Pull values at `csv_indices` out of `record` and normalize each one
+/// according to its corresponding `FieldConfig`. The two slices must be
+/// the same length and aligned 1-to-1.
+fn normalize_columns(
+    record: &csv::StringRecord,
+    csv_indices: &[usize],
+    field_configs: &[&FieldConfig],
+) -> Result<Vec<String>> {
+    let mut out = Vec::with_capacity(csv_indices.len());
+    for (&csv_index, &field) in csv_indices.iter().zip(field_configs.iter()) {
+        out.push(normalize_field_value(&record[csv_index], field)?);
+    }
+    Ok(out)
+}
+
+/// Normalize a single CSV value based on its field config. Values matching
+/// the `null` sentinel pass through verbatim; `NUMBER` and `BOOLEAN`
+/// fields are canonicalized; `TEXT` fields are unchanged.
+fn normalize_field_value(value: &str, field: &FieldConfig) -> Result<String> {
+    if let Some(sentinel) = &field.null
+        && value == sentinel
+    {
+        return Ok(value.to_string());
+    }
+    let sql_type =
+        SqlType::from_config(&field.sql_type).with_context(|| format!("field '{}'", field.name))?;
+    let normalized = match sql_type {
+        SqlType::Text => return Ok(value.to_string()),
+        SqlType::Number => normalize_number(value),
+        SqlType::Boolean => normalize_boolean(value),
+    };
+    normalized.with_context(|| format!("field '{}'", field.name))
 }
 
 #[cfg(test)]
@@ -333,6 +373,123 @@ mod tests {
         assert!(
             err.to_string().contains("field 'missing' not found"),
             "unexpected error: {err}"
+        );
+    }
+
+    // -- numeric normalization on load --
+
+    fn make_typed_field(
+        name: &str,
+        sql_type: &str,
+        primary_key: bool,
+        null: Option<&str>,
+    ) -> FieldConfig {
+        FieldConfig {
+            name: name.to_string(),
+            sql_type: sql_type.to_string(),
+            primary_key,
+            null: null.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn test_parse_csv_normalizes_numbers() {
+        let config = make_config(
+            vec![
+                make_typed_field("id", "NUMBER", true, None),
+                make_typed_field("count", "NUMBER", false, None),
+                make_typed_field("name", "TEXT", false, None),
+            ],
+            true,
+        );
+        let reader = Table::test_reader("id,count,name\n0.0,1e2,Alice\n+5,1.10,Bob\n", true);
+        let table = Table::parse_csv("t", &config, &FilterConfig::default(), reader).unwrap();
+
+        // "0.0" → "0", "1e2" → "100"
+        assert_eq!(
+            table.records.get(&vec!["0".to_string()]),
+            Some(&vec!["100".to_string(), "Alice".to_string()])
+        );
+        // "+5" → "5", "1.10" → "1.1"
+        assert_eq!(
+            table.records.get(&vec!["5".to_string()]),
+            Some(&vec!["1.1".to_string(), "Bob".to_string()])
+        );
+    }
+
+    #[test]
+    fn test_parse_csv_respects_null_sentinel_on_number() {
+        let config = make_config(
+            vec![
+                make_typed_field("id", "NUMBER", true, None),
+                make_typed_field("count", "NUMBER", false, Some("N/A")),
+            ],
+            true,
+        );
+        let reader = Table::test_reader("id,count\n1,N/A\n2,3.0\n", true);
+        let table = Table::parse_csv("t", &config, &FilterConfig::default(), reader).unwrap();
+
+        // sentinel passes through verbatim, even though "N/A" is not a number
+        assert_eq!(
+            table.records.get(&vec!["1".to_string()]),
+            Some(&vec!["N/A".to_string()])
+        );
+        // non-sentinel still normalizes
+        assert_eq!(
+            table.records.get(&vec!["2".to_string()]),
+            Some(&vec!["3".to_string()])
+        );
+    }
+
+    #[test]
+    fn test_parse_csv_normalizes_booleans() {
+        let config = make_config(
+            vec![
+                make_typed_field("id", "NUMBER", true, None),
+                make_typed_field("active", "BOOLEAN", false, None),
+            ],
+            true,
+        );
+        let reader = Table::test_reader("id,active\n1,True\n2,1\n3,YES\n4,False\n5,no\n", true);
+        let table = Table::parse_csv("t", &config, &FilterConfig::default(), reader).unwrap();
+
+        // Truthy variants all canonicalize to "true".
+        for id in ["1", "2", "3"] {
+            assert_eq!(
+                table.records.get(&vec![id.to_string()]),
+                Some(&vec!["true".to_string()]),
+                "id={id}"
+            );
+        }
+        for id in ["4", "5"] {
+            assert_eq!(
+                table.records.get(&vec![id.to_string()]),
+                Some(&vec!["false".to_string()]),
+                "id={id}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_parse_csv_rejects_invalid_number() {
+        let config = make_config(
+            vec![
+                make_typed_field("id", "NUMBER", true, None),
+                make_typed_field("count", "NUMBER", false, None),
+            ],
+            true,
+        );
+        let reader = Table::test_reader("id,count\n1,abc\n", true);
+        let err = Table::parse_csv("t", &config, &FilterConfig::default(), reader).unwrap_err();
+        let msg = format!("{:#}", err);
+        assert!(msg.contains("row 1"), "expected row context: {msg}");
+        assert!(
+            msg.contains("field 'count'"),
+            "expected field context: {msg}"
+        );
+        assert!(
+            msg.contains("invalid number"),
+            "expected invalid-number cause: {msg}"
         );
     }
 }
