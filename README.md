@@ -97,7 +97,7 @@ type = "NUMBER"
 | Type      | SQL literal    | Notes                                        |
 | --------- | -------------- | -------------------------------------------- |
 | `TEXT`    | `'value'`      | Single quotes, escaped                       |
-| `NUMBER`  | `42` / `3.14`  | Validated as finite `f64`                    |
+| `NUMBER`  | `42` / `3.14`  | Validated as finite; canonicalized at load (`0.0`/`1e2` → `0`/`100`) |
 | `BOOLEAN` | `TRUE`/`FALSE` | Accepts `true/false`, `1/0`, `t/f`, `yes/no` |
 
 Fields can have an optional `null` sentinel that specifies which CSV value

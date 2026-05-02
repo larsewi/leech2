@@ -164,6 +164,78 @@ fn quote_identifier(name: &str) -> String {
     format!("\"{}\"", name.replace('"', "\"\""))
 }
 
+/// Canonicalize a numeric string so that mathematically equal values
+/// produce the same representation (e.g. `"0"` and `"0.0"` both become
+/// `"0"`, and `"1e2"` becomes `"100"`).
+///
+/// Precision is preserved: digit shifting and trimming are done by string
+/// manipulation, never by round-tripping through `f64`. The only role of
+/// `f64` parsing is to reject non-numeric input and non-finite values
+/// (`NaN`, `inf`, exponents that overflow to infinity).
+pub fn normalize_number(value: &str) -> Result<String> {
+    let parsed: f64 = value
+        .parse()
+        .with_context(|| format!("invalid number: '{}'", value))?;
+    if !parsed.is_finite() {
+        bail!("invalid number: '{}'", value);
+    }
+
+    // Tokenize: optional sign, then mantissa, then optional exponent.
+    let (sign, rest) = match value.as_bytes().first() {
+        Some(b'-') => ("-", &value[1..]),
+        Some(b'+') => ("", &value[1..]),
+        _ => ("", value),
+    };
+    let (mantissa, exponent) = match rest.find(['e', 'E']) {
+        Some(pos) => {
+            let exp: i64 = rest[pos + 1..]
+                .parse()
+                .with_context(|| format!("invalid number: '{}'", value))?;
+            (&rest[..pos], exp)
+        }
+        None => (rest, 0),
+    };
+    let (int_digits, frac_digits) = mantissa.split_once('.').unwrap_or((mantissa, ""));
+
+    // Compute fixed-point form by placing the decimal at position
+    // `int_digits.len() + exponent` within the concatenated digit string.
+    let combined: String = format!("{}{}", int_digits, frac_digits);
+    let decimal_pos = int_digits.len() as i64 + exponent;
+
+    let (int_part, frac_part) = if decimal_pos <= 0 {
+        let leading_zeros = "0".repeat((-decimal_pos) as usize);
+        ("0".to_string(), format!("{}{}", leading_zeros, combined))
+    } else if (decimal_pos as usize) >= combined.len() {
+        let trailing_zeros = "0".repeat(decimal_pos as usize - combined.len());
+        (format!("{}{}", combined, trailing_zeros), String::new())
+    } else {
+        let (int_chars, frac_chars) = combined.split_at(decimal_pos as usize);
+        (int_chars.to_string(), frac_chars.to_string())
+    };
+
+    // Strip insignificant zeros and reassemble.
+    let int_trimmed = int_part.trim_start_matches('0');
+    let int_canonical = if int_trimmed.is_empty() {
+        "0"
+    } else {
+        int_trimmed
+    };
+    let frac_trimmed = frac_part.trim_end_matches('0');
+
+    let magnitude = if frac_trimmed.is_empty() {
+        int_canonical.to_string()
+    } else {
+        format!("{}.{}", int_canonical, frac_trimmed)
+    };
+
+    // Don't render a sign on canonical zero.
+    if magnitude == "0" {
+        Ok(magnitude)
+    } else {
+        Ok(format!("{}{}", sign, magnitude))
+    }
+}
+
 /// Format a value as a SQL literal based on its type.
 pub fn quote_literal(value: &str, sql_type: &SqlType) -> Result<String> {
     match sql_type {
@@ -574,6 +646,77 @@ mod tests {
             "'it''s a test'"
         );
         assert_eq!(quote_literal("a''b", &SqlType::Text).unwrap(), "'a''''b'");
+    }
+
+    #[test]
+    fn test_normalize_number_zero_forms() {
+        for input in [
+            "0", "0.0", "-0", "+0", "00", "0.00", "-0.000", "0e10", "0.0e-5",
+        ] {
+            assert_eq!(normalize_number(input).unwrap(), "0", "input: {}", input);
+        }
+    }
+
+    #[test]
+    fn test_normalize_number_integers() {
+        assert_eq!(normalize_number("42").unwrap(), "42");
+        assert_eq!(normalize_number("-42").unwrap(), "-42");
+        assert_eq!(normalize_number("+5").unwrap(), "5");
+        assert_eq!(normalize_number("007").unwrap(), "7");
+        assert_eq!(normalize_number("100").unwrap(), "100");
+        assert_eq!(normalize_number("-100").unwrap(), "-100");
+    }
+
+    #[test]
+    fn test_normalize_number_trailing_zero_stripping() {
+        assert_eq!(normalize_number("100.0").unwrap(), "100");
+        assert_eq!(normalize_number("100.00").unwrap(), "100");
+        assert_eq!(normalize_number("1.10").unwrap(), "1.1");
+        assert_eq!(normalize_number("3.14").unwrap(), "3.14");
+        assert_eq!(normalize_number("-1.50").unwrap(), "-1.5");
+    }
+
+    #[test]
+    fn test_normalize_number_leading_decimal() {
+        assert_eq!(normalize_number(".5").unwrap(), "0.5");
+        assert_eq!(normalize_number("-.5").unwrap(), "-0.5");
+    }
+
+    #[test]
+    fn test_normalize_number_scientific() {
+        assert_eq!(normalize_number("1e2").unwrap(), "100");
+        assert_eq!(normalize_number("1E2").unwrap(), "100");
+        assert_eq!(normalize_number("1.0e2").unwrap(), "100");
+        assert_eq!(normalize_number("1.5e2").unwrap(), "150");
+        assert_eq!(normalize_number("1.5e-2").unwrap(), "0.015");
+        assert_eq!(normalize_number("0.01e4").unwrap(), "100");
+        assert_eq!(normalize_number("-1.5e2").unwrap(), "-150");
+        assert_eq!(normalize_number("1e0").unwrap(), "1");
+    }
+
+    #[test]
+    fn test_normalize_number_preserves_precision() {
+        // Above f64's 2^53 integer precision but well within finite range —
+        // must round-trip digit-for-digit, not via f64.
+        assert_eq!(
+            normalize_number("99999999999999999999").unwrap(),
+            "99999999999999999999"
+        );
+        assert_eq!(
+            normalize_number("12345678901234567890.10").unwrap(),
+            "12345678901234567890.1"
+        );
+    }
+
+    #[test]
+    fn test_normalize_number_rejects_non_numeric() {
+        assert!(normalize_number("abc").is_err());
+        assert!(normalize_number("").is_err());
+        assert!(normalize_number("NaN").is_err());
+        assert!(normalize_number("inf").is_err());
+        assert!(normalize_number("-inf").is_err());
+        // Exponent overflows f64 to infinity → rejected.
+        assert!(normalize_number("1e1000").is_err());
     }
 
     #[test]
