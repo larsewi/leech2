@@ -236,6 +236,17 @@ pub fn normalize_number(value: &str) -> Result<String> {
     }
 }
 
+/// Canonicalize a boolean string to lowercase `"true"` or `"false"`, so
+/// that `"True"`, `"1"`, `"yes"`, `"t"` (and their false counterparts)
+/// don't compare unequal in the diff pipeline.
+pub fn normalize_boolean(value: &str) -> Result<String> {
+    match value.to_lowercase().as_str() {
+        "true" | "1" | "t" | "yes" => Ok("true".to_string()),
+        "false" | "0" | "f" | "no" => Ok("false".to_string()),
+        _ => bail!("invalid boolean value: '{}'", value),
+    }
+}
+
 /// Format a value as a SQL literal based on its type.
 pub fn quote_literal(value: &str, sql_type: &SqlType) -> Result<String> {
     match sql_type {
@@ -717,6 +728,28 @@ mod tests {
         assert!(normalize_number("-inf").is_err());
         // Exponent overflows f64 to infinity → rejected.
         assert!(normalize_number("1e1000").is_err());
+    }
+
+    #[test]
+    fn test_normalize_boolean() {
+        for input in ["true", "True", "TRUE", "1", "t", "T", "yes", "YES"] {
+            assert_eq!(
+                normalize_boolean(input).unwrap(),
+                "true",
+                "input: {}",
+                input
+            );
+        }
+        for input in ["false", "False", "FALSE", "0", "f", "F", "no", "NO"] {
+            assert_eq!(
+                normalize_boolean(input).unwrap(),
+                "false",
+                "input: {}",
+                input
+            );
+        }
+        assert!(normalize_boolean("maybe").is_err());
+        assert!(normalize_boolean("").is_err());
     }
 
     #[test]

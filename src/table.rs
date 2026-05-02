@@ -6,7 +6,7 @@ use std::path::Path;
 use anyhow::{Context, Result};
 
 use crate::config::{FieldConfig, FilterConfig, TableConfig};
-use crate::sql::{SqlType, normalize_number};
+use crate::sql::{SqlType, normalize_boolean, normalize_number};
 
 type ProtoTable = crate::proto::table::Table;
 
@@ -215,8 +215,8 @@ fn normalize_columns(
 }
 
 /// Normalize a single CSV value based on its field config. Values matching
-/// the `null` sentinel pass through verbatim; `NUMBER` fields are
-/// canonicalized via `normalize_number`; other types are unchanged.
+/// the `null` sentinel pass through verbatim; `NUMBER` and `BOOLEAN`
+/// fields are canonicalized; `TEXT` fields are unchanged.
 fn normalize_field_value(value: &str, field: &FieldConfig) -> Result<String> {
     if let Some(sentinel) = &field.null
         && value == sentinel
@@ -225,10 +225,12 @@ fn normalize_field_value(value: &str, field: &FieldConfig) -> Result<String> {
     }
     let sql_type =
         SqlType::from_config(&field.sql_type).with_context(|| format!("field '{}'", field.name))?;
-    if sql_type == SqlType::Number {
-        return normalize_number(value).with_context(|| format!("field '{}'", field.name));
-    }
-    Ok(value.to_string())
+    let normalized = match sql_type {
+        SqlType::Text => return Ok(value.to_string()),
+        SqlType::Number => normalize_number(value),
+        SqlType::Boolean => normalize_boolean(value),
+    };
+    normalized.with_context(|| format!("field '{}'", field.name))
 }
 
 #[cfg(test)]
@@ -437,6 +439,35 @@ mod tests {
             table.records.get(&vec!["2".to_string()]),
             Some(&vec!["3".to_string()])
         );
+    }
+
+    #[test]
+    fn test_parse_csv_normalizes_booleans() {
+        let config = make_config(
+            vec![
+                make_typed_field("id", "NUMBER", true, None),
+                make_typed_field("active", "BOOLEAN", false, None),
+            ],
+            true,
+        );
+        let reader = Table::test_reader("id,active\n1,True\n2,1\n3,YES\n4,False\n5,no\n", true);
+        let table = Table::parse_csv("t", &config, &FilterConfig::default(), reader).unwrap();
+
+        // Truthy variants all canonicalize to "true".
+        for id in ["1", "2", "3"] {
+            assert_eq!(
+                table.records.get(&vec![id.to_string()]),
+                Some(&vec!["true".to_string()]),
+                "id={id}"
+            );
+        }
+        for id in ["4", "5"] {
+            assert_eq!(
+                table.records.get(&vec![id.to_string()]),
+                Some(&vec!["false".to_string()]),
+                "id={id}"
+            );
+        }
     }
 
     #[test]
