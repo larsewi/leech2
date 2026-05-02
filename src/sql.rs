@@ -173,7 +173,7 @@ pub fn quote_literal(value: &str, sql_type: &SqlType) -> Result<String> {
             if !number.is_finite() {
                 bail!("invalid number: '{}'", value);
             }
-            Ok(number.to_string())
+            Ok(value.to_string())
         }
         SqlType::Boolean => match value.to_lowercase().as_str() {
             "true" | "1" | "t" | "yes" => Ok("TRUE".to_string()),
