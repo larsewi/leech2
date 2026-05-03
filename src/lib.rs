@@ -36,6 +36,27 @@ fn ffi_guard<T>(name: &str, default: T, body: impl FnOnce() -> T) -> T {
     }
 }
 
+/// Validate a required C string FFI argument and convert it to `&str`.
+///
+/// Logs an error and returns `None` if `ptr` is null or the bytes are not UTF-8.
+/// Callers translate `None` into the function's failure sentinel.
+///
+/// # Safety
+/// If `ptr` is non-null, it must point to a valid, null-terminated C string.
+unsafe fn cstr_arg<'a>(fn_name: &str, arg_name: &str, ptr: *const c_char) -> Option<&'a str> {
+    if ptr.is_null() {
+        log::error!("{}(): Bad argument: {} cannot be NULL", fn_name, arg_name);
+        return None;
+    }
+    match unsafe { CStr::from_ptr(ptr) }.to_str() {
+        Ok(s) => Some(s),
+        Err(e) => {
+            log::error!("{}(): Bad argument: {}: {}", fn_name, arg_name, e);
+            None
+        }
+    }
+}
+
 /// Install or replace the log callback.
 ///
 /// The first call installs the global logger; subsequent calls atomically swap
@@ -72,18 +93,10 @@ pub unsafe extern "C" fn lch_log_init(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn lch_init(work_dir: *const c_char) -> *mut config::Config {
     ffi_guard("lch_init", std::ptr::null_mut(), || {
-        if work_dir.is_null() {
-            log::error!("lch_init(): Bad argument: work directory cannot be NULL");
+        let Some(work_dir) = (unsafe { cstr_arg("lch_init", "work_dir", work_dir) }) else {
             return std::ptr::null_mut();
-        }
-
-        let path = match unsafe { CStr::from_ptr(work_dir) }.to_str() {
-            Ok(path) => PathBuf::from(path),
-            Err(e) => {
-                log::error!("lch_init(): Bad argument: {e}");
-                return std::ptr::null_mut();
-            }
         };
+        let path = PathBuf::from(work_dir);
 
         log::debug!("lch_init(work_dir={})", path.display());
 
@@ -298,42 +311,23 @@ pub unsafe extern "C" fn lch_patch_inject(
             return FAILURE;
         }
 
-        if name.is_null() || value.is_null() || sql_type.is_null() {
-            log::error!(
-                "lch_patch_inject(): Bad argument: name, value, and sql_type cannot be NULL"
-            );
-            return FAILURE;
-        }
-
         if out_buf.is_null() || out_len.is_null() {
             log::error!("lch_patch_inject(): Bad argument: out_buf and out_len cannot be NULL");
             return FAILURE;
         }
 
+        let Some(name) = (unsafe { cstr_arg("lch_patch_inject", "name", name) }) else {
+            return FAILURE;
+        };
+        let Some(value) = (unsafe { cstr_arg("lch_patch_inject", "value", value) }) else {
+            return FAILURE;
+        };
+        let Some(sql_type) = (unsafe { cstr_arg("lch_patch_inject", "sql_type", sql_type) }) else {
+            return FAILURE;
+        };
+
         let config = unsafe { &*config };
         let data = unsafe { std::slice::from_raw_parts(in_buf, in_len) };
-
-        let name = match unsafe { CStr::from_ptr(name) }.to_str() {
-            Ok(s) => s,
-            Err(e) => {
-                log::error!("lch_patch_inject(): Bad argument: name: {e}");
-                return FAILURE;
-            }
-        };
-        let value = match unsafe { CStr::from_ptr(value) }.to_str() {
-            Ok(s) => s,
-            Err(e) => {
-                log::error!("lch_patch_inject(): Bad argument: value: {e}");
-                return FAILURE;
-            }
-        };
-        let sql_type = match unsafe { CStr::from_ptr(sql_type) }.to_str() {
-            Ok(s) => s,
-            Err(e) => {
-                log::error!("lch_patch_inject(): Bad argument: sql_type: {e}");
-                return FAILURE;
-            }
-        };
 
         let mut patch = match wire::decode_patch(data) {
             Ok(patch) => patch,
