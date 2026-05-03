@@ -47,16 +47,33 @@ Install a custom logger that delivers all log messages through
 .IR callback .
 Must be called before
 .BR lch_init ()
-for the callback to receive messages from initialization. May be called again to
-replace the callback. Returns
+for the callback to receive messages from initialization. May be called again
+to atomically replace
+.I callback
+and
+.IR usr_data ;
+after a replacement the previous callback is no longer invoked, and the library
+does not free the previous
+.IR usr_data ,
+so the caller owns its lifetime. Safe to call concurrently from multiple
+threads. Once installed,
+.I callback
+itself may be invoked from any thread, possibly in parallel, so both
+.I callback
+and
+.I usr_data
+must be thread-safe.
+.I callback
+must not be NULL.
+.I usr_data
+is an opaque pointer forwarded to every callback invocation and must remain
+valid until the callback is replaced by a later
+.BR lch_log_init ()
+call or the process exits. Returns
 .B LCH_SUCCESS
 on success and
 .B LCH_FAILURE
 on error.
-.I callback
-must not be NULL.
-.I usr_data
-is an opaque pointer forwarded to every callback invocation.
 .SS Lifecycle
 .TP
 .BI "lch_config_t *lch_init(const char *" work_dir )

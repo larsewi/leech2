@@ -36,10 +36,21 @@ fn ffi_guard<T>(name: &str, default: T, body: impl FnOnce() -> T) -> T {
     }
 }
 
+/// Install or replace the log callback.
+///
+/// The first call installs the global logger; subsequent calls atomically swap
+/// the callback and `user_data`. After a swap, the old callback is no longer
+/// invoked, but the library does not free or otherwise touch the previous
+/// `user_data` — the caller owns its lifetime and must release it if needed.
+///
+/// Safe to call concurrently from multiple threads. Once installed, the
+/// callback itself may be invoked from any thread (including in parallel),
+/// so both `callback` and `user_data` must be thread-safe.
+///
 /// # Safety
 /// `callback` must be a valid function pointer; passing NULL returns `LCH_FAILURE`.
-/// `user_data` must be valid for the lifetime of the callback and safe to
-/// access from any thread.
+/// `user_data` must remain valid until either the callback is replaced by a
+/// later `lch_log_init` call or the process exits.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn lch_log_init(
     callback: Option<unsafe extern "C" fn(i32, *const c_char, *mut c_void)>,

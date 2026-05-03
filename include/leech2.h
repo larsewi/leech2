@@ -48,11 +48,22 @@ typedef void (*lch_log_callback_t)(lch_log_level_t level, const char *msg,
  * Initialize logging with a callback.
  *
  * Installs a custom logger that delivers all log messages through @p callback.
- * Must be called before lch_init() for the callback to receive messages.
- * May be called again to replace the callback.
+ * Must be called before lch_init() for the callback to receive messages from
+ * initialization.
+ *
+ * May be called again to atomically replace @p callback and @p usr_data. After
+ * a replacement, the previous callback is no longer invoked; the library does
+ * not free the previous @p usr_data, so the caller is responsible for its
+ * lifetime.
+ *
+ * Safe to call concurrently from multiple threads. Once installed, @p callback
+ * itself may be invoked from any thread, possibly in parallel, so both
+ * @p callback and @p usr_data must be thread-safe.
  *
  * @param callback  Function to receive log messages (must not be NULL).
- * @param usr_data  Opaque pointer forwarded to every callback invocation.
+ * @param usr_data  Opaque pointer forwarded to every callback invocation. Must
+ *                  remain valid until the callback is replaced by a later
+ *                  lch_log_init() call or the process exits.
  * @return LCH_SUCCESS on success, LCH_FAILURE on error.
  */
 extern int lch_log_init(lch_log_callback_t callback, void *usr_data);
