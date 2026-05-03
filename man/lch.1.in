@@ -161,8 +161,9 @@ Supported field types:
 Quoted as a single-quoted SQL string literal with escaping.
 .TP
 .B NUMBER
-Emitted as a bare numeric literal. Validated as a finite
-.BR f64 .
+Emitted as a bare numeric literal. Parsed and stored as a finite
+.BR f64 ,
+but loses precision for integers above 2^53.
 .TP
 .B BOOLEAN
 Emitted as

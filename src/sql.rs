@@ -3,17 +3,20 @@ use std::collections::HashMap;
 use anyhow::{Context, Result, anyhow, bail};
 
 use crate::config::{Config, FieldConfig};
-use crate::entry::Entry;
+use crate::proto::cell::Value as ProtoValue;
 use crate::proto::delta::Delta as ProtoDelta;
+use crate::proto::entry::Entry as ProtoEntry;
 use crate::proto::injected::Field as ProtoInjectedField;
 use crate::proto::patch::Patch as ProtoPatch;
 use crate::proto::table::Table as ProtoTable;
+use crate::proto::update::Update as ProtoUpdate;
+use crate::value::Value;
 
-/// Controls how a CSV field value is formatted as a SQL literal.
+/// Controls how a CSV field value is parsed into a `Value`.
 ///
 /// These are not database column types — they determine quoting and
 /// validation when embedding a value into a SQL string (e.g. `Text`
-/// wraps in single quotes, `Number` validates and emits unquoted).
+/// wraps in single quotes, `Number` emits unquoted).
 #[derive(Debug, Clone, PartialEq)]
 pub enum SqlType {
     Text,
@@ -35,34 +38,40 @@ impl SqlType {
     }
 }
 
-/// Per-field metadata resolved from config.
-struct FieldMeta {
-    name: String,
-    sql_type: SqlType,
-    /// When a CSV field value equals this sentinel string, it is emitted as SQL
-    /// `NULL` instead of a typed literal.
-    null: Option<String>,
+/// Parse a boolean string, accepting any of `true`/`1`/`t`/`yes` (and their
+/// false counterparts) case-insensitively.
+pub fn parse_boolean(value: &str) -> Result<bool> {
+    const TRUE_VALUES: &[&str] = &["true", "1", "t", "yes"];
+    const FALSE_VALUES: &[&str] = &["false", "0", "f", "no"];
+
+    if TRUE_VALUES.iter().any(|v| value.eq_ignore_ascii_case(v)) {
+        Ok(true)
+    } else if FALSE_VALUES.iter().any(|v| value.eq_ignore_ascii_case(v)) {
+        Ok(false)
+    } else {
+        bail!("invalid boolean value: '{}'", value);
+    }
 }
 
-impl TryFrom<&FieldConfig> for FieldMeta {
-    type Error = anyhow::Error;
-
-    fn try_from(field_config: &FieldConfig) -> Result<Self> {
-        let sql_type = SqlType::from_config(&field_config.sql_type)
-            .with_context(|| format!("field '{}'", field_config.name))?;
-        Ok(FieldMeta {
-            name: field_config.name.clone(),
-            sql_type,
-            null: field_config.null.clone(),
-        })
+/// Parse a string into a typed `Value` according to the SQL type tag.
+pub fn parse_typed_value(value: &str, sql_type: &SqlType) -> Result<Value> {
+    match sql_type {
+        SqlType::Text => Ok(Value::Text(value.to_string())),
+        SqlType::Number => {
+            let parsed: f64 = value
+                .parse()
+                .with_context(|| format!("invalid number: '{}'", value))?;
+            Value::number(parsed)
+        }
+        SqlType::Boolean => Ok(Value::Boolean(parse_boolean(value)?)),
     }
 }
 
 /// Schema information for a single table, resolved from config.
 struct TableSchema {
-    /// All fields in order: primary keys first, then subsidiary.
-    fields: Vec<FieldMeta>,
-    /// Number of primary key fields (the first `num_primary_keys` entries in `fields`).
+    /// All field names in order: primary keys first, then subsidiary.
+    field_names: Vec<String>,
+    /// Number of primary key fields (the first `num_primary_keys` entries).
     num_primary_keys: usize,
 }
 
@@ -76,7 +85,6 @@ impl TableSchema {
             .get(table_name)
             .with_context(|| format!("table '{}' not found in config", table_name))?;
 
-        // Build a name→config lookup so we can resolve type/null for each field.
         let field_config_by_name: HashMap<&str, &FieldConfig> = table_config
             .fields
             .iter()
@@ -86,85 +94,83 @@ impl TableSchema {
         let primary_key_names = table_config.primary_key();
         let all_field_names = table_config.field_names();
 
-        let mut fields = Vec::new();
+        let mut field_names = Vec::new();
 
         // Primary-key fields first.
         for name in &primary_key_names {
-            let field_config = field_config_by_name.get(name.as_str()).with_context(|| {
-                format!(
+            if !field_config_by_name.contains_key(name.as_str()) {
+                bail!(
                     "primary key field '{}' not found in table '{}'",
-                    name, table_name
-                )
-            })?;
-            let field_meta = (*field_config)
-                .try_into()
-                .with_context(|| format!("table '{}'", table_name))?;
-            fields.push(field_meta);
+                    name,
+                    table_name
+                );
+            }
+            field_names.push(name.clone());
         }
 
-        // Then subsidiary fields.
+        // Then subsidiary fields, preserving declaration order.
         for name in &all_field_names {
             if !primary_key_names.contains(name) {
-                let field_config = field_config_by_name.get(name.as_str()).with_context(|| {
-                    format!("field '{}' not found in table '{}'", name, table_name)
-                })?;
-                let field_meta = (*field_config)
-                    .try_into()
-                    .with_context(|| format!("table '{}'", table_name))?;
-                fields.push(field_meta);
+                if !field_config_by_name.contains_key(name.as_str()) {
+                    bail!("field '{}' not found in table '{}'", name, table_name);
+                }
+                field_names.push(name.clone());
             }
         }
 
         Ok(TableSchema {
             num_primary_keys: primary_key_names.len(),
-            fields,
+            field_names,
         })
     }
 
-    fn primary_key_fields(&self) -> &[FieldMeta] {
-        &self.fields[..self.num_primary_keys]
+    fn primary_key_names(&self) -> &[String] {
+        &self.field_names[..self.num_primary_keys]
     }
 
-    fn subsidiary_fields(&self) -> &[FieldMeta] {
-        &self.fields[self.num_primary_keys..]
+    fn subsidiary_names(&self) -> &[String] {
+        &self.field_names[self.num_primary_keys..]
     }
 }
 
 /// A static field injected into all SQL output (resolved from proto).
 struct InjectedField {
     name: String,
-    sql_type: SqlType,
-    value: String,
+    value: Value,
 }
 
 impl TryFrom<&ProtoInjectedField> for InjectedField {
     type Error = anyhow::Error;
 
     fn try_from(proto: &ProtoInjectedField) -> Result<Self> {
-        let sql_type = SqlType::from_config(&proto.sql_type)
+        let proto_value = proto
+            .value
+            .as_ref()
+            .with_context(|| format!("injected field '{}': missing value", proto.name))?;
+        let value = Value::try_from(proto_value)
             .with_context(|| format!("injected field '{}'", proto.name))?;
         Ok(InjectedField {
             name: proto.name.clone(),
-            sql_type,
-            value: proto.value.clone(),
+            value,
         })
     }
 }
 
 impl InjectedField {
-    fn where_clause(&self) -> Result<String> {
-        let literal = quote_literal(&self.value, &self.sql_type)
-            .with_context(|| format!("injected field '{}' value", self.name))?;
-        Ok(format!("{} = {}", quote_identifier(&self.name), literal))
+    fn where_clause(&self) -> String {
+        format!(
+            "{} = {}",
+            quote_identifier(&self.name),
+            quote_literal(&self.value)
+        )
     }
 
     fn quoted_column(&self) -> String {
         quote_identifier(&self.name)
     }
 
-    fn quoted_value(&self) -> Result<String> {
-        quote_literal(&self.value, &self.sql_type)
-            .with_context(|| format!("injected field '{}' value", self.name))
+    fn quoted_value(&self) -> String {
+        quote_literal(&self.value)
     }
 }
 
@@ -173,144 +179,31 @@ fn quote_identifier(name: &str) -> String {
     format!("\"{}\"", name.replace('"', "\"\""))
 }
 
-/// Canonicalize a numeric string so that mathematically equal values
-/// produce the same representation (e.g. `"0"` and `"0.0"` both become
-/// `"0"`, and `"1e2"` becomes `"100"`).
-///
-/// Precision is preserved: digit shifting and trimming are done by string
-/// manipulation, never by round-tripping through `f64`. The only role of
-/// `f64` parsing is to reject non-numeric input and non-finite values
-/// (`NaN`, `inf`, exponents that overflow to infinity).
-pub fn normalize_number(value: &str) -> Result<String> {
-    let parsed: f64 = value
-        .parse()
-        .with_context(|| format!("invalid number: '{}'", value))?;
-    if !parsed.is_finite() {
-        bail!("invalid number: '{}'", value);
-    }
-
-    // Tokenize: optional sign, then mantissa, then optional exponent.
-    let (sign, rest) = match value.as_bytes().first() {
-        Some(b'-') => ("-", &value[1..]),
-        Some(b'+') => ("", &value[1..]),
-        _ => ("", value),
-    };
-    let (mantissa, exponent) = match rest.find(['e', 'E']) {
-        Some(pos) => {
-            let exp: i64 = rest[pos + 1..]
-                .parse()
-                .with_context(|| format!("invalid number: '{}'", value))?;
-            (&rest[..pos], exp)
-        }
-        None => (rest, 0),
-    };
-    let (int_digits, frac_digits) = mantissa.split_once('.').unwrap_or((mantissa, ""));
-
-    // Compute fixed-point form by placing the decimal at position
-    // `int_digits.len() + exponent` within the concatenated digit string.
-    let combined: String = format!("{}{}", int_digits, frac_digits);
-    let decimal_pos = int_digits.len() as i64 + exponent;
-
-    let (int_part, frac_part) = if decimal_pos <= 0 {
-        let leading_zeros = "0".repeat((-decimal_pos) as usize);
-        ("0".to_string(), format!("{}{}", leading_zeros, combined))
-    } else if (decimal_pos as usize) >= combined.len() {
-        let trailing_zeros = "0".repeat(decimal_pos as usize - combined.len());
-        (format!("{}{}", combined, trailing_zeros), String::new())
-    } else {
-        let (int_chars, frac_chars) = combined.split_at(decimal_pos as usize);
-        (int_chars.to_string(), frac_chars.to_string())
-    };
-
-    // Strip insignificant zeros and reassemble.
-    let int_trimmed = int_part.trim_start_matches('0');
-    let int_canonical = if int_trimmed.is_empty() {
-        "0"
-    } else {
-        int_trimmed
-    };
-    let frac_trimmed = frac_part.trim_end_matches('0');
-
-    let magnitude = if frac_trimmed.is_empty() {
-        int_canonical.to_string()
-    } else {
-        format!("{}.{}", int_canonical, frac_trimmed)
-    };
-
-    // Don't render a sign on canonical zero.
-    if magnitude == "0" {
-        Ok(magnitude)
-    } else {
-        Ok(format!("{}{}", sign, magnitude))
+/// Format a `Value` as a SQL literal.
+pub fn quote_literal(value: &Value) -> String {
+    match value {
+        Value::Null => "NULL".to_string(),
+        Value::Text(s) => format!("'{}'", s.replace('\'', "''")),
+        Value::Boolean(true) => "TRUE".to_string(),
+        Value::Boolean(false) => "FALSE".to_string(),
+        Value::Number(n) => n.to_string(),
     }
 }
 
-/// Parse a boolean string, accepting any of `true`/`1`/`t`/`yes` (and their
-/// false counterparts) case-insensitively. Returns `true`/`false` without
-/// allocating, unlike a `to_lowercase()`-based match.
-fn parse_boolean(value: &str) -> Result<bool> {
-    const TRUE_VALUES: &[&str] = &["true", "1", "t", "yes"];
-    const FALSE_VALUES: &[&str] = &["false", "0", "f", "no"];
+/// Convert key + value proto-value slices into a list of SQL literal strings.
+fn format_row(
+    key: &[ProtoValue],
+    value: &[ProtoValue],
+    schema: &TableSchema,
+) -> Result<Vec<String>> {
+    let primary_keys = schema.primary_key_names();
+    let subsidiary_fields = schema.subsidiary_names();
 
-    if TRUE_VALUES.iter().any(|v| value.eq_ignore_ascii_case(v)) {
-        Ok(true)
-    } else if FALSE_VALUES.iter().any(|v| value.eq_ignore_ascii_case(v)) {
-        Ok(false)
-    } else {
-        bail!("invalid boolean value: '{}'", value);
-    }
-}
-
-/// Canonicalize a boolean string to lowercase `"true"` or `"false"`, so
-/// that `"True"`, `"1"`, `"yes"`, `"t"` (and their false counterparts)
-/// don't compare unequal in the diff pipeline.
-pub fn normalize_boolean(value: &str) -> Result<String> {
-    Ok(if parse_boolean(value)? {
-        "true".to_string()
-    } else {
-        "false".to_string()
-    })
-}
-
-/// Format a value as a SQL literal based on its type.
-pub fn quote_literal(value: &str, sql_type: &SqlType) -> Result<String> {
-    match sql_type {
-        SqlType::Text => Ok(format!("'{}'", value.replace('\'', "''"))),
-        SqlType::Number => {
-            let number: f64 = value.parse()?;
-            if !number.is_finite() {
-                bail!("invalid number: '{}'", value);
-            }
-            Ok(value.to_string())
-        }
-        SqlType::Boolean => Ok(if parse_boolean(value)? {
-            "TRUE".to_string()
-        } else {
-            "FALSE".to_string()
-        }),
-    }
-}
-
-/// Format a value as a SQL literal, emitting `NULL` if it matches the sentinel.
-fn format_value(value: &str, field: &FieldMeta) -> Result<String> {
-    if let Some(ref sentinel) = field.null
-        && value == sentinel
-    {
-        return Ok("NULL".to_string());
-    }
-    quote_literal(value, &field.sql_type)
-}
-
-/// Convert key + value slices into a list of SQL literal strings.
-fn format_row(key: &[String], value: &[String], schema: &TableSchema) -> Result<Vec<String>> {
-    let primary_key_fields = schema.primary_key_fields();
-    let subsidiary_fields = schema.subsidiary_fields();
-
-    if key.len() != primary_key_fields.len() {
+    if key.len() != primary_keys.len() {
         bail!(
             "primary key field count mismatch: got {} values, expected {}",
             key.len(),
-            primary_key_fields.len()
+            primary_keys.len()
         );
     }
     if value.len() != subsidiary_fields.len() {
@@ -322,22 +215,20 @@ fn format_row(key: &[String], value: &[String], schema: &TableSchema) -> Result<
     }
 
     let mut literals = Vec::with_capacity(key.len() + value.len());
-    for (value, field) in key.iter().zip(primary_key_fields) {
-        let literal =
-            format_value(value, field).with_context(|| format!("field '{}'", field.name))?;
-        literals.push(literal);
+    for (proto_value, name) in key.iter().zip(primary_keys) {
+        let v = Value::try_from(proto_value).with_context(|| format!("field '{}'", name))?;
+        literals.push(quote_literal(&v));
     }
-    for (value, field) in value.iter().zip(subsidiary_fields) {
-        let literal =
-            format_value(value, field).with_context(|| format!("field '{}'", field.name))?;
-        literals.push(literal);
+    for (proto_value, name) in value.iter().zip(subsidiary_fields) {
+        let v = Value::try_from(proto_value).with_context(|| format!("field '{}'", name))?;
+        literals.push(quote_literal(&v));
     }
     Ok(literals)
 }
 
 /// Generate DELETE statements for a list of entries.
 fn emit_deletes(
-    entries: &[Entry],
+    entries: &[ProtoEntry],
     schema: &TableSchema,
     injected_fields: &[InjectedField],
     quoted_table: &str,
@@ -356,7 +247,7 @@ fn emit_deletes(
 
 /// Generate INSERT statements for a list of entries.
 fn emit_inserts(
-    entries: &[Entry],
+    entries: &[ProtoEntry],
     schema: &TableSchema,
     injected_fields: &[InjectedField],
     quoted_table: &str,
@@ -367,21 +258,22 @@ fn emit_inserts(
     }
 
     let mut column_parts: Vec<String> = schema
-        .fields
+        .field_names
         .iter()
-        .map(|field| quote_identifier(&field.name))
+        .map(|name| quote_identifier(name))
         .collect();
 
     let injected_columns: Vec<String> = injected_fields.iter().map(|f| f.quoted_column()).collect();
     column_parts.splice(..0, injected_columns);
     let columns = column_parts.join(", ");
 
+    // Injected values are static across the entire patch, so compute once.
+    let injected_values: Vec<String> = injected_fields.iter().map(|f| f.quoted_value()).collect();
+
     for entry in entries {
         let mut literals = format_row(&entry.key, &entry.value, schema)
             .with_context(|| format!("key {:?}", entry.key))?;
-        let injected_values: Result<Vec<String>> =
-            injected_fields.iter().map(|f| f.quoted_value()).collect();
-        literals.splice(..0, injected_values?);
+        literals.splice(..0, injected_values.iter().cloned());
         out.push_str(&format!(
             "INSERT INTO {} ({}) VALUES ({});\n",
             quoted_table,
@@ -395,32 +287,35 @@ fn emit_inserts(
 
 /// Format a single UPDATE statement.
 fn format_update(
-    update: &crate::update::Update,
-    subsidiary_fields: &[FieldMeta],
+    update: &ProtoUpdate,
+    subsidiary_names: &[String],
     schema: &TableSchema,
     injected_fields: &[InjectedField],
     quoted_table: &str,
 ) -> Result<String> {
     // Sparse updates list changed column indices explicitly; full
     // updates (empty changed_indices) include all subsidiary columns.
-    let indices = if update.changed_indices.is_empty() {
-        (0..subsidiary_fields.len() as u32).collect()
+    let indices: Vec<u32> = if update.changed_indices.is_empty() {
+        (0..subsidiary_names.len() as u32).collect()
     } else {
         update.changed_indices.clone()
     };
 
     let mut set_parts = Vec::new();
-    for (&index, value) in indices.iter().zip(update.new_value.iter()) {
-        let field = subsidiary_fields.get(index as usize).ok_or_else(|| {
+    for (&index, proto_value) in indices.iter().zip(update.new_value.iter()) {
+        let name = subsidiary_names.get(index as usize).ok_or_else(|| {
             anyhow!(
                 "changed_indices entry {} is out of range (table has {} subsidiary columns)",
                 index,
-                subsidiary_fields.len()
+                subsidiary_names.len()
             )
         })?;
-        let literal =
-            format_value(value, field).with_context(|| format!("field '{}'", field.name))?;
-        set_parts.push(format!("{} = {}", quote_identifier(&field.name), literal));
+        let value = Value::try_from(proto_value).with_context(|| format!("field '{}'", name))?;
+        set_parts.push(format!(
+            "{} = {}",
+            quote_identifier(name),
+            quote_literal(&value)
+        ));
     }
 
     let where_clause = primary_key_where_clause(&update.key, schema, injected_fields)?;
@@ -435,18 +330,18 @@ fn format_update(
 
 /// Generate UPDATE statements for a list of updates.
 fn emit_updates(
-    updates: &[crate::update::Update],
+    updates: &[ProtoUpdate],
     schema: &TableSchema,
     injected_fields: &[InjectedField],
     quoted_table: &str,
     out: &mut String,
 ) -> Result<()> {
-    let subsidiary_fields = schema.subsidiary_fields();
+    let subsidiary_names = schema.subsidiary_names();
 
     for update in updates {
         let stmt = format_update(
             update,
-            subsidiary_fields,
+            subsidiary_names,
             schema,
             injected_fields,
             quoted_table,
@@ -460,18 +355,21 @@ fn emit_updates(
 
 /// Build a WHERE clause from primary key values and injected fields.
 fn primary_key_where_clause(
-    key: &[String],
+    key: &[ProtoValue],
     schema: &TableSchema,
     injected_fields: &[InjectedField],
 ) -> Result<String> {
     let mut where_parts = Vec::new();
-    for (value, field) in key.iter().zip(schema.primary_key_fields()) {
-        let literal =
-            format_value(value, field).with_context(|| format!("field '{}'", field.name))?;
-        where_parts.push(format!("{} = {}", quote_identifier(&field.name), literal));
+    for (proto_value, name) in key.iter().zip(schema.primary_key_names()) {
+        let value = Value::try_from(proto_value).with_context(|| format!("field '{}'", name))?;
+        where_parts.push(format!(
+            "{} = {}",
+            quote_identifier(name),
+            quote_literal(&value)
+        ));
     }
     for injected in injected_fields {
-        where_parts.push(injected.where_clause()?);
+        where_parts.push(injected.where_clause());
     }
 
     Ok(where_parts.join(" AND "))
@@ -514,7 +412,7 @@ fn state_table_to_sql(
     } else {
         let mut conditions = Vec::new();
         for injected in injected_fields {
-            conditions.push(injected.where_clause()?);
+            conditions.push(injected.where_clause());
         }
         out.push_str(&format!(
             "DELETE FROM {} WHERE {};\n",
@@ -590,6 +488,7 @@ pub fn patch_to_sql(config: &Config, patch: &ProtoPatch) -> Result<Option<String
 mod tests {
     use super::*;
     use crate::config::TruncateConfig;
+    use crate::value::text_proto_values;
 
     fn dummy_config(tables: HashMap<String, crate::config::TableConfig>) -> Config {
         Config {
@@ -671,168 +570,53 @@ mod tests {
 
     #[test]
     fn test_quote_literal_text() {
-        assert_eq!(quote_literal("hello", &SqlType::Text).unwrap(), "'hello'");
-        assert_eq!(quote_literal("", &SqlType::Text).unwrap(), "''");
+        assert_eq!(quote_literal(&"hello".into()), "'hello'");
+        assert_eq!(quote_literal(&"".into()), "''");
     }
 
     #[test]
     fn test_quote_literal_text_with_quotes() {
-        assert_eq!(
-            quote_literal("it's a test", &SqlType::Text).unwrap(),
-            "'it''s a test'"
-        );
-        assert_eq!(quote_literal("a''b", &SqlType::Text).unwrap(), "'a''''b'");
+        assert_eq!(quote_literal(&"it's a test".into()), "'it''s a test'");
+        assert_eq!(quote_literal(&"a''b".into()), "'a''''b'");
     }
 
     #[test]
-    fn test_normalize_number_zero_forms() {
-        for input in [
-            "0", "0.0", "-0", "+0", "00", "0.00", "-0.000", "0e10", "0.0e-5",
-        ] {
-            assert_eq!(normalize_number(input).unwrap(), "0", "input: {}", input);
-        }
-    }
-
-    #[test]
-    fn test_normalize_number_integers() {
-        assert_eq!(normalize_number("42").unwrap(), "42");
-        assert_eq!(normalize_number("-42").unwrap(), "-42");
-        assert_eq!(normalize_number("+5").unwrap(), "5");
-        assert_eq!(normalize_number("007").unwrap(), "7");
-        assert_eq!(normalize_number("100").unwrap(), "100");
-        assert_eq!(normalize_number("-100").unwrap(), "-100");
-    }
-
-    #[test]
-    fn test_normalize_number_trailing_zero_stripping() {
-        assert_eq!(normalize_number("100.0").unwrap(), "100");
-        assert_eq!(normalize_number("100.00").unwrap(), "100");
-        assert_eq!(normalize_number("1.10").unwrap(), "1.1");
-        assert_eq!(normalize_number("3.14").unwrap(), "3.14");
-        assert_eq!(normalize_number("-1.50").unwrap(), "-1.5");
-    }
-
-    #[test]
-    fn test_normalize_number_leading_decimal() {
-        assert_eq!(normalize_number(".5").unwrap(), "0.5");
-        assert_eq!(normalize_number("-.5").unwrap(), "-0.5");
-    }
-
-    #[test]
-    fn test_normalize_number_scientific() {
-        assert_eq!(normalize_number("1e2").unwrap(), "100");
-        assert_eq!(normalize_number("1E2").unwrap(), "100");
-        assert_eq!(normalize_number("1.0e2").unwrap(), "100");
-        assert_eq!(normalize_number("1.5e2").unwrap(), "150");
-        assert_eq!(normalize_number("1.5e-2").unwrap(), "0.015");
-        assert_eq!(normalize_number("0.01e4").unwrap(), "100");
-        assert_eq!(normalize_number("-1.5e2").unwrap(), "-150");
-        assert_eq!(normalize_number("1e0").unwrap(), "1");
-    }
-
-    #[test]
-    fn test_normalize_number_preserves_precision() {
-        // Above f64's 2^53 integer precision but well within finite range —
-        // must round-trip digit-for-digit, not via f64.
-        assert_eq!(
-            normalize_number("99999999999999999999").unwrap(),
-            "99999999999999999999"
-        );
-        assert_eq!(
-            normalize_number("12345678901234567890.10").unwrap(),
-            "12345678901234567890.1"
-        );
-    }
-
-    #[test]
-    fn test_normalize_number_rejects_non_numeric() {
-        assert!(normalize_number("abc").is_err());
-        assert!(normalize_number("").is_err());
-        assert!(normalize_number("NaN").is_err());
-        assert!(normalize_number("inf").is_err());
-        assert!(normalize_number("-inf").is_err());
-        // Exponent overflows f64 to infinity → rejected.
-        assert!(normalize_number("1e1000").is_err());
-    }
-
-    #[test]
-    fn test_normalize_boolean() {
-        for input in ["true", "True", "TRUE", "1", "t", "T", "yes", "YES"] {
-            assert_eq!(
-                normalize_boolean(input).unwrap(),
-                "true",
-                "input: {}",
-                input
-            );
-        }
-        for input in ["false", "False", "FALSE", "0", "f", "F", "no", "NO"] {
-            assert_eq!(
-                normalize_boolean(input).unwrap(),
-                "false",
-                "input: {}",
-                input
-            );
-        }
-        assert!(normalize_boolean("maybe").is_err());
-        assert!(normalize_boolean("").is_err());
+    fn test_quote_literal_null() {
+        assert_eq!(quote_literal(&Value::Null), "NULL");
     }
 
     #[test]
     fn test_quote_literal_number() {
-        assert_eq!(quote_literal("42", &SqlType::Number).unwrap(), "42");
-        assert_eq!(quote_literal("-100", &SqlType::Number).unwrap(), "-100");
-        assert_eq!(quote_literal("3.14", &SqlType::Number).unwrap(), "3.14");
-        assert_eq!(quote_literal("-0.5", &SqlType::Number).unwrap(), "-0.5");
-        assert!(quote_literal("not_a_number", &SqlType::Number).is_err());
-        assert!(quote_literal("NaN", &SqlType::Number).is_err());
-        assert!(quote_literal("inf", &SqlType::Number).is_err());
-        assert!(quote_literal("-inf", &SqlType::Number).is_err());
+        assert_eq!(quote_literal(&Value::from(42.0)), "42");
+        assert_eq!(quote_literal(&Value::from(-100.0)), "-100");
+        assert_eq!(quote_literal(&Value::from(2.5)), "2.5");
+        assert_eq!(quote_literal(&Value::from(-0.5)), "-0.5");
     }
 
     #[test]
     fn test_quote_literal_boolean() {
-        assert_eq!(quote_literal("true", &SqlType::Boolean).unwrap(), "TRUE");
-        assert_eq!(quote_literal("True", &SqlType::Boolean).unwrap(), "TRUE");
-        assert_eq!(quote_literal("1", &SqlType::Boolean).unwrap(), "TRUE");
-        assert_eq!(quote_literal("t", &SqlType::Boolean).unwrap(), "TRUE");
-        assert_eq!(quote_literal("yes", &SqlType::Boolean).unwrap(), "TRUE");
-        assert_eq!(quote_literal("false", &SqlType::Boolean).unwrap(), "FALSE");
-        assert_eq!(quote_literal("False", &SqlType::Boolean).unwrap(), "FALSE");
-        assert_eq!(quote_literal("0", &SqlType::Boolean).unwrap(), "FALSE");
-        assert_eq!(quote_literal("f", &SqlType::Boolean).unwrap(), "FALSE");
-        assert_eq!(quote_literal("no", &SqlType::Boolean).unwrap(), "FALSE");
-        assert!(quote_literal("maybe", &SqlType::Boolean).is_err());
+        assert_eq!(quote_literal(&Value::from(true)), "TRUE");
+        assert_eq!(quote_literal(&Value::from(false)), "FALSE");
     }
 
     #[test]
-    fn test_format_value_null_sentinel() {
-        let field_with_null = FieldMeta {
-            name: "notes".to_string(),
-            sql_type: SqlType::Text,
-            null: Some("".to_string()),
-        };
-        // Empty string matches sentinel → NULL
-        assert_eq!(format_value("", &field_with_null).unwrap(), "NULL");
-        // Non-empty string → normal quoting
-        assert_eq!(format_value("hello", &field_with_null).unwrap(), "'hello'");
+    fn test_parse_boolean_truthy() {
+        for input in ["true", "True", "TRUE", "1", "t", "T", "yes", "YES"] {
+            assert!(parse_boolean(input).unwrap(), "input: {}", input);
+        }
+    }
 
-        let field_no_null = FieldMeta {
-            name: "label".to_string(),
-            sql_type: SqlType::Text,
-            null: None,
-        };
-        // No sentinel → empty string is quoted normally
-        assert_eq!(format_value("", &field_no_null).unwrap(), "''");
+    #[test]
+    fn test_parse_boolean_falsy() {
+        for input in ["false", "False", "FALSE", "0", "f", "F", "no", "NO"] {
+            assert!(!parse_boolean(input).unwrap(), "input: {}", input);
+        }
+    }
 
-        let number_field = FieldMeta {
-            name: "count".to_string(),
-            sql_type: SqlType::Number,
-            null: Some("N/A".to_string()),
-        };
-        // "N/A" matches sentinel → NULL
-        assert_eq!(format_value("N/A", &number_field).unwrap(), "NULL");
-        // "42" does not match → normal number
-        assert_eq!(format_value("42", &number_field).unwrap(), "42");
+    #[test]
+    fn test_parse_boolean_rejects_invalid() {
+        assert!(parse_boolean("maybe").is_err());
+        assert!(parse_boolean("").is_err());
     }
 
     #[test]
@@ -841,8 +625,8 @@ mod tests {
         let config = dummy_config(HashMap::from([("test_table".to_string(), table_config)]));
 
         let mut delta = dummy_delta(&["id"]);
-        delta.inserts.push(Entry {
-            key: vec!["1".to_string()],
+        delta.inserts.push(ProtoEntry {
+            key: text_proto_values(&["1"]),
             value: vec![],
         });
         let patch = dummy_patch(
@@ -861,8 +645,8 @@ mod tests {
         let config = dummy_config(HashMap::from([("test_table".to_string(), table_config)]));
 
         let mut delta = dummy_delta(&["id"]);
-        delta.inserts.push(Entry {
-            key: vec!["1".to_string()],
+        delta.inserts.push(ProtoEntry {
+            key: text_proto_values(&["1"]),
             value: vec![],
         });
         let patch = dummy_patch(
@@ -882,8 +666,8 @@ mod tests {
         let config = dummy_config(HashMap::from([("test_table".to_string(), table_config)]));
 
         let mut delta = dummy_delta(&["id"]);
-        delta.inserts.push(Entry {
-            key: vec!["1".to_string()],
+        delta.inserts.push(ProtoEntry {
+            key: text_proto_values(&["1"]),
             value: vec![],
         });
         let patch = dummy_patch(
@@ -904,11 +688,11 @@ mod tests {
         let config = dummy_config(HashMap::from([("test_table".to_string(), table_config)]));
 
         let mut delta = dummy_delta(&["id", "name"]);
-        delta.updates.push(crate::update::Update {
-            key: vec!["1".to_string()],
+        delta.updates.push(ProtoUpdate {
+            key: text_proto_values(&["1"]),
             changed_indices: vec![5],
             old_value: vec![],
-            new_value: vec!["x".to_string()],
+            new_value: text_proto_values(&["x"]),
         });
         let patch = dummy_patch(
             HashMap::from([("test_table".to_string(), delta)]),

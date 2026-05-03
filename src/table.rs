@@ -6,7 +6,10 @@ use std::path::Path;
 use anyhow::{Context, Result};
 
 use crate::config::{FieldConfig, FilterConfig, TableConfig};
-use crate::sql::{SqlType, normalize_boolean, normalize_number};
+use crate::entry::Entry;
+use crate::sql::{SqlType, parse_typed_value};
+use crate::value::Value;
+use crate::value::display_proto_values;
 
 type ProtoTable = crate::proto::table::Table;
 
@@ -17,16 +20,22 @@ pub struct Table {
     /// The names of all columns in the table, primary key columns first.
     pub fields: Vec<String>,
     /// Map from primary key values to subsidiary values.
-    pub records: HashMap<Vec<String>, Vec<String>>,
+    pub records: HashMap<Vec<Value>, Vec<Value>>,
 }
 
-impl From<ProtoTable> for Table {
-    fn from(proto: ProtoTable) -> Self {
-        let records = proto.entries.into_iter().map(Into::into).collect();
-        Table {
+impl TryFrom<ProtoTable> for Table {
+    type Error = anyhow::Error;
+
+    fn try_from(proto: ProtoTable) -> Result<Self> {
+        let mut records = HashMap::with_capacity(proto.entries.len());
+        for proto_entry in proto.entries {
+            let entry = Entry::try_from(proto_entry)?;
+            records.insert(entry.key, entry.value);
+        }
+        Ok(Table {
             fields: proto.fields,
             records,
-        }
+        })
     }
 }
 
@@ -47,8 +56,8 @@ impl fmt::Display for ProtoTable {
             write!(
                 f,
                 "\n  ({}) {}",
-                entry.key.join(", "),
-                entry.value.join(", ")
+                display_proto_values(&entry.key),
+                display_proto_values(&entry.value)
             )?;
         }
         Ok(())
@@ -163,7 +172,7 @@ impl Table {
 
         let fields = config.ordered_field_names();
 
-        let mut records: HashMap<Vec<String>, Vec<String>> = HashMap::new();
+        let mut records: HashMap<Vec<Value>, Vec<Value>> = HashMap::new();
 
         for (row_num, record) in reader.into_records().enumerate() {
             let record = record?;
@@ -184,11 +193,10 @@ impl Table {
                 continue;
             }
 
-            let primary_key = normalize_columns(&record, &primary_indices, &primary_field_configs)
+            let primary_key = parse_columns(&record, &primary_indices, &primary_field_configs)
                 .with_context(|| format!("row {}", row_num + 1))?;
-            let subsidiary =
-                normalize_columns(&record, &subsidiary_indices, &subsidiary_field_configs)
-                    .with_context(|| format!("row {}", row_num + 1))?;
+            let subsidiary = parse_columns(&record, &subsidiary_indices, &subsidiary_field_configs)
+                .with_context(|| format!("row {}", row_num + 1))?;
 
             if records.insert(primary_key.clone(), subsidiary).is_some() {
                 anyhow::bail!("duplicate primary key {:?}", primary_key);
@@ -199,38 +207,33 @@ impl Table {
     }
 }
 
-/// Pull values at `csv_indices` out of `record` and normalize each one
-/// according to its corresponding `FieldConfig`. The two slices must be
-/// the same length and aligned 1-to-1.
-fn normalize_columns(
+/// Pull values at `csv_indices` out of `record` and parse each one into a
+/// typed `Value` according to its corresponding `FieldConfig`. The two
+/// slices must be the same length and aligned 1-to-1.
+fn parse_columns(
     record: &csv::StringRecord,
     csv_indices: &[usize],
     field_configs: &[&FieldConfig],
-) -> Result<Vec<String>> {
+) -> Result<Vec<Value>> {
     let mut out = Vec::with_capacity(csv_indices.len());
     for (&csv_index, &field) in csv_indices.iter().zip(field_configs.iter()) {
-        out.push(normalize_field_value(&record[csv_index], field)?);
+        out.push(parse_field_value(&record[csv_index], field)?);
     }
     Ok(out)
 }
 
-/// Normalize a single CSV value based on its field config. Values matching
-/// the `null` sentinel pass through verbatim; `NUMBER` and `BOOLEAN`
-/// fields are canonicalized; `TEXT` fields are unchanged.
-fn normalize_field_value(value: &str, field: &FieldConfig) -> Result<String> {
+/// Parse a single CSV value into a `Value` based on its field config.
+/// Values matching the `null` sentinel become `Value::Null`; otherwise the
+/// value is parsed by `SqlType` (`TEXT`/`NUMBER`/`BOOLEAN`).
+fn parse_field_value(value: &str, field: &FieldConfig) -> Result<Value> {
     if let Some(sentinel) = &field.null
         && value == sentinel
     {
-        return Ok(value.to_string());
+        return Ok(Value::Null);
     }
     let sql_type =
         SqlType::from_config(&field.sql_type).with_context(|| format!("field '{}'", field.name))?;
-    let normalized = match sql_type {
-        SqlType::Text => return Ok(value.to_string()),
-        SqlType::Number => normalize_number(value),
-        SqlType::Boolean => normalize_boolean(value),
-    };
-    normalized.with_context(|| format!("field '{}'", field.name))
+    parse_typed_value(value, &sql_type).with_context(|| format!("field '{}'", field.name))
 }
 
 #[cfg(test)]
@@ -393,7 +396,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_csv_normalizes_numbers() {
+    fn test_parse_csv_parses_numbers() {
         let config = make_config(
             vec![
                 make_typed_field("id", "NUMBER", true, None),
@@ -405,15 +408,15 @@ mod tests {
         let reader = Table::test_reader("id,count,name\n0.0,1e2,Alice\n+5,1.10,Bob\n", true);
         let table = Table::parse_csv("t", &config, &FilterConfig::default(), reader).unwrap();
 
-        // "0.0" → "0", "1e2" → "100"
+        // "0.0" parses to 0.0; "1e2" parses to 100.0
         assert_eq!(
-            table.records.get(&vec!["0".to_string()]),
-            Some(&vec!["100".to_string(), "Alice".to_string()])
+            table.records.get(&vec![Value::Number(0.0)]),
+            Some(&vec![Value::Number(100.0), "Alice".into()])
         );
-        // "+5" → "5", "1.10" → "1.1"
+        // "+5" parses to 5.0; "1.10" parses to 1.1
         assert_eq!(
-            table.records.get(&vec!["5".to_string()]),
-            Some(&vec!["1.1".to_string(), "Bob".to_string()])
+            table.records.get(&vec![Value::Number(5.0)]),
+            Some(&vec![Value::Number(1.1), "Bob".into()])
         );
     }
 
@@ -429,20 +432,20 @@ mod tests {
         let reader = Table::test_reader("id,count\n1,N/A\n2,3.0\n", true);
         let table = Table::parse_csv("t", &config, &FilterConfig::default(), reader).unwrap();
 
-        // sentinel passes through verbatim, even though "N/A" is not a number
+        // Sentinel becomes Value::Null, even though "N/A" is not a number.
         assert_eq!(
-            table.records.get(&vec!["1".to_string()]),
-            Some(&vec!["N/A".to_string()])
+            table.records.get(&vec![Value::Number(1.0)]),
+            Some(&vec![Value::Null])
         );
-        // non-sentinel still normalizes
+        // Non-sentinel parses as a number.
         assert_eq!(
-            table.records.get(&vec!["2".to_string()]),
-            Some(&vec!["3".to_string()])
+            table.records.get(&vec![Value::Number(2.0)]),
+            Some(&vec![Value::Number(3.0)])
         );
     }
 
     #[test]
-    fn test_parse_csv_normalizes_booleans() {
+    fn test_parse_csv_parses_booleans() {
         let config = make_config(
             vec![
                 make_typed_field("id", "NUMBER", true, None),
@@ -453,18 +456,18 @@ mod tests {
         let reader = Table::test_reader("id,active\n1,True\n2,1\n3,YES\n4,False\n5,no\n", true);
         let table = Table::parse_csv("t", &config, &FilterConfig::default(), reader).unwrap();
 
-        // Truthy variants all canonicalize to "true".
-        for id in ["1", "2", "3"] {
+        // Truthy variants all parse to Value::Boolean(true).
+        for id in [1.0, 2.0, 3.0] {
             assert_eq!(
-                table.records.get(&vec![id.to_string()]),
-                Some(&vec!["true".to_string()]),
+                table.records.get(&vec![Value::Number(id)]),
+                Some(&vec![Value::Boolean(true)]),
                 "id={id}"
             );
         }
-        for id in ["4", "5"] {
+        for id in [4.0, 5.0] {
             assert_eq!(
-                table.records.get(&vec![id.to_string()]),
-                Some(&vec!["false".to_string()]),
+                table.records.get(&vec![Value::Number(id)]),
+                Some(&vec![Value::Boolean(false)]),
                 "id={id}"
             );
         }

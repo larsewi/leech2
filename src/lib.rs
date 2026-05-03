@@ -17,6 +17,7 @@ pub mod table;
 pub mod truncate;
 pub mod update;
 pub mod utils;
+pub mod value;
 pub mod wire;
 
 const SUCCESS: i32 = 0;

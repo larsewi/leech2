@@ -2,15 +2,14 @@ syntax = "proto3";
 
 package injected;
 
+import "cell.proto";
+
 // A static field injected into all SQL output.
 // Each injected field adds a column to INSERT statements and a condition
 // to DELETE/UPDATE WHERE clauses.
 message Field {
   // Column name in the target database (e.g. "host", "environment").
   string name = 1;
-  // Controls how the value is quoted in generated SQL (e.g. "TEXT", "NUMBER").
-  // This is not a database column type.
-  string sql_type = 2;
-  // The static value (e.g. "agent-1", "production").
-  string value = 3;
+  // The static value. The type is carried by the oneof tag inside the Value.
+  cell.Value value = 2;
 }

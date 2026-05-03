@@ -26,3 +26,6 @@ pub mod update {
 pub mod block {
     include!(concat!(env!("OUT_DIR"), "/block.rs"));
 }
+pub mod cell {
+    include!(concat!(env!("OUT_DIR"), "/cell.rs"));
+}

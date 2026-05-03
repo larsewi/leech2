@@ -12,6 +12,7 @@ fn main() {
             "proto/state.proto",
             "proto/table.proto",
             "proto/update.proto",
+            "proto/cell.proto",
         ],
         &["proto/"],
     )
