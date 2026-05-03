@@ -90,7 +90,13 @@ impl TableSchema {
 
         // Primary-key fields first.
         for name in &primary_key_names {
-            let field_meta = field_config_by_name[name.as_str()]
+            let field_config = field_config_by_name.get(name.as_str()).with_context(|| {
+                format!(
+                    "primary key field '{}' not found in table '{}'",
+                    name, table_name
+                )
+            })?;
+            let field_meta = (*field_config)
                 .try_into()
                 .with_context(|| format!("table '{}'", table_name))?;
             fields.push(field_meta);
@@ -99,7 +105,10 @@ impl TableSchema {
         // Then subsidiary fields.
         for name in &all_field_names {
             if !primary_key_names.contains(name) {
-                let field_meta = field_config_by_name[name.as_str()]
+                let field_config = field_config_by_name.get(name.as_str()).with_context(|| {
+                    format!("field '{}' not found in table '{}'", name, table_name)
+                })?;
+                let field_meta = (*field_config)
                     .try_into()
                     .with_context(|| format!("table '{}'", table_name))?;
                 fields.push(field_meta);
