@@ -84,7 +84,7 @@ fn collect_block_hashes(
     let block = Block::load_header(work_dir, head)?;
     let created = block.created;
 
-    if head.starts_with(last_known) {
+    if head == last_known {
         return Ok((created, Vec::new()));
     }
 
@@ -97,7 +97,7 @@ fn collect_block_hashes(
     }
 
     if parent != last_known {
-        bail!("block starting with '{}' not found in chain", last_known);
+        bail!("block '{}' not found in chain", last_known);
     }
 
     Ok((created, hashes))
