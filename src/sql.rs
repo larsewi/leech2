@@ -245,15 +245,31 @@ pub fn normalize_number(value: &str) -> Result<String> {
     }
 }
 
+/// Parse a boolean string, accepting any of `true`/`1`/`t`/`yes` (and their
+/// false counterparts) case-insensitively. Returns `true`/`false` without
+/// allocating, unlike a `to_lowercase()`-based match.
+fn parse_boolean(value: &str) -> Result<bool> {
+    const TRUE_VALUES: &[&str] = &["true", "1", "t", "yes"];
+    const FALSE_VALUES: &[&str] = &["false", "0", "f", "no"];
+
+    if TRUE_VALUES.iter().any(|v| value.eq_ignore_ascii_case(v)) {
+        Ok(true)
+    } else if FALSE_VALUES.iter().any(|v| value.eq_ignore_ascii_case(v)) {
+        Ok(false)
+    } else {
+        bail!("invalid boolean value: '{}'", value);
+    }
+}
+
 /// Canonicalize a boolean string to lowercase `"true"` or `"false"`, so
 /// that `"True"`, `"1"`, `"yes"`, `"t"` (and their false counterparts)
 /// don't compare unequal in the diff pipeline.
 pub fn normalize_boolean(value: &str) -> Result<String> {
-    match value.to_lowercase().as_str() {
-        "true" | "1" | "t" | "yes" => Ok("true".to_string()),
-        "false" | "0" | "f" | "no" => Ok("false".to_string()),
-        _ => bail!("invalid boolean value: '{}'", value),
-    }
+    Ok(if parse_boolean(value)? {
+        "true".to_string()
+    } else {
+        "false".to_string()
+    })
 }
 
 /// Format a value as a SQL literal based on its type.
@@ -267,11 +283,11 @@ pub fn quote_literal(value: &str, sql_type: &SqlType) -> Result<String> {
             }
             Ok(value.to_string())
         }
-        SqlType::Boolean => match value.to_lowercase().as_str() {
-            "true" | "1" | "t" | "yes" => Ok("TRUE".to_string()),
-            "false" | "0" | "f" | "no" => Ok("FALSE".to_string()),
-            _ => bail!("invalid boolean value: '{}'", value),
-        },
+        SqlType::Boolean => Ok(if parse_boolean(value)? {
+            "TRUE".to_string()
+        } else {
+            "FALSE".to_string()
+        }),
     }
 }
 
