@@ -222,10 +222,11 @@ src/
   logger.rs     Callback-based log dispatch for FFI consumers
   main.rs       CLI (lch binary)
   config.rs     TOML/JSON config parsing
-  table.rs      CSV loading, in-memory table (HashMap<pk, values>)
+  table.rs      CSV loading, in-memory table (HashMap<Vec<Value>, Vec<Value>>)
   state.rs      Snapshot of all tables, protobuf persistence
-  entry.rs      Entry type (primary key + value) Display impl
-  update.rs     Update type (key, changed indices, old/new values) Display impl
+  value.rs      Domain Value type + conversions to/from proto::cell::Value
+  entry.rs      Entry type (Vec<Value> key + value)
+  update.rs     Update type (key, changed indices, old/new values)
   delta.rs      Diff computation + merge logic (see DELTA_MERGING_RULES.md)
   block.rs      Content-addressable block creation and loading
   patch.rs      Patch consolidation, per-table payload selection
@@ -234,7 +235,7 @@ src/
   truncate.rs   History truncation (orphan, reported, max-blocks, max-age)
   storage.rs    File I/O with advisory locking
   wire.rs       Protobuf encode/decode + zstd compression
-  sql.rs        Patch-to-SQL conversion with type mapping
+  sql.rs        Patch-to-SQL conversion (consumes typed Values directly)
   proto.rs      Generated protobuf code (via build.rs)
   utils.rs      SHA-1 hashing, timestamp formatting
 
@@ -271,6 +272,12 @@ Proto definitions are in `proto/`. Code is generated at build time via
 Domain types have `From` impls to convert to/from their proto counterparts.
 All protobuf types implement `Display`, so you can print them directly to
 inspect their contents (e.g. `println!("{}", block)`, `println!("{}", patch)`).
+
+Each table cell on the wire is a `proto::cell::Value` — a oneof of
+`null` / `text` / `boolean` / `number` (`f64`). The type travels with the
+data via the oneof tag, so the receiver doesn't re-parse strings to know
+the type. CSV ingest produces a typed domain `Value` per the config's
+`SqlType`; SQL emission consumes those `Value`s directly.
 
 ## Delta merging rules
 

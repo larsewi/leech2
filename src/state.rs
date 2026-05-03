@@ -22,14 +22,15 @@ pub struct State {
     pub tables: HashMap<String, Table>,
 }
 
-impl From<ProtoState> for State {
-    fn from(proto: ProtoState) -> Self {
-        let tables = proto
-            .tables
-            .into_iter()
-            .map(|(name, proto_table)| (name, Table::from(proto_table)))
-            .collect();
-        State { tables }
+impl TryFrom<ProtoState> for State {
+    type Error = anyhow::Error;
+
+    fn try_from(proto: ProtoState) -> Result<Self> {
+        let mut tables = HashMap::with_capacity(proto.tables.len());
+        for (name, proto_table) in proto.tables {
+            tables.insert(name, Table::try_from(proto_table)?);
+        }
+        Ok(State { tables })
     }
 }
 
@@ -76,7 +77,7 @@ impl State {
         let Some(proto) = ProtoState::load(work_dir)? else {
             return Ok(None);
         };
-        Ok(Some(State::from(proto)))
+        Ok(Some(State::try_from(proto)?))
     }
 
     pub fn compute(config: &Config) -> Result<Self> {

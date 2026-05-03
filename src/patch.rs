@@ -16,17 +16,22 @@ use crate::proto::delta::Delta as ProtoDelta;
 use crate::proto::injected::Field;
 use crate::proto::state::State as ProtoState;
 use crate::proto::table::Table as ProtoTable;
-use crate::sql::SqlType;
+use crate::sql::{SqlType, parse_typed_value};
 use crate::utils;
 use crate::utils::GENESIS_HASH;
 
-impl From<&InjectedFieldConfig> for Field {
-    fn from(config: &InjectedFieldConfig) -> Self {
-        Field {
+impl TryFrom<&InjectedFieldConfig> for Field {
+    type Error = anyhow::Error;
+
+    fn try_from(config: &InjectedFieldConfig) -> Result<Self> {
+        let sql_type = SqlType::from_config(&config.sql_type)
+            .with_context(|| format!("injected field '{}'", config.name))?;
+        let value = parse_typed_value(&config.value, &sql_type)
+            .with_context(|| format!("injected field '{}'", config.name))?;
+        Ok(Field {
             name: config.name.clone(),
-            sql_type: config.sql_type.clone(),
-            value: config.value.clone(),
-        }
+            value: Some(value.into()),
+        })
     }
 }
 
@@ -59,7 +64,11 @@ impl fmt::Display for Patch {
             None => write!(f, "\n  Created: N/A")?,
         }
         for field in &self.injected_fields {
-            write!(f, "\n  Injected: {} = {}", field.name, field.value)?;
+            let value = match &field.value {
+                Some(value) => value.to_string(),
+                None => "<missing>".to_string(),
+            };
+            write!(f, "\n  Injected: {} = {}", field.name, value)?;
         }
         write!(f, "\n  Blocks: {}", self.num_blocks)?;
         fmt_payload(&self.deltas, "Deltas", f)?;
@@ -268,7 +277,10 @@ impl Patch {
 
         let head = head::load(work_dir)?;
 
-        let injected_fields: Vec<Field> = config.injected_fields.iter().map(Field::from).collect();
+        let mut injected_fields: Vec<Field> = Vec::with_capacity(config.injected_fields.len());
+        for field_config in &config.injected_fields {
+            injected_fields.push(Field::try_from(field_config)?);
+        }
 
         let field_hashes: HashMap<String, String> = config
             .tables
@@ -334,33 +346,36 @@ impl Patch {
     /// Add or overwrite an injected field on this patch. Validates that the
     /// name is non-empty and the sql_type is one of TEXT, NUMBER, or BOOLEAN.
     /// If a field with the same name already exists (whether from static
-    /// config or a previous inject_field call), both its value and sql_type
-    /// are replaced so the caller specifies the complete triple; a warning is
-    /// logged when the replacement actually changes one of them.
+    /// config or a previous inject_field call), its value is replaced; a
+    /// warning is logged when the replacement actually differs from the
+    /// existing value.
     pub fn inject_field(&mut self, name: &str, value: &str, sql_type: &str) -> Result<()> {
         if name.is_empty() {
             bail!("inject_field: name must not be empty");
         }
-        SqlType::from_config(sql_type).context("inject_field: invalid sql_type")?;
+
+        let sql_type = SqlType::from_config(sql_type).context("inject_field: invalid sql_type")?;
+        let parsed = parse_typed_value(value, &sql_type).context("inject_field: invalid value")?;
+        let new_value: crate::proto::cell::Value = parsed.into();
 
         if let Some(existing) = self.injected_fields.iter_mut().find(|f| f.name == name) {
-            if existing.value != value || existing.sql_type != sql_type {
+            if existing.value.as_ref() != Some(&new_value) {
+                let old_value = match &existing.value {
+                    Some(value) => value.to_string(),
+                    None => "<missing>".to_string(),
+                };
                 log::warn!(
-                    "inject_field: overwriting '{}' (was {} '{}', now {} '{}')",
+                    "inject_field: overwriting '{}' (was {}, now {})",
                     name,
-                    existing.sql_type,
-                    existing.value,
-                    sql_type,
-                    value
+                    old_value,
+                    new_value
                 );
             }
-            existing.value = value.to_string();
-            existing.sql_type = sql_type.to_string();
+            existing.value = Some(new_value);
         } else {
             self.injected_fields.push(Field {
                 name: name.to_string(),
-                sql_type: sql_type.to_string(),
-                value: value.to_string(),
+                value: Some(new_value),
             });
         }
         Ok(())
@@ -370,6 +385,7 @@ impl Patch {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::value::Value;
 
     fn empty_patch() -> Patch {
         Patch {
@@ -383,45 +399,56 @@ mod tests {
         }
     }
 
+    fn injected_value(field: &Field) -> Value {
+        Value::try_from(field.value.as_ref().unwrap()).unwrap()
+    }
+
     #[test]
     fn test_inject_field_add_text() {
         let mut patch = empty_patch();
         patch.inject_field("hostkey", "abc", "TEXT").unwrap();
         assert_eq!(patch.injected_fields.len(), 1);
         assert_eq!(patch.injected_fields[0].name, "hostkey");
-        assert_eq!(patch.injected_fields[0].value, "abc");
-        assert_eq!(patch.injected_fields[0].sql_type, "TEXT");
+        assert_eq!(
+            injected_value(&patch.injected_fields[0]),
+            Value::from("abc")
+        );
     }
 
     #[test]
     fn test_inject_field_add_number() {
         let mut patch = empty_patch();
         patch.inject_field("count", "42", "NUMBER").unwrap();
-        assert_eq!(patch.injected_fields[0].sql_type, "NUMBER");
-        assert_eq!(patch.injected_fields[0].value, "42");
+        assert_eq!(
+            injected_value(&patch.injected_fields[0]),
+            Value::Number(42.0)
+        );
     }
 
     #[test]
     fn test_inject_field_add_boolean() {
         let mut patch = empty_patch();
         patch.inject_field("enabled", "true", "BOOLEAN").unwrap();
-        assert_eq!(patch.injected_fields[0].sql_type, "BOOLEAN");
-        assert_eq!(patch.injected_fields[0].value, "true");
+        assert_eq!(
+            injected_value(&patch.injected_fields[0]),
+            Value::Boolean(true)
+        );
     }
 
     #[test]
-    fn test_inject_field_overwrite_replaces_value_and_type() {
+    fn test_inject_field_overwrite_replaces_value() {
         let mut patch = empty_patch();
         patch.injected_fields.push(Field {
             name: "host".to_string(),
-            sql_type: "NUMBER".to_string(),
-            value: "1".to_string(),
+            value: Some(Value::Number(1.0).into()),
         });
         patch.inject_field("host", "new-value", "TEXT").unwrap();
         assert_eq!(patch.injected_fields.len(), 1);
         assert_eq!(patch.injected_fields[0].name, "host");
-        assert_eq!(patch.injected_fields[0].value, "new-value");
-        assert_eq!(patch.injected_fields[0].sql_type, "TEXT");
+        assert_eq!(
+            injected_value(&patch.injected_fields[0]),
+            Value::from("new-value")
+        );
     }
 
     #[test]
@@ -446,6 +473,15 @@ mod tests {
         let mut patch = empty_patch();
         let err = patch.inject_field("foo", "bar", "BOGUS").unwrap_err();
         assert!(err.to_string().contains("invalid sql_type"));
+    }
+
+    #[test]
+    fn test_inject_field_rejects_invalid_value() {
+        let mut patch = empty_patch();
+        let err = patch
+            .inject_field("count", "not_a_number", "NUMBER")
+            .unwrap_err();
+        assert!(err.to_string().contains("invalid value"));
     }
 
     #[test]
