@@ -87,8 +87,7 @@ pub fn remove(work_dir: &Path, name: &str) -> Result<()> {
             return Ok(());
         }
         Err(e) => {
-            return Err(anyhow::Error::new(e)
-                .context(format!("failed to remove file '{}'", path.display())));
+            return Err(e).with_context(|| format!("failed to remove file '{}'", path.display()));
         }
     }
 
@@ -119,9 +118,7 @@ pub fn load(work_dir: &Path, name: &str) -> Result<Option<Vec<u8>>> {
             log::trace!("File '{}' does not exist", path.display());
             Ok(None)
         }
-        Err(e) => {
-            Err(anyhow::Error::new(e).context(format!("failed to open file '{}'", path.display())))
-        }
+        Err(e) => Err(e).with_context(|| format!("failed to open file '{}'", path.display())),
     }
 }
 
