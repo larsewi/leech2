@@ -40,7 +40,7 @@ fields = [
     let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
     assert!(sql.contains(r#"INSERT INTO "users" ("id", "name") VALUES (2, 'Bob');"#));
 
-    // Unknown prefix should fall back to full-state patch (TRUNCATE + INSERT)
+    // Unknown prefix should fall back to full state patch (TRUNCATE + INSERT)
     let patch = Patch::create(&config, "deadbeefdeadbeef").unwrap();
     assert_eq!(patch.head, hash2);
     assert_eq!(patch.num_blocks, 0);

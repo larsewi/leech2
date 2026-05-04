@@ -109,7 +109,7 @@ deltas. After merging, each table's delta is optimized: deletes are stripped
 down to keys only, and updates are sparse-encoded to include only changed
 columns. The library then compares each table's consolidated delta encoded size
 against its full state and picks whichever is smaller. This means a single patch
-can contain a mix of delta tables and full-state tables.
+can contain a mix of delta tables and full state tables.
 
 Each patch also carries per-table field hashes computed from the config
 (`field_hashes`). These allow the hub to validate that its config matches the
@@ -143,7 +143,7 @@ replaying changes on a target database. Before generating SQL for each table,
 it validates the table's field hash from the patch against the hub's config. If
 the hashes don't match (or are missing), the table is skipped with a warning —
 other tables are still processed. For delta tables it generates `DELETE`,
-`INSERT`, and `UPDATE` statements. For full-state tables it generates `TRUNCATE`
+`INSERT`, and `UPDATE` statements. For full state tables it generates `TRUNCATE`
 followed by `INSERT` statements. A single patch may contain both delta and state
 tables, and all statements are wrapped in a single transaction.
 Column types defined in the config control how values are formatted in the SQL
