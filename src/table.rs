@@ -6,7 +6,7 @@ use std::path::Path;
 use anyhow::{Context, Result};
 
 use crate::config::{FieldConfig, FilterConfig, TableConfig};
-use crate::entry::Entry;
+use crate::entry::decode_proto_records;
 use crate::sql::{SqlType, parse_typed_value};
 use crate::value::Value;
 use crate::value::display_proto_values;
@@ -27,11 +27,7 @@ impl TryFrom<ProtoTable> for Table {
     type Error = anyhow::Error;
 
     fn try_from(proto: ProtoTable) -> Result<Self> {
-        let mut records = HashMap::with_capacity(proto.entries.len());
-        for proto_entry in proto.entries {
-            let entry = Entry::try_from(proto_entry)?;
-            records.insert(entry.key, entry.value);
-        }
+        let records = decode_proto_records(proto.entries)?;
         Ok(Table {
             fields: proto.fields,
             records,

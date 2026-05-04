@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fmt;
 
 use anyhow::Result;
@@ -66,6 +67,18 @@ impl fmt::Display for Entry {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:?} -> {:?}", self.key, self.value)
     }
+}
+
+/// Decode a `Vec<ProtoEntry>` into a `HashMap` keyed by each entry's key.
+/// Short-circuits on the first entry that fails to decode. Duplicate keys
+/// silently overwrite, matching `HashMap::insert` semantics.
+pub fn decode_proto_records(protos: Vec<ProtoEntry>) -> Result<HashMap<Vec<Value>, Vec<Value>>> {
+    let mut records = HashMap::with_capacity(protos.len());
+    for proto in protos {
+        let entry = Entry::try_from(proto)?;
+        records.insert(entry.key, entry.value);
+    }
+    Ok(records)
 }
 
 impl fmt::Display for ProtoEntry {

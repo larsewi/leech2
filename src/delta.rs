@@ -3,7 +3,7 @@ use std::fmt;
 
 use anyhow::{Context, Result, bail};
 
-use crate::entry::Entry;
+use crate::entry::decode_proto_records;
 use crate::proto::delta::Delta as ProtoDelta;
 use crate::state::State;
 use crate::table::Table;
@@ -33,17 +33,8 @@ impl TryFrom<ProtoDelta> for Delta {
     fn try_from(proto: ProtoDelta) -> Result<Self> {
         let num_subsidiary = proto.num_subsidiary().context("corrupt delta")?;
 
-        let mut inserts = HashMap::with_capacity(proto.inserts.len());
-        for entry in proto.inserts {
-            let entry = Entry::try_from(entry)?;
-            inserts.insert(entry.key, entry.value);
-        }
-
-        let mut deletes = HashMap::with_capacity(proto.deletes.len());
-        for entry in proto.deletes {
-            let entry = Entry::try_from(entry)?;
-            deletes.insert(entry.key, entry.value);
-        }
+        let inserts = decode_proto_records(proto.inserts)?;
+        let deletes = decode_proto_records(proto.deletes)?;
 
         // Updates are stored sparsely on the wire: only changed column
         // indices and their values are included. Expand them back to
