@@ -2,7 +2,7 @@
 
 ## Background
 
-Leech2 tracks changes to CSV-backed tables as **deltas**. Each delta records
+leech2 tracks changes to CSV-backed tables as **deltas**. Each delta records
 which rows were inserted, deleted, or updated in a table between two states.
 When multiple blocks of changes need to be combined (e.g. replaying history),
 their deltas are **merged** by examining what happened to each primary key
