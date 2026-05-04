@@ -4,7 +4,7 @@ package update;
 
 import "cell.proto";
 
-// Update represents a row whose non-key values changed between two states.
+// Update represents a row whose subsidiary (non-key) values changed between two states.
 message Update {
   // The values that make up the composite primary key.
   repeated cell.Value key = 1;
