@@ -2,7 +2,7 @@
  * @file leech2.h
  * @brief C API for the leech2 library.
  *
- * leech2 tracks CSV data sources, computes diffs between snapshots, and
+ * leech2 tracks CSV data sources, computes deltas between snapshots, and
  * produces SQL patches that can be applied to a downstream database.
  */
 
@@ -101,9 +101,9 @@ extern void lch_deinit(lch_config_t *cfg);
 /**
  * Create a new block from the current CSV data.
  *
- * Reads the configured CSV sources, computes the new state, diffs it against
- * the previous state, and writes a new block together with updated STATE and
- * HEAD files. History truncation is performed afterwards.
+ * Reads the configured CSV sources, computes the new state and the delta
+ * against the previous state, and writes a new block together with updated
+ * STATE and HEAD files. History truncation is performed afterwards.
  *
  * @param cfg  Valid config handle (must not be NULL).
  * @return LCH_SUCCESS on success, LCH_FAILURE on error.

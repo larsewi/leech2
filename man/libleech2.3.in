@@ -93,8 +93,8 @@ be used.
 .SS Block creation
 .TP
 .BI "int lch_block_create(const lch_config_t *" cfg )
-Read the configured CSV sources, compute the new state, diff it against the
-previous state, and write a new block together with updated STATE and HEAD
+Read the configured CSV sources, compute the new state and the delta against
+the previous state, and write a new block together with updated STATE and HEAD
 files. History truncation is performed afterwards.
 .SS Patch operations
 .TP
