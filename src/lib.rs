@@ -36,6 +36,19 @@ fn ffi_guard<T>(name: &str, default: T, body: impl FnOnce() -> T) -> T {
     }
 }
 
+/// Logs and reports a null pointer FFI argument. Returns `true` if `ptr` is
+/// null. Callers translate `true` into the function's failure sentinel.
+///
+/// `*mut T` coerces to `*const T` automatically, so this works for both
+/// pointer kinds without casts at the call site.
+fn null_arg<T>(fn_name: &str, arg_name: &str, ptr: *const T) -> bool {
+    if ptr.is_null() {
+        log::error!("{}(): Bad argument: {} cannot be NULL", fn_name, arg_name);
+        return true;
+    }
+    false
+}
+
 /// Validate a required C string FFI argument and convert it to `&str`.
 ///
 /// Logs an error and returns `None` if `ptr` is null or the bytes are not UTF-8.
@@ -129,8 +142,7 @@ pub unsafe extern "C" fn lch_deinit(config: *mut config::Config) {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn lch_block_create(config: *const config::Config) -> i32 {
     ffi_guard("lch_block_create", FAILURE, || {
-        if config.is_null() {
-            log::error!("lch_block_create(): Bad argument: config cannot be NULL");
+        if null_arg("lch_block_create", "config", config) {
             return FAILURE;
         }
 
@@ -158,13 +170,13 @@ pub unsafe extern "C" fn lch_patch_create(
     len: *mut usize,
 ) -> i32 {
     ffi_guard("lch_patch_create", FAILURE, || {
-        if config.is_null() {
-            log::error!("lch_patch_create(): Bad argument: config cannot be NULL");
+        if null_arg("lch_patch_create", "config", config) {
             return FAILURE;
         }
-
-        if out.is_null() || len.is_null() {
-            log::error!("lch_patch_create(): Bad argument: out and out_len cannot be NULL");
+        if null_arg("lch_patch_create", "out", out) {
+            return FAILURE;
+        }
+        if null_arg("lch_patch_create", "len", len) {
             return FAILURE;
         }
 
@@ -230,18 +242,13 @@ pub unsafe extern "C" fn lch_patch_to_sql(
     out: *mut *mut c_char,
 ) -> i32 {
     ffi_guard("lch_patch_to_sql", FAILURE, || {
-        if config.is_null() {
-            log::error!("lch_patch_to_sql(): Bad argument: config cannot be NULL");
+        if null_arg("lch_patch_to_sql", "config", config) {
             return FAILURE;
         }
-
-        if buf.is_null() {
-            log::error!("lch_patch_to_sql(): Bad argument: buf cannot be NULL");
+        if null_arg("lch_patch_to_sql", "buf", buf) {
             return FAILURE;
         }
-
-        if out.is_null() {
-            log::error!("lch_patch_to_sql(): Bad argument: out cannot be NULL");
+        if null_arg("lch_patch_to_sql", "out", out) {
             return FAILURE;
         }
 
@@ -301,18 +308,16 @@ pub unsafe extern "C" fn lch_patch_inject(
     out_len: *mut usize,
 ) -> i32 {
     ffi_guard("lch_patch_inject", FAILURE, || {
-        if config.is_null() {
-            log::error!("lch_patch_inject(): Bad argument: config cannot be NULL");
+        if null_arg("lch_patch_inject", "config", config) {
             return FAILURE;
         }
-
-        if in_buf.is_null() {
-            log::error!("lch_patch_inject(): Bad argument: in_buf cannot be NULL");
+        if null_arg("lch_patch_inject", "in_buf", in_buf) {
             return FAILURE;
         }
-
-        if out_buf.is_null() || out_len.is_null() {
-            log::error!("lch_patch_inject(): Bad argument: out_buf and out_len cannot be NULL");
+        if null_arg("lch_patch_inject", "out_buf", out_buf) {
+            return FAILURE;
+        }
+        if null_arg("lch_patch_inject", "out_len", out_len) {
             return FAILURE;
         }
 
@@ -386,13 +391,10 @@ pub unsafe extern "C" fn lch_patch_applied(
     len: usize,
 ) -> i32 {
     ffi_guard("lch_patch_applied", FAILURE, || {
-        if config.is_null() {
-            log::error!("lch_patch_applied(): Bad argument: config cannot be NULL");
+        if null_arg("lch_patch_applied", "config", config) {
             return FAILURE;
         }
-
-        if buf.is_null() {
-            log::error!("lch_patch_applied(): Bad argument: buf cannot be NULL");
+        if null_arg("lch_patch_applied", "buf", buf) {
             return FAILURE;
         }
 
@@ -421,8 +423,7 @@ pub unsafe extern "C" fn lch_patch_applied(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn lch_patch_failed(config: *const config::Config) -> i32 {
     ffi_guard("lch_patch_failed", FAILURE, || {
-        if config.is_null() {
-            log::error!("lch_patch_failed(): Bad argument: config cannot be NULL");
+        if null_arg("lch_patch_failed", "config", config) {
             return FAILURE;
         }
 
