@@ -201,8 +201,8 @@ pub struct FieldConfig {
     pub sql_type: String,
     #[serde(rename = "primary-key", default)]
     pub primary_key: bool,
-    #[serde(default)]
-    pub null: Option<String>,
+    #[serde(default, rename = "null")]
+    pub null_sentinel: Option<String>,
 }
 
 fn default_sql_type() -> String {
@@ -229,7 +229,7 @@ impl TableConfig {
             if !seen.insert(&field.name) {
                 bail!("found duplicate field name '{}'", field.name);
             }
-            if field.primary_key && field.null.is_some() {
+            if field.primary_key && field.null_sentinel.is_some() {
                 bail!(
                     "primary-key field '{}' must not have a null sentinel",
                     field.name
@@ -286,7 +286,7 @@ impl TableConfig {
             data.push(0);
             data.push(u8::from(field.primary_key));
             data.push(0);
-            if let Some(ref sentinel) = field.null {
+            if let Some(ref sentinel) = field.null_sentinel {
                 data.push(1);
                 data.extend_from_slice(sentinel.as_bytes());
             } else {
@@ -490,13 +490,13 @@ mod tests {
         name: &str,
         sql_type: &str,
         primary_key: bool,
-        null: Option<&str>,
+        null_sentinel: Option<&str>,
     ) -> FieldConfig {
         FieldConfig {
             name: name.to_string(),
             sql_type: sql_type.to_string(),
             primary_key,
-            null: null.map(|s| s.to_string()),
+            null_sentinel: null_sentinel.map(|s| s.to_string()),
         }
     }
 

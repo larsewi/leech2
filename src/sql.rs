@@ -513,7 +513,7 @@ mod tests {
                     name: name.to_string(),
                     sql_type: "TEXT".to_string(),
                     primary_key: *primary_key,
-                    null: None,
+                    null_sentinel: None,
                 })
                 .collect(),
         }

@@ -222,7 +222,7 @@ fn parse_columns(
 /// Values matching the `null` sentinel become `Value::Null`; otherwise the
 /// value is parsed by `SqlType` (`TEXT`/`NUMBER`/`BOOLEAN`).
 fn parse_field_value(value: &str, field: &FieldConfig) -> Result<Value> {
-    if let Some(sentinel) = &field.null
+    if let Some(sentinel) = &field.null_sentinel
         && value == sentinel
     {
         return Ok(Value::Null);
@@ -242,7 +242,7 @@ mod tests {
             name: name.to_string(),
             sql_type: "TEXT".to_string(),
             primary_key,
-            null: None,
+            null_sentinel: None,
         }
     }
 
@@ -381,13 +381,13 @@ mod tests {
         name: &str,
         sql_type: &str,
         primary_key: bool,
-        null: Option<&str>,
+        null_sentinel: Option<&str>,
     ) -> FieldConfig {
         FieldConfig {
             name: name.to_string(),
             sql_type: sql_type.to_string(),
             primary_key,
-            null: null.map(str::to_string),
+            null_sentinel: null_sentinel.map(str::to_string),
         }
     }
 
