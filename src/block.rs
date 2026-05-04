@@ -50,14 +50,21 @@ impl fmt::Display for Block {
     }
 }
 
+/// Read the block file at `hash` and decode it as `T`. `kind` names what is
+/// being decoded (e.g. `"block"`, `"block header"`) and appears in log and
+/// error messages.
+fn load_decode<T: Message + Default>(work_dir: &Path, hash: &str, kind: &str) -> Result<T> {
+    let data = storage::load(work_dir, hash)?
+        .with_context(|| format!("failed to load block '{:.7}...'", hash))?;
+    let value = T::decode(data.as_slice())
+        .with_context(|| format!("failed to decode {} '{:.7}...'", kind, hash))?;
+    log::info!("Loaded {} '{:.7}...'", kind, hash);
+    Ok(value)
+}
+
 impl Block {
     pub fn load(work_dir: &Path, hash: &str) -> Result<Block> {
-        let data = storage::load(work_dir, hash)?
-            .with_context(|| format!("failed to load block '{:.7}...'", hash))?;
-        let block = Block::decode(data.as_slice())
-            .with_context(|| format!("failed to decode block '{:.7}...'", hash))?;
-        log::info!("Loaded block '{:.7}...'", hash);
-        Ok(block)
+        load_decode(work_dir, hash, "block")
     }
 
     /// Load the block header (parent hash + created timestamp) without
@@ -66,12 +73,7 @@ impl Block {
     /// the unknown payload field so only the parent hash and timestamp are
     /// deserialized.
     pub fn load_header(work_dir: &Path, hash: &str) -> Result<BlockHeader> {
-        let data = storage::load(work_dir, hash)?
-            .with_context(|| format!("failed to load block '{:.7}...'", hash))?;
-        let header = BlockHeader::decode(data.as_slice())
-            .with_context(|| format!("failed to decode header from block '{:.7}...'", hash))?;
-        log::info!("Loaded header from block '{:.7}...'", hash);
-        Ok(header)
+        load_decode(work_dir, hash, "block header")
     }
 
     /// Load only the parent hash from a block by decoding just the header,
