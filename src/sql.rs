@@ -740,4 +740,53 @@ mod tests {
         let msg = format!("{:#}", err);
         assert!(msg.contains("out of range"), "got: {}", msg);
     }
+
+    /// Demonstrates a silent-corruption bug: the hub interprets wire values
+    /// using ITS OWN config's subsidiary declaration order rather than the
+    /// `delta.fields` carried on the wire. If the agent and hub agree on the
+    /// field set, types, PK assignment, and nullability — but disagree on
+    /// subsidiary declaration order — `field_hash()` matches (it sorts
+    /// alphabetically) yet the resulting SQL maps each wire value onto the
+    /// wrong column.
+    #[test]
+    fn test_subsidiary_order_drift_misaligns_columns() {
+        // Hub config: subsidiary declaration order is [email, name].
+        let hub_config_table = dummy_table(&[("id", true), ("email", false), ("name", false)]);
+        let hub_hash = hub_config_table.field_hash();
+        let hub_config = dummy_config(HashMap::from([("users".to_string(), hub_config_table)]));
+
+        // Agent config (same fields, different declaration order):
+        // subsidiary declaration order is [name, email].
+        let agent_config_table = dummy_table(&[("id", true), ("name", false), ("email", false)]);
+        let agent_hash = agent_config_table.field_hash();
+
+        // Hashes match despite the order drift — the alphabetical sort in
+        // `field_hash()` hides this kind of disagreement.
+        assert_eq!(hub_hash, agent_hash);
+
+        // Wire entry as the agent would have serialized it: subsidiary values
+        // laid out in the agent's declaration order, i.e. [name, email].
+        let mut delta = dummy_delta(&["id", "name", "email"]);
+        delta.inserts.push(ProtoEntry {
+            key: text_proto_values(&["1"]),
+            value: text_proto_values(&["Alice", "alice@example.com"]),
+        });
+
+        let patch = dummy_patch(
+            HashMap::from([("users".to_string(), delta)]),
+            HashMap::from([("users".to_string(), agent_hash)]),
+        );
+
+        let sql = patch_to_sql(&hub_config, &patch).unwrap().unwrap();
+
+        // The wire intended: name = 'Alice', email = 'alice@example.com'.
+        // The hub maps positionally onto its own [email, name] subsidiary
+        // order, so the emitted SQL puts 'Alice' into the email column and
+        // the email address into the name column. These assertions encode
+        // the buggy current behavior.
+        assert!(
+            sql.contains("INSERT INTO \"users\" (\"id\", \"email\", \"name\") VALUES ('1', 'Alice', 'alice@example.com');"),
+            "expected misaligned SQL, got:\n{sql}"
+        );
+    }
 }
