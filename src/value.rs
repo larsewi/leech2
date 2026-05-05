@@ -34,6 +34,22 @@ impl Value {
         let normalized = if n == 0.0 { 0.0 } else { n };
         Ok(Value::Number(normalized))
     }
+
+    pub fn is_null(&self) -> bool {
+        matches!(self, Value::Null)
+    }
+
+    pub fn is_text(&self) -> bool {
+        matches!(self, Value::Text(_))
+    }
+
+    pub fn is_boolean(&self) -> bool {
+        matches!(self, Value::Boolean(_))
+    }
+
+    pub fn is_number(&self) -> bool {
+        matches!(self, Value::Number(_))
+    }
 }
 
 // `f64` only implements `PartialEq`, not `Eq`, because `NaN != NaN`. The

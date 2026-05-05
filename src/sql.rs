@@ -196,7 +196,7 @@ impl<'a> TableSchema<'a> {
 /// Validate that a wire `Value`'s variant agrees with the field's declared
 /// `sql_type`, and that `Null` only appears in nullable fields.
 fn check_value_matches_field(value: &Value, field: &FieldConfig) -> Result<()> {
-    if matches!(value, Value::Null) {
+    if value.is_null() {
         if field.null_sentinel.is_none() {
             bail!(
                 "field '{}' is not nullable but wire value is NULL",
@@ -208,12 +208,11 @@ fn check_value_matches_field(value: &Value, field: &FieldConfig) -> Result<()> {
 
     let expected =
         SqlType::from_config(&field.sql_type).with_context(|| format!("field '{}'", field.name))?;
-    let actual_ok = matches!(
-        (&expected, value),
-        (SqlType::Text, Value::Text(_))
-            | (SqlType::Number, Value::Number(_))
-            | (SqlType::Boolean, Value::Boolean(_))
-    );
+    let actual_ok = match expected {
+        SqlType::Text => value.is_text(),
+        SqlType::Number => value.is_number(),
+        SqlType::Boolean => value.is_boolean(),
+    };
     if !actual_ok {
         bail!(
             "field '{}': wire value {} does not match declared type {:?}",
