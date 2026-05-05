@@ -112,8 +112,15 @@ against its full state and picks whichever is smaller. This means a single patch
 can contain a mix of delta tables and full state tables.
 
 Each patch also carries per-table field hashes computed from the config
-(`field_hashes`). These allow the hub to validate that its config matches the
-agent's before generating SQL.
+(`field_hashes`). These let the hub validate that its view of the shared
+schema matches the agent's before generating SQL. The hash covers field
+name, SQL type, primary-key flag, and whether a null sentinel is configured
+(but not the sentinel string itself, nor the per-field `true`/`false`
+sentinels). Sentinel strings are agent-local CSV parsing rules — different
+agents feeding the same hub can use different conventions and still hash
+identically — but the *presence* of a null sentinel reflects whether the
+agent can emit `NULL` for the column, which must agree with the hub's view
+of column nullability.
 
 Printing the patch shows any combination of deltas and states:
 
