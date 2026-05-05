@@ -258,6 +258,88 @@ fields = [
 }
 
 #[test]
+fn test_custom_boolean_sentinels() {
+    common::init_logging();
+    let tmp = tempfile::tempdir().unwrap();
+    let work_dir = tmp.path();
+
+    common::write_config(
+        work_dir,
+        "config.toml",
+        r#"
+[tables.flags]
+source = "flags.csv"
+fields = [
+    { name = "id", type = "NUMBER", primary-key = true },
+    { name = "active", type = "BOOLEAN", true = "Y", false = "N" },
+]
+"#,
+    );
+
+    common::write_csv(work_dir, "flags.csv", "1,Y\n2,N\n");
+    let config = Config::load(work_dir).unwrap();
+    Block::create(&config).unwrap();
+
+    let patch = Patch::create(&config, GENESIS_HASH).unwrap();
+    let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
+
+    assert!(sql.contains("TRUE"), "expected TRUE in SQL, got: {sql}");
+    assert!(sql.contains("FALSE"), "expected FALSE in SQL, got: {sql}");
+
+    common::assert_wire_roundtrip(&config, &patch);
+}
+
+#[test]
+fn test_default_boolean_sentinels_reject_legacy_synonyms() {
+    common::init_logging();
+    let tmp = tempfile::tempdir().unwrap();
+    let work_dir = tmp.path();
+
+    common::write_config(
+        work_dir,
+        "config.toml",
+        r#"
+[tables.flags]
+source = "flags.csv"
+fields = [
+    { name = "id", type = "NUMBER", primary-key = true },
+    { name = "active", type = "BOOLEAN" },
+]
+"#,
+    );
+
+    // "1" was accepted before the strict-default change; now it should fail.
+    common::write_csv(work_dir, "flags.csv", "1,1\n");
+    let config = Config::load(work_dir).unwrap();
+    let err = Block::create(&config).unwrap_err();
+    let msg = format!("{:#}", err);
+    assert!(msg.contains("invalid boolean value"), "got: {msg}");
+}
+
+#[test]
+fn test_boolean_sentinel_on_non_boolean_rejected() {
+    common::init_logging();
+    let tmp = tempfile::tempdir().unwrap();
+
+    common::write_config(
+        tmp.path(),
+        "config.toml",
+        r#"
+[tables.items]
+source = "items.csv"
+fields = [
+    { name = "id", type = "NUMBER", primary-key = true },
+    { name = "name", type = "TEXT", true = "Y" },
+]
+"#,
+    );
+
+    let err = Config::load(tmp.path()).unwrap_err();
+    let msg = format!("{:#}", err);
+    assert!(msg.contains("only valid on BOOLEAN"), "got: {msg}");
+}
+
+#[test]
 fn test_null_on_primary_key_rejected() {
     common::init_logging();
     let tmp = tempfile::tempdir().unwrap();

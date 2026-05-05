@@ -7,7 +7,9 @@ use anyhow::{Context, Result};
 
 use crate::config::{FieldConfig, FilterConfig, TableConfig};
 use crate::entry::decode_proto_records;
-use crate::sql::{SqlType, parse_typed_value};
+use crate::sql::{
+    DEFAULT_FALSE_SENTINEL, DEFAULT_TRUE_SENTINEL, SqlType, parse_boolean, parse_typed_value,
+};
 use crate::value::Value;
 use crate::value::display_proto_values;
 
@@ -220,15 +222,30 @@ fn parse_columns(
 
 /// Parse a single CSV value into a `Value` based on its field config.
 /// Values matching the `null` sentinel become `Value::Null`; otherwise the
-/// value is parsed by `SqlType` (`TEXT`/`NUMBER`/`BOOLEAN`).
+/// value is parsed by `SqlType` (`TEXT`/`NUMBER`/`BOOLEAN`). For BOOLEAN
+/// fields the per-field `true` / `false` sentinels are honoured, falling
+/// back to the strict defaults `"true"` / `"false"`.
 fn parse_field_value(value: &str, field: &FieldConfig) -> Result<Value> {
-    if let Some(sentinel) = &field.null
+    if let Some(sentinel) = &field.null_sentinel
         && value == sentinel
     {
         return Ok(Value::Null);
     }
     let sql_type =
         SqlType::from_config(&field.sql_type).with_context(|| format!("field '{}'", field.name))?;
+    if let SqlType::Boolean = sql_type {
+        let true_sentinel = field
+            .true_sentinel
+            .as_deref()
+            .unwrap_or(DEFAULT_TRUE_SENTINEL);
+        let false_sentinel = field
+            .false_sentinel
+            .as_deref()
+            .unwrap_or(DEFAULT_FALSE_SENTINEL);
+        return parse_boolean(value, true_sentinel, false_sentinel)
+            .map(Value::Boolean)
+            .with_context(|| format!("field '{}'", field.name));
+    }
     parse_typed_value(value, &sql_type).with_context(|| format!("field '{}'", field.name))
 }
 
@@ -242,7 +259,9 @@ mod tests {
             name: name.to_string(),
             sql_type: "TEXT".to_string(),
             primary_key,
-            null: None,
+            null_sentinel: None,
+            true_sentinel: None,
+            false_sentinel: None,
         }
     }
 
@@ -381,13 +400,15 @@ mod tests {
         name: &str,
         sql_type: &str,
         primary_key: bool,
-        null: Option<&str>,
+        null_sentinel: Option<&str>,
     ) -> FieldConfig {
         FieldConfig {
             name: name.to_string(),
             sql_type: sql_type.to_string(),
             primary_key,
-            null: null.map(str::to_string),
+            null_sentinel: null_sentinel.map(str::to_string),
+            true_sentinel: None,
+            false_sentinel: None,
         }
     }
 
@@ -441,7 +462,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_csv_parses_booleans() {
+    fn test_parse_csv_parses_booleans_with_default_sentinels() {
         let config = make_config(
             vec![
                 make_typed_field("id", "NUMBER", true, None),
@@ -449,24 +470,71 @@ mod tests {
             ],
             true,
         );
-        let reader = Table::test_reader("id,active\n1,True\n2,1\n3,YES\n4,False\n5,no\n", true);
+        let reader = Table::test_reader("id,active\n1,true\n2,false\n", true);
         let table = Table::parse_csv("t", &config, &FilterConfig::default(), reader).unwrap();
 
-        // Truthy variants all parse to Value::Boolean(true).
-        for id in [1.0, 2.0, 3.0] {
-            assert_eq!(
-                table.records.get(&vec![Value::Number(id)]),
-                Some(&vec![Value::Boolean(true)]),
-                "id={id}"
-            );
-        }
-        for id in [4.0, 5.0] {
-            assert_eq!(
-                table.records.get(&vec![Value::Number(id)]),
-                Some(&vec![Value::Boolean(false)]),
-                "id={id}"
-            );
-        }
+        assert_eq!(
+            table.records.get(&vec![Value::Number(1.0)]),
+            Some(&vec![Value::Boolean(true)])
+        );
+        assert_eq!(
+            table.records.get(&vec![Value::Number(2.0)]),
+            Some(&vec![Value::Boolean(false)])
+        );
+    }
+
+    #[test]
+    fn test_parse_csv_default_boolean_sentinels_are_strict() {
+        let config = make_config(
+            vec![
+                make_typed_field("id", "NUMBER", true, None),
+                make_typed_field("active", "BOOLEAN", false, None),
+            ],
+            true,
+        );
+        let reader = Table::test_reader("id,active\n1,True\n", true);
+        let err = Table::parse_csv("t", &config, &FilterConfig::default(), reader).unwrap_err();
+        let msg = format!("{:#}", err);
+        assert!(msg.contains("invalid boolean value"), "got: {msg}");
+    }
+
+    #[test]
+    fn test_parse_csv_respects_custom_boolean_sentinels() {
+        let mut field = make_typed_field("active", "BOOLEAN", false, None);
+        field.true_sentinel = Some("Y".to_string());
+        field.false_sentinel = Some("N".to_string());
+        let config = make_config(
+            vec![make_typed_field("id", "NUMBER", true, None), field],
+            true,
+        );
+        let reader = Table::test_reader("id,active\n1,Y\n2,N\n", true);
+        let table = Table::parse_csv("t", &config, &FilterConfig::default(), reader).unwrap();
+
+        assert_eq!(
+            table.records.get(&vec![Value::Number(1.0)]),
+            Some(&vec![Value::Boolean(true)])
+        );
+        assert_eq!(
+            table.records.get(&vec![Value::Number(2.0)]),
+            Some(&vec![Value::Boolean(false)])
+        );
+    }
+
+    #[test]
+    fn test_parse_csv_custom_boolean_sentinels_reject_defaults() {
+        // When per-field sentinels are configured, the strict defaults are no
+        // longer accepted — only the configured strings.
+        let mut field = make_typed_field("active", "BOOLEAN", false, None);
+        field.true_sentinel = Some("Y".to_string());
+        field.false_sentinel = Some("N".to_string());
+        let config = make_config(
+            vec![make_typed_field("id", "NUMBER", true, None), field],
+            true,
+        );
+        let reader = Table::test_reader("id,active\n1,true\n", true);
+        let err = Table::parse_csv("t", &config, &FilterConfig::default(), reader).unwrap_err();
+        let msg = format!("{:#}", err);
+        assert!(msg.contains("invalid boolean value"), "got: {msg}");
     }
 
     #[test]

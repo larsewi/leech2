@@ -94,11 +94,11 @@ name = "price"
 type = "NUMBER"
 ```
 
-| Type      | SQL literal    | Notes                                                |
-| --------- | -------------- | ---------------------------------------------------- |
-| `TEXT`    | `'value'`      | Single quotes, escaped                               |
-| `NUMBER`  | `42` / `3.14`  | Stored as `f64`; integers above 2^53 lose precision  |
-| `BOOLEAN` | `TRUE`/`FALSE` | Accepts `true/false`, `1/0`, `t/f`, `yes/no`         |
+| Type      | SQL literal    | Notes                                                                    |
+| --------- | -------------- | ------------------------------------------------------------------------ |
+| `TEXT`    | `'value'`      | Single quotes, escaped                                                   |
+| `NUMBER`  | `42` / `3.14`  | Stored as `f64`; integers above 2^53 lose precision                      |
+| `BOOLEAN` | `TRUE`/`FALSE` | Accepts the exact strings `true` / `false` (case-sensitive); see below   |
 
 Fields can have an optional `null` sentinel that specifies which CSV value
 should be emitted as SQL `NULL` instead of a typed literal. This is not allowed
@@ -111,6 +111,20 @@ fields = [
     { name = "id", type = "NUMBER", primary-key = true },
     { name = "notes", type = "TEXT", null = "" },       # empty string -> NULL
     { name = "score", type = "NUMBER", null = "N/A" },  # "N/A" -> NULL
+]
+```
+
+`BOOLEAN` fields can override the strings recognised as true and false. When
+either override is set, only the configured strings are accepted — the
+defaults are not honoured alongside them. The `true`, `false`, and `null`
+sentinels on a single field must all differ.
+
+```toml
+[tables.flags]
+source = "flags.csv"
+fields = [
+    { name = "id", type = "NUMBER", primary-key = true },
+    { name = "active", type = "BOOLEAN", true = "Y", false = "N" },
 ]
 ```
 

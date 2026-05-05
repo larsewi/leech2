@@ -170,11 +170,15 @@ Emitted as
 .B TRUE
 or
 .BR FALSE .
-Accepts
-.BR true / false ,
-.BR 1 / 0 ,
-.BR t / f ,
-.BR yes / no .
+By default accepts the exact strings
+.B true
+and
+.B false
+(case-sensitive); see the
+.B true
+and
+.B false
+sentinel keys below to override.
 .PP
 These types control SQL quoting only. Your target database may use any
 compatible column type (e.g.
@@ -187,6 +191,21 @@ Fields can have an optional
 sentinel that specifies which CSV value should be emitted as SQL
 .B NULL
 instead of a typed literal. This is not allowed on primary-key fields.
+.PP
+.B BOOLEAN
+fields can additionally specify
+.B true
+and
+.B false
+sentinel keys to override the default
+.BR true / false
+strings. When either override is set, only the configured strings are
+accepted — the defaults are not honoured alongside them. The
+.BR true ,
+.BR false ,
+and
+.B null
+sentinels on a single field must all differ.
 .SS Injected fields
 Optional
 .B [[injected\-fields]]

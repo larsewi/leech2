@@ -157,8 +157,18 @@ or
 .BR BOOLEAN
 (case-insensitive) and controls how
 .I value
-is formatted as a SQL literal — the same values accepted for table field
-types.
+is formatted as a SQL literal. For
+.BR BOOLEAN ,
+.I value
+must be the exact string
+.B true
+or
+.B false
+(case-sensitive); per-field
+.BR true / false
+sentinel overrides defined in
+.B config.toml
+do not apply to injected fields.
 .IP
 If a field with the same
 .I name

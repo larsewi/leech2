@@ -38,22 +38,32 @@ impl SqlType {
     }
 }
 
-/// Parse a boolean string, accepting any of `true`/`1`/`t`/`yes` (and their
-/// false counterparts) case-insensitively.
-pub fn parse_boolean(value: &str) -> Result<bool> {
-    const TRUE_VALUES: &[&str] = &["true", "1", "t", "yes"];
-    const FALSE_VALUES: &[&str] = &["false", "0", "f", "no"];
+/// Default sentinel matched as boolean true when no per-field override is set.
+pub const DEFAULT_TRUE_SENTINEL: &str = "true";
+/// Default sentinel matched as boolean false when no per-field override is set.
+pub const DEFAULT_FALSE_SENTINEL: &str = "false";
 
-    if TRUE_VALUES.iter().any(|v| value.eq_ignore_ascii_case(v)) {
+/// Parse a boolean string with strict, case-sensitive equality against the
+/// supplied sentinels. Use [`DEFAULT_TRUE_SENTINEL`] / [`DEFAULT_FALSE_SENTINEL`]
+/// when no per-field override is configured.
+pub fn parse_boolean(value: &str, true_sentinel: &str, false_sentinel: &str) -> Result<bool> {
+    if value == true_sentinel {
         Ok(true)
-    } else if FALSE_VALUES.iter().any(|v| value.eq_ignore_ascii_case(v)) {
+    } else if value == false_sentinel {
         Ok(false)
     } else {
-        bail!("invalid boolean value: '{}'", value);
+        bail!(
+            "invalid boolean value '{}' (expected '{}' or '{}')",
+            value,
+            true_sentinel,
+            false_sentinel
+        );
     }
 }
 
 /// Parse a string into a typed `Value` according to the SQL type tag.
+/// Boolean parsing uses the default sentinels; CSV-parsing callers that
+/// honour per-field overrides should call [`parse_boolean`] directly.
 pub fn parse_typed_value(value: &str, sql_type: &SqlType) -> Result<Value> {
     match sql_type {
         SqlType::Text => Ok(Value::Text(value.to_string())),
@@ -63,7 +73,11 @@ pub fn parse_typed_value(value: &str, sql_type: &SqlType) -> Result<Value> {
                 .with_context(|| format!("invalid number: '{}'", value))?;
             Value::number(parsed)
         }
-        SqlType::Boolean => Ok(Value::Boolean(parse_boolean(value)?)),
+        SqlType::Boolean => Ok(Value::Boolean(parse_boolean(
+            value,
+            DEFAULT_TRUE_SENTINEL,
+            DEFAULT_FALSE_SENTINEL,
+        )?)),
     }
 }
 
@@ -513,7 +527,9 @@ mod tests {
                     name: name.to_string(),
                     sql_type: "TEXT".to_string(),
                     primary_key: *primary_key,
-                    null: None,
+                    null_sentinel: None,
+                    true_sentinel: None,
+                    false_sentinel: None,
                 })
                 .collect(),
         }
@@ -600,23 +616,44 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_boolean_truthy() {
-        for input in ["true", "True", "TRUE", "1", "t", "T", "yes", "YES"] {
-            assert!(parse_boolean(input).unwrap(), "input: {}", input);
+    fn test_parse_boolean_default_sentinels() {
+        assert!(parse_boolean("true", DEFAULT_TRUE_SENTINEL, DEFAULT_FALSE_SENTINEL).unwrap());
+        assert!(!parse_boolean("false", DEFAULT_TRUE_SENTINEL, DEFAULT_FALSE_SENTINEL).unwrap());
+    }
+
+    #[test]
+    fn test_parse_boolean_default_sentinels_are_case_sensitive() {
+        for input in ["True", "TRUE", "False", "FALSE"] {
+            assert!(
+                parse_boolean(input, DEFAULT_TRUE_SENTINEL, DEFAULT_FALSE_SENTINEL).is_err(),
+                "input '{input}' should be rejected under strict default sentinels"
+            );
         }
     }
 
     #[test]
-    fn test_parse_boolean_falsy() {
-        for input in ["false", "False", "FALSE", "0", "f", "F", "no", "NO"] {
-            assert!(!parse_boolean(input).unwrap(), "input: {}", input);
+    fn test_parse_boolean_legacy_synonyms_no_longer_accepted() {
+        for input in ["1", "0", "t", "f", "yes", "no"] {
+            assert!(
+                parse_boolean(input, DEFAULT_TRUE_SENTINEL, DEFAULT_FALSE_SENTINEL).is_err(),
+                "input '{input}' should no longer be accepted"
+            );
         }
+    }
+
+    #[test]
+    fn test_parse_boolean_custom_sentinels() {
+        assert!(parse_boolean("Y", "Y", "N").unwrap());
+        assert!(!parse_boolean("N", "Y", "N").unwrap());
+        // The defaults are not honoured when custom sentinels are in use.
+        assert!(parse_boolean("true", "Y", "N").is_err());
+        assert!(parse_boolean("false", "Y", "N").is_err());
     }
 
     #[test]
     fn test_parse_boolean_rejects_invalid() {
-        assert!(parse_boolean("maybe").is_err());
-        assert!(parse_boolean("").is_err());
+        assert!(parse_boolean("maybe", DEFAULT_TRUE_SENTINEL, DEFAULT_FALSE_SENTINEL).is_err());
+        assert!(parse_boolean("", DEFAULT_TRUE_SENTINEL, DEFAULT_FALSE_SENTINEL).is_err());
     }
 
     #[test]
