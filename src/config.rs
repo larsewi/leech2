@@ -7,6 +7,8 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 
+use crate::sql::SqlType;
+
 fn deserialize_regex<'de, D>(deserializer: D) -> Result<Regex, D::Error>
 where
     D: Deserializer<'de>,
@@ -73,7 +75,7 @@ pub struct InjectedFieldConfig {
 
 impl InjectedFieldConfig {
     fn validate(&self) -> Result<()> {
-        crate::sql::SqlType::from_config(&self.sql_type).context("invalid type")?;
+        SqlType::from_config(&self.sql_type).context("invalid type")?;
         Ok(())
     }
 }
