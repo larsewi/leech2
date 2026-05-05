@@ -59,7 +59,7 @@ fn scan_work_dir(work_dir: &Path) -> Result<(HashSet<String>, Vec<String>)> {
     Ok((blocks, lock_files))
 }
 
-/// Walk the block chain from HEAD back towards GENESIS, returning an ordered
+/// Walk the block chain from HEAD back toward GENESIS, returning an ordered
 /// list of chain entries and the set of reachable block hashes.
 fn walk_chain(work_dir: &Path, head_hash: &str) -> (Vec<ChainEntry>, HashSet<String>) {
     let mut chain = Vec::new();
