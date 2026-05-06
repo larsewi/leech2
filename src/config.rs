@@ -55,10 +55,13 @@ impl Default for TruncateConfig {
     }
 }
 
+/// Controls zstd compression of patch payloads.
 #[derive(Debug, Deserialize)]
 #[serde(default)]
 pub struct CompressionConfig {
+    /// When true, patch payloads are zstd-compressed before being written.
     pub enable: bool,
+    /// Zstd compression level passed to `zstd::encode_all`. `0` selects the zstd default.
     pub level: i32,
 }
 
