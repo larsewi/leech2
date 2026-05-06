@@ -10,76 +10,7 @@ use crate::proto::injected::Field as ProtoInjectedField;
 use crate::proto::patch::Patch as ProtoPatch;
 use crate::proto::table::Table as ProtoTable;
 use crate::proto::update::Update as ProtoUpdate;
-use crate::value::Value;
-
-/// Controls how a CSV field value is parsed into a `Value`.
-///
-/// These are not database column types — they determine quoting and
-/// validation when embedding a value into a SQL string (e.g. `Text`
-/// wraps in single quotes, `Number` emits unquoted).
-#[derive(Debug, Clone, PartialEq)]
-pub enum SqlType {
-    Text,
-    Number,
-    Boolean,
-}
-
-impl SqlType {
-    pub fn from_config(type_str: &str) -> Result<Self> {
-        match type_str.to_uppercase().as_str() {
-            "TEXT" => Ok(SqlType::Text),
-            "NUMBER" => Ok(SqlType::Number),
-            "BOOLEAN" => Ok(SqlType::Boolean),
-            other => bail!(
-                "unknown field type '{}'; valid types are: TEXT, NUMBER, BOOLEAN",
-                other
-            ),
-        }
-    }
-}
-
-/// Default sentinel matched as boolean true when no per-field override is set.
-pub const DEFAULT_TRUE_SENTINEL: &str = "true";
-/// Default sentinel matched as boolean false when no per-field override is set.
-pub const DEFAULT_FALSE_SENTINEL: &str = "false";
-
-/// Parse a boolean string with strict, case-sensitive equality against the
-/// supplied sentinels. Use [`DEFAULT_TRUE_SENTINEL`] / [`DEFAULT_FALSE_SENTINEL`]
-/// when no per-field override is configured.
-pub fn parse_boolean(value: &str, true_sentinel: &str, false_sentinel: &str) -> Result<bool> {
-    if value == true_sentinel {
-        Ok(true)
-    } else if value == false_sentinel {
-        Ok(false)
-    } else {
-        bail!(
-            "invalid boolean value '{}' (expected '{}' or '{}')",
-            value,
-            true_sentinel,
-            false_sentinel
-        );
-    }
-}
-
-/// Parse a string into a typed `Value` according to the SQL type tag.
-/// Boolean parsing uses the default sentinels; CSV-parsing callers that
-/// honor per-field overrides should call [`parse_boolean`] directly.
-pub fn parse_typed_value(value: &str, sql_type: &SqlType) -> Result<Value> {
-    match sql_type {
-        SqlType::Text => Ok(Value::Text(value.to_string())),
-        SqlType::Number => {
-            let parsed: f64 = value
-                .parse()
-                .with_context(|| format!("invalid number: '{}'", value))?;
-            Value::number(parsed)
-        }
-        SqlType::Boolean => Ok(Value::Boolean(parse_boolean(
-            value,
-            DEFAULT_TRUE_SENTINEL,
-            DEFAULT_FALSE_SENTINEL,
-        )?)),
-    }
-}
+use crate::value::{SqlType, Value};
 
 /// Schema information for a single table, derived from the wire-declared
 /// field list. Column ordering follows the wire (i.e. the agent's
@@ -615,19 +546,6 @@ mod tests {
     }
 
     #[test]
-    fn test_sql_type_from_config() {
-        assert_eq!(SqlType::from_config("TEXT").unwrap(), SqlType::Text);
-        assert_eq!(SqlType::from_config("NUMBER").unwrap(), SqlType::Number);
-        assert_eq!(SqlType::from_config("BOOLEAN").unwrap(), SqlType::Boolean);
-        // Case insensitive
-        assert_eq!(SqlType::from_config("text").unwrap(), SqlType::Text);
-        assert_eq!(SqlType::from_config("number").unwrap(), SqlType::Number);
-        assert_eq!(SqlType::from_config("Boolean").unwrap(), SqlType::Boolean);
-        // Unknown types are rejected
-        assert!(SqlType::from_config("unknown").is_err());
-    }
-
-    #[test]
     fn test_quote_identifier() {
         assert_eq!(quote_identifier("simple"), "\"simple\"");
         assert_eq!(quote_identifier("has\"quote"), "\"has\"\"quote\"");
@@ -663,47 +581,6 @@ mod tests {
     fn test_quote_literal_boolean() {
         assert_eq!(quote_literal(&Value::from(true)), "TRUE");
         assert_eq!(quote_literal(&Value::from(false)), "FALSE");
-    }
-
-    #[test]
-    fn test_parse_boolean_default_sentinels() {
-        assert!(parse_boolean("true", DEFAULT_TRUE_SENTINEL, DEFAULT_FALSE_SENTINEL).unwrap());
-        assert!(!parse_boolean("false", DEFAULT_TRUE_SENTINEL, DEFAULT_FALSE_SENTINEL).unwrap());
-    }
-
-    #[test]
-    fn test_parse_boolean_default_sentinels_are_case_sensitive() {
-        for input in ["True", "TRUE", "False", "FALSE"] {
-            assert!(
-                parse_boolean(input, DEFAULT_TRUE_SENTINEL, DEFAULT_FALSE_SENTINEL).is_err(),
-                "input '{input}' should be rejected under strict default sentinels"
-            );
-        }
-    }
-
-    #[test]
-    fn test_parse_boolean_legacy_synonyms_no_longer_accepted() {
-        for input in ["1", "0", "t", "f", "yes", "no"] {
-            assert!(
-                parse_boolean(input, DEFAULT_TRUE_SENTINEL, DEFAULT_FALSE_SENTINEL).is_err(),
-                "input '{input}' should no longer be accepted"
-            );
-        }
-    }
-
-    #[test]
-    fn test_parse_boolean_custom_sentinels() {
-        assert!(parse_boolean("Y", "Y", "N").unwrap());
-        assert!(!parse_boolean("N", "Y", "N").unwrap());
-        // The defaults are not honoured when custom sentinels are in use.
-        assert!(parse_boolean("true", "Y", "N").is_err());
-        assert!(parse_boolean("false", "Y", "N").is_err());
-    }
-
-    #[test]
-    fn test_parse_boolean_rejects_invalid() {
-        assert!(parse_boolean("maybe", DEFAULT_TRUE_SENTINEL, DEFAULT_FALSE_SENTINEL).is_err());
-        assert!(parse_boolean("", DEFAULT_TRUE_SENTINEL, DEFAULT_FALSE_SENTINEL).is_err());
     }
 
     #[test]

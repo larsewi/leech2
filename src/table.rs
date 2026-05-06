@@ -7,11 +7,10 @@ use anyhow::{Context, Result};
 
 use crate::config::{FieldConfig, FilterConfig, TableConfig};
 use crate::entry::decode_proto_records;
-use crate::sql::{
-    DEFAULT_FALSE_SENTINEL, DEFAULT_TRUE_SENTINEL, SqlType, parse_boolean, parse_typed_value,
+use crate::value::{
+    DEFAULT_FALSE_SENTINEL, DEFAULT_TRUE_SENTINEL, SqlType, Value, display_proto_values,
+    parse_boolean, parse_typed_value,
 };
-use crate::value::Value;
-use crate::value::display_proto_values;
 
 type ProtoTable = crate::proto::table::Table;
 

@@ -16,9 +16,9 @@ use crate::proto::delta::Delta as ProtoDelta;
 use crate::proto::injected::Field;
 use crate::proto::state::State as ProtoState;
 use crate::proto::table::Table as ProtoTable;
-use crate::sql::{SqlType, parse_typed_value};
 use crate::utils;
 use crate::utils::GENESIS_HASH;
+use crate::value::{SqlType, parse_typed_value};
 
 impl TryFrom<&InjectedFieldConfig> for Field {
     type Error = anyhow::Error;
