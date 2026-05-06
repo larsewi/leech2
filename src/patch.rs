@@ -24,7 +24,7 @@ impl TryFrom<&InjectedFieldConfig> for Field {
     type Error = anyhow::Error;
 
     fn try_from(config: &InjectedFieldConfig) -> Result<Self> {
-        let kind = ValueKind::from_config(&config.sql_type)
+        let kind = ValueKind::from_config(&config.value_kind)
             .with_context(|| format!("injected field '{}'", config.name))?;
         let value = parse_typed_value(&config.value, kind)
             .with_context(|| format!("injected field '{}'", config.name))?;

@@ -78,13 +78,13 @@ impl Default for CompressionConfig {
 pub struct InjectedFieldConfig {
     pub name: String,
     #[serde(rename = "type", default = "default_sql_type")]
-    pub sql_type: String,
+    pub value_kind: String,
     pub value: String,
 }
 
 impl InjectedFieldConfig {
     fn validate(&self) -> Result<()> {
-        ValueKind::from_config(&self.sql_type).context("invalid type")?;
+        ValueKind::from_config(&self.value_kind).context("invalid type")?;
         Ok(())
     }
 }
