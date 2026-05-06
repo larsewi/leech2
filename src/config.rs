@@ -426,6 +426,34 @@ impl TableConfig {
     }
 }
 
+impl Validate for Config {
+    fn validate(&self) -> Result<()> {
+        for (name, table) in &self.tables {
+            table
+                .validate()
+                .with_context(|| format!("table '{}'", name))?;
+        }
+
+        let mut injected_names = HashSet::new();
+        for (index, field) in self.injected_fields.iter().enumerate() {
+            field
+                .validate()
+                .with_context(|| format!("injected-fields[{}]", index))?;
+            if !injected_names.insert(&field.name) {
+                bail!(
+                    "injected-fields[{}]: duplicate field name '{}'",
+                    index,
+                    field.name
+                );
+            }
+        }
+
+        self.truncate.validate()?;
+
+        Ok(())
+    }
+}
+
 impl Config {
     pub fn load(work_dir: &Path) -> Result<Config> {
         let toml_path = work_dir.join("config.toml");
@@ -449,27 +477,7 @@ impl Config {
         };
         config.work_dir = work_dir.to_path_buf();
 
-        for (name, table) in &config.tables {
-            table
-                .validate()
-                .with_context(|| format!("table '{}'", name))?;
-        }
-
-        let mut injected_names = HashSet::new();
-        for (index, field) in config.injected_fields.iter().enumerate() {
-            field
-                .validate()
-                .with_context(|| format!("injected-fields[{}]", index))?;
-            if !injected_names.insert(&field.name) {
-                bail!(
-                    "injected-fields[{}]: duplicate field name '{}'",
-                    index,
-                    field.name
-                );
-            }
-        }
-
-        config.truncate.validate()?;
+        config.validate()?;
 
         log::info!("Initialized config with {} tables", config.tables.len());
         Ok(config)
