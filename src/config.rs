@@ -26,14 +26,19 @@ enum ConfigFormat {
     Json,
 }
 
+/// Controls block cleanup / truncation of the block chain.
 #[derive(Debug, Deserialize)]
 pub struct TruncateConfig {
+    /// Keep at most this many blocks; older ones are removed. `None` disables the limit.
     #[serde(rename = "max-blocks")]
     pub max_blocks: Option<u32>,
+    /// Drop blocks whose `created` timestamp is older than this duration (e.g. `"30d"`). `None` disables the limit.
     #[serde(rename = "max-age")]
     pub max_age: Option<String>,
+    /// When true, also delete blocks no longer referenced by any retained block.
     #[serde(default = "default_true", rename = "remove-orphans")]
     pub remove_orphans: bool,
+    /// When true, blocks already reported to the consumer are eligible for removal.
     #[serde(default = "default_true", rename = "truncate-reported")]
     pub truncate_reported: bool,
 }
