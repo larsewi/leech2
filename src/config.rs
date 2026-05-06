@@ -28,6 +28,7 @@ enum ConfigFormat {
 
 /// Controls block cleanup / truncation of the block chain.
 #[derive(Debug, Deserialize)]
+#[serde(default)]
 pub struct TruncateConfig {
     /// Keep at most this many blocks; older ones are removed. `None` disables the limit.
     #[serde(rename = "max-blocks")]
@@ -36,15 +37,11 @@ pub struct TruncateConfig {
     #[serde(rename = "max-age")]
     pub max_age: Option<String>,
     /// When true, also delete blocks no longer referenced by any retained block.
-    #[serde(default = "default_true", rename = "remove-orphans")]
+    #[serde(rename = "remove-orphans")]
     pub remove_orphans: bool,
     /// When true, blocks already reported to the consumer are eligible for removal.
-    #[serde(default = "default_true", rename = "truncate-reported")]
+    #[serde(rename = "truncate-reported")]
     pub truncate_reported: bool,
-}
-
-fn default_true() -> bool {
-    true
 }
 
 impl Default for TruncateConfig {
