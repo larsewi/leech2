@@ -7,12 +7,29 @@ version **MAJOR.MINOR.PATCH**, increment the:
 - **MINOR** version for new features
 - **PATCH** version for bug fixes
 
+## Pull request labels
+
+Every pull request should carry exactly one of these labels. They drive both
+the auto-generated release notes (see `.github/release.yml`) and the automatic
+version bump (see `.github/scripts/bump-version.sh`):
+
+- **`breaking`** — incompatible API change; triggers a **major** bump
+- **`feature`** — new user-facing feature; triggers a **minor** bump
+- **`bug`** — bug fix; triggers a **patch** bump
+- **`chore`** — internal change (tooling, refactor, docs, CI); excluded from
+  release notes and counted as a **patch** bump
+
+When the **Version** workflow runs in `auto` mode, it inspects the labels of
+every pull request merged since the previous `v*` tag. The highest-priority
+label wins: `breaking` > `feature` > anything else.
+
 ## Steps
 
 1. **Bump the version**
 
-   Go to **Actions** → **Version** → **Run workflow** in the GitHub UI. Select
-   which component to bump (major, minor, or patch) and click **Run workflow**.
+   Go to **Actions** → **Version** → **Run workflow** in the GitHub UI. Leave
+   the component on `auto` to derive the bump from PR labels merged since the
+   last tag, or pick `major`/`minor`/`patch` explicitly. Click **Run workflow**.
    This will create a pull request with the version bump in `Cargo.toml` and
    `Cargo.lock`. Review and merge the pull request.
 

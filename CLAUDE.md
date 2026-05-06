@@ -31,6 +31,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Prefer `From`/`Into` (or `TryFrom`/`TryInto` for fallible conversions) over manual construction when converting between types, especially domain-to-proto conversions.
 - After implementing new features, look for opportunities to refactor the code to improve readability and reduce duplication.
 - Never include a "Test plan" section in pull request descriptions unless specificly asked.
+- Apply exactly one label to every pull request: `breaking` (incompatible API change → major bump), `feature` (new feature → minor bump), `bug` (bug fix → patch bump), or `chore` (internal change, excluded from release notes → patch bump). See [RELEASING.md](RELEASING.md) for details.
 - Commit often, but ensure each commit leaves leech2 in a working state (builds, tests pass, clippy clean).
 - Every commit message must include a `Signed-off-by` line. Example:
 
