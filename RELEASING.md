@@ -13,7 +13,8 @@ Every pull request should carry exactly one of these labels. They drive both
 the auto-generated release notes (see `.github/release.yml`) and the automatic
 version bump (see `.github/scripts/bump-version.sh`):
 
-- **`breaking`** — incompatible API change; triggers a **major** bump
+- **`breaking`** — incompatible API change; triggers a **major** bump.
+  Changes that the system self-heals from at runtime are not considered breaking.
 - **`feature`** — new user-facing feature; triggers a **minor** bump
 - **`bug`** — bug fix; triggers a **patch** bump
 - **`chore`** — internal change (tooling, refactor, docs, CI); excluded from
