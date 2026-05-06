@@ -74,11 +74,16 @@ impl Default for CompressionConfig {
     }
 }
 
+/// A static field added to every generated SQL row (e.g. a `host` column
+/// identifying which agent produced the data).
 #[derive(Debug, Deserialize)]
 pub struct InjectedFieldConfig {
+    /// Column name in the target database.
     pub name: String,
+    /// Value type; one of `TEXT`, `NUMBER`, or `BOOLEAN`.
     #[serde(rename = "type", default = "default_sql_type")]
     pub value_kind: String,
+    /// The static value written into the column for every row.
     pub value: String,
 }
 
