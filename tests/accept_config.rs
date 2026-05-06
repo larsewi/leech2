@@ -290,6 +290,30 @@ fields = [
 }
 
 #[test]
+fn test_empty_table_source_rejected() {
+    common::init_logging();
+    let tmp = tempfile::tempdir().unwrap();
+    common::write_config(
+        tmp.path(),
+        "config.toml",
+        r#"
+[tables.users]
+source = ""
+fields = [
+    { name = "id", type = "NUMBER", primary-key = true },
+    { name = "name", type = "TEXT" },
+]
+"#,
+    );
+
+    let err = format!("{:#}", Config::load(tmp.path()).unwrap_err());
+    assert!(
+        err.contains("source must not be empty"),
+        "should report empty source: {err}"
+    );
+}
+
+#[test]
 fn test_compression_level_out_of_range() {
     common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
