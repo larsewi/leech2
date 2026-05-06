@@ -261,6 +261,35 @@ fields = [
 }
 
 #[test]
+fn test_filter_rule_references_unknown_table() {
+    common::init_logging();
+    let tmp = tempfile::tempdir().unwrap();
+    common::write_config(
+        tmp.path(),
+        "config.toml",
+        r#"
+[[filters.exclude]]
+tables = ["nonexistent"]
+field = "name"
+regex = "^x$"
+
+[tables.users]
+source = "users.csv"
+fields = [
+    { name = "id", type = "NUMBER", primary-key = true },
+    { name = "name", type = "TEXT" },
+]
+"#,
+    );
+
+    let err = format!("{:#}", Config::load(tmp.path()).unwrap_err());
+    assert!(
+        err.contains("unknown table 'nonexistent'"),
+        "should report unknown table: {err}"
+    );
+}
+
+#[test]
 fn test_compression_level_out_of_range() {
     common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
