@@ -245,18 +245,28 @@ pub struct Config {
     pub filters: FilterConfig,
 }
 
+/// One column in a table entry.
 #[derive(Debug, Deserialize)]
 #[serde(default)]
 pub struct FieldConfig {
+    /// Column name. Matches a CSV header when `header = true`; otherwise
+    /// only used as the SQL column name.
     pub name: String,
+    /// Value type; one of `TEXT`, `NUMBER`, or `BOOLEAN`.
     #[serde(rename = "type", deserialize_with = "deserialize_value_kind")]
     pub value_kind: ValueKind,
+    /// When true, this field is part of the table's composite primary key.
     #[serde(rename = "primary-key")]
     pub primary_key: bool,
+    /// CSV string treated as SQL `NULL`. Not allowed on primary-key fields.
     #[serde(rename = "null")]
     pub null_sentinel: Option<String>,
+    /// CSV string treated as boolean true (BOOLEAN fields only). Disables the
+    /// default `"true"`.
     #[serde(rename = "true")]
     pub true_sentinel: Option<String>,
+    /// CSV string treated as boolean false (BOOLEAN fields only). Disables the
+    /// default `"false"`.
     #[serde(rename = "false")]
     pub false_sentinel: Option<String>,
 }
