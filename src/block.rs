@@ -154,7 +154,7 @@ mod tests {
     }
 
     #[test]
-    fn test_encode_block() {
+    fn test_block_encode_decode() {
         let block = dummy_block();
         let mut buf = Vec::new();
         block.encode(&mut buf).unwrap();
