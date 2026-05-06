@@ -117,6 +117,21 @@ impl Default for CompressionConfig {
     }
 }
 
+impl Validate for CompressionConfig {
+    fn validate(&self) -> Result<()> {
+        let range = zstd::compression_level_range();
+        if self.level != 0 && !range.contains(&self.level) {
+            bail!(
+                "compression.level {} is outside the supported zstd range {}..={}",
+                self.level,
+                range.start(),
+                range.end()
+            );
+        }
+        Ok(())
+    }
+}
+
 /// A static field added to every generated SQL row (e.g. a `host` column
 /// identifying which agent produced the data).
 #[derive(Debug, Deserialize)]
@@ -460,6 +475,7 @@ impl Validate for Config {
         }
 
         self.truncate.validate()?;
+        self.compression.validate()?;
 
         Ok(())
     }
