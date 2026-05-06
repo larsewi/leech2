@@ -503,9 +503,11 @@ impl Config {
         log::debug!("Parsing config from file '{}'...", path.display());
         let content = fs::read_to_string(&path).context("failed to read config file")?;
         let mut config: Config = match format {
-            ConfigFormat::Toml => toml::from_str(&content).context("failed to parse config")?,
+            ConfigFormat::Toml => {
+                toml::from_str(&content).context("failed to parse config TOML file")?
+            }
             ConfigFormat::Json => {
-                serde_json::from_str(&content).context("failed to parse config")?
+                serde_json::from_str(&content).context("failed to parse config JSON file")?
             }
         };
         config.work_dir = work_dir.to_path_buf();
