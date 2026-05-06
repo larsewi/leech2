@@ -165,6 +165,7 @@ impl FilterConfig {
                 }
             }
         }
+
         let mut has_applicable_include = false;
         let mut any_include_matched = false;
         for include in &self.include {
@@ -193,12 +194,10 @@ impl FilterConfig {
                 // Rule does not apply for this table
                 continue;
             }
-
             let Some(value) = find_field_value(field_names, values, &exclude.field) else {
                 // Field does not exist in table
                 continue;
             };
-
             if exclude.regex.is_match(value) {
                 return Some(format!("field '{}' matches exclude rule", exclude.field));
             }
