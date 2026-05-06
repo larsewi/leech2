@@ -16,17 +16,17 @@ use crate::proto::delta::Delta as ProtoDelta;
 use crate::proto::injected::Field;
 use crate::proto::state::State as ProtoState;
 use crate::proto::table::Table as ProtoTable;
-use crate::sql::{SqlType, parse_typed_value};
 use crate::utils;
 use crate::utils::GENESIS_HASH;
+use crate::value::{ValueKind, parse_typed_value};
 
 impl TryFrom<&InjectedFieldConfig> for Field {
     type Error = anyhow::Error;
 
     fn try_from(config: &InjectedFieldConfig) -> Result<Self> {
-        let sql_type = SqlType::from_config(&config.sql_type)
+        let kind = ValueKind::from_config(&config.sql_type)
             .with_context(|| format!("injected field '{}'", config.name))?;
-        let value = parse_typed_value(&config.value, &sql_type)
+        let value = parse_typed_value(&config.value, kind)
             .with_context(|| format!("injected field '{}'", config.name))?;
         Ok(Field {
             name: config.name.clone(),
@@ -340,8 +340,8 @@ impl Patch {
             bail!("inject_field: name must not be empty");
         }
 
-        let sql_type = SqlType::from_config(sql_type).context("inject_field: invalid sql_type")?;
-        let parsed = parse_typed_value(value, &sql_type).context("inject_field: invalid value")?;
+        let kind = ValueKind::from_config(sql_type).context("inject_field: invalid sql_type")?;
+        let parsed = parse_typed_value(value, kind).context("inject_field: invalid value")?;
         let new_value: crate::proto::cell::Value = parsed.into();
 
         if let Some(existing) = self.injected_fields.iter_mut().find(|f| f.name == name) {

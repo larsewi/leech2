@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 
-use crate::sql::SqlType;
+use crate::value::ValueKind;
 
 fn deserialize_regex<'de, D>(deserializer: D) -> Result<Regex, D::Error>
 where
@@ -75,7 +75,7 @@ pub struct InjectedFieldConfig {
 
 impl InjectedFieldConfig {
     fn validate(&self) -> Result<()> {
-        SqlType::from_config(&self.sql_type).context("invalid type")?;
+        ValueKind::from_config(&self.sql_type).context("invalid type")?;
         Ok(())
     }
 }
@@ -242,9 +242,9 @@ impl TableConfig {
                 );
             }
             if field.true_sentinel.is_some() || field.false_sentinel.is_some() {
-                let sql_type = crate::sql::SqlType::from_config(&field.sql_type)
+                let kind = ValueKind::from_config(&field.sql_type)
                     .with_context(|| format!("field '{}'", field.name))?;
-                if sql_type != crate::sql::SqlType::Boolean {
+                if kind != ValueKind::Boolean {
                     bail!(
                         "field '{}': 'true' and 'false' sentinels are only valid on BOOLEAN fields",
                         field.name
