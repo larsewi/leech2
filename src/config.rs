@@ -480,6 +480,16 @@ impl Validate for Config {
                     field.name
                 );
             }
+            for (table_name, table) in &self.tables {
+                if table.fields.iter().any(|f| f.name == field.name) {
+                    bail!(
+                        "injected-fields[{}] '{}' collides with a column in table '{}'",
+                        index,
+                        field.name,
+                        table_name
+                    );
+                }
+            }
         }
 
         self.truncate.validate()?;
