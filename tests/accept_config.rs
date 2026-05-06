@@ -399,6 +399,30 @@ fields = [
 }
 
 #[test]
+fn test_field_empty_name_rejected() {
+    common::init_logging();
+    let tmp = tempfile::tempdir().unwrap();
+    common::write_config(
+        tmp.path(),
+        "config.toml",
+        r#"
+[tables.users]
+source = "users.csv"
+fields = [
+    { name = "id", type = "NUMBER", primary-key = true },
+    { type = "TEXT" },
+]
+"#,
+    );
+
+    let err = format!("{:#}", Config::load(tmp.path()).unwrap_err());
+    assert!(
+        err.contains("field name must not be empty"),
+        "should report empty field name: {err}"
+    );
+}
+
+#[test]
 fn test_compression_level_out_of_range() {
     common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
