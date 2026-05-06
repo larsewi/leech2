@@ -20,6 +20,7 @@ where
     Regex::new(&pattern).map_err(serde::de::Error::custom)
 }
 
+// Config file formats we accept.
 enum ConfigFormat {
     Toml,
     Json,
