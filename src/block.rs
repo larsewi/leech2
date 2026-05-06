@@ -142,40 +142,48 @@ impl Block {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_encode_block() {
-        let block = Block {
+    fn dummy_block() -> Block {
+        Block {
+            parent: "deadbeef".to_string(),
             created: Some(prost_types::Timestamp {
                 seconds: 1700000000,
                 nanos: 0,
             }),
-            parent: "abc123".to_string(),
             payload: HashMap::new(),
-        };
+        }
+    }
+
+    #[test]
+    fn test_block_encode_decode() {
+        let block = dummy_block();
         let mut buf = Vec::new();
         block.encode(&mut buf).unwrap();
         assert!(!buf.is_empty());
 
         // Verify roundtrip: decode should produce the same block
         let decoded = Block::decode(buf.as_slice()).unwrap();
-        assert_eq!(decoded.created, block.created);
         assert_eq!(decoded.parent, block.parent);
+        assert_eq!(decoded.created, block.created);
     }
 
     #[test]
-    fn test_block_header_decodes_only_parent() {
-        let block = Block {
-            parent: "deadbeef".to_string(),
-            created: Some(prost_types::Timestamp {
-                seconds: 1700000000,
-                nanos: 0,
-            }),
-            payload: HashMap::from([("table".to_string(), TableChange { delta: None })]),
-        };
+    fn test_block_bytes_decode_as_header() {
+        let block = dummy_block();
         let mut buf = Vec::new();
         block.encode(&mut buf).unwrap();
 
         let header = BlockHeader::decode(buf.as_slice()).unwrap();
-        assert_eq!(header.parent, "deadbeef");
+        assert_eq!(header.parent, block.parent);
+        assert_eq!(header.created, block.created);
+    }
+
+    #[test]
+    fn test_block_display() {
+        let block = dummy_block();
+        let expected = "Block:
+  Parent: deadbeef
+  Created: 2023-11-14 22:13:20 UTC
+  Payload (0 tables):";
+        assert_eq!(block.to_string(), expected);
     }
 }
