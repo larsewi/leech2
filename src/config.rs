@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 
+use crate::utils::parse_duration;
 use crate::value::ValueKind;
 
 /// Post-deserialize semantic checks for config structs (cross-field
@@ -494,129 +495,9 @@ impl Config {
     }
 }
 
-const SECONDS_PER_MINUTE: u64 = 60;
-const SECONDS_PER_HOUR: u64 = 60 * SECONDS_PER_MINUTE;
-const SECONDS_PER_DAY: u64 = 24 * SECONDS_PER_HOUR;
-const SECONDS_PER_WEEK: u64 = 7 * SECONDS_PER_DAY;
-
-/// Parse a duration string into a `Duration`. Supports single-unit (`"30s"`, `"7d"`) and
-/// compound (`"1d12h"`, `"1h30m"`) durations.
-/// Supported suffixes: `s` (seconds), `m` (minutes), `h` (hours), `d` (days), `w` (weeks).
-fn parse_duration(s: &str) -> Result<Duration> {
-    if s.is_empty() {
-        bail!("empty duration string");
-    }
-
-    let mut total_seconds: u64 = 0;
-    let mut number_start = None;
-
-    for (i, c) in s.char_indices() {
-        if c.is_ascii_digit() {
-            if number_start.is_none() {
-                number_start = Some(i);
-            }
-        } else {
-            let start = number_start.take().ok_or_else(|| {
-                anyhow::anyhow!("invalid duration '{}': expected digit before '{}'", s, c)
-            })?;
-            let value: u64 = s[start..i]
-                .parse()
-                .map_err(|_| anyhow::anyhow!("invalid duration '{}'", s))?;
-            let multiplier = match c {
-                's' => 1,
-                'm' => SECONDS_PER_MINUTE,
-                'h' => SECONDS_PER_HOUR,
-                'd' => SECONDS_PER_DAY,
-                'w' => SECONDS_PER_WEEK,
-                _ => bail!("invalid duration suffix '{}' in '{}'", c, s),
-            };
-            total_seconds = total_seconds
-                .checked_add(
-                    value
-                        .checked_mul(multiplier)
-                        .ok_or_else(|| anyhow::anyhow!("duration overflow in '{}'", s))?,
-                )
-                .ok_or_else(|| anyhow::anyhow!("duration overflow in '{}'", s))?;
-        }
-    }
-
-    if number_start.is_some() {
-        bail!("invalid duration '{}': trailing digits without suffix", s);
-    }
-
-    Ok(Duration::from_secs(total_seconds))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_parse_duration_seconds() {
-        assert_eq!(parse_duration("30s").unwrap(), Duration::from_secs(30));
-    }
-
-    #[test]
-    fn test_parse_duration_minutes() {
-        assert_eq!(parse_duration("5m").unwrap(), Duration::from_secs(300));
-    }
-
-    #[test]
-    fn test_parse_duration_hours() {
-        assert_eq!(parse_duration("12h").unwrap(), Duration::from_secs(43200));
-    }
-
-    #[test]
-    fn test_parse_duration_days() {
-        assert_eq!(parse_duration("7d").unwrap(), Duration::from_secs(604800));
-    }
-
-    #[test]
-    fn test_parse_duration_weeks() {
-        assert_eq!(parse_duration("2w").unwrap(), Duration::from_secs(1209600));
-    }
-
-    #[test]
-    fn test_parse_duration_invalid_suffix() {
-        assert!(parse_duration("10x").is_err());
-    }
-
-    #[test]
-    fn test_parse_duration_invalid_number() {
-        assert!(parse_duration("abcs").is_err());
-    }
-
-    #[test]
-    fn test_parse_duration_empty() {
-        assert!(parse_duration("").is_err());
-    }
-
-    #[test]
-    fn test_parse_duration_compound() {
-        assert_eq!(
-            parse_duration("1d12h").unwrap(),
-            Duration::from_secs(SECONDS_PER_DAY + 12 * SECONDS_PER_HOUR)
-        );
-        assert_eq!(
-            parse_duration("1h30m").unwrap(),
-            Duration::from_secs(SECONDS_PER_HOUR + 30 * SECONDS_PER_MINUTE)
-        );
-        assert_eq!(
-            parse_duration("1w2d3h4m5s").unwrap(),
-            Duration::from_secs(
-                SECONDS_PER_WEEK
-                    + 2 * SECONDS_PER_DAY
-                    + 3 * SECONDS_PER_HOUR
-                    + 4 * SECONDS_PER_MINUTE
-                    + 5
-            )
-        );
-    }
-
-    #[test]
-    fn test_parse_duration_trailing_digits() {
-        assert!(parse_duration("30").is_err());
-    }
 
     fn make_field(
         name: &str,
