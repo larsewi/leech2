@@ -94,11 +94,15 @@ impl InjectedFieldConfig {
     }
 }
 
+/// Rules to include/exclude records in tables.
 #[derive(Debug, Deserialize)]
 pub struct FilterRule {
+    /// Tables this rule applies to. Empty means all tables.
     #[serde(default)]
     pub tables: Vec<String>,
+    /// Name of the field whose value the regex is matched against.
     pub field: String,
+    /// Pattern matched against the field value. Unanchored by default.
     #[serde(deserialize_with = "deserialize_regex")]
     pub regex: Regex,
 }
