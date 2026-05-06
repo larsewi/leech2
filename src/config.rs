@@ -462,6 +462,9 @@ impl TableConfig {
 
 impl Validate for Config {
     fn validate(&self) -> Result<()> {
+        if self.tables.is_empty() {
+            bail!("at least one table must be declared under [tables]");
+        }
         for (name, table) in &self.tables {
             table
                 .validate()
