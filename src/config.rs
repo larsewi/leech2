@@ -544,18 +544,22 @@ impl Config {
             }
             (true, false) => (toml_path, ConfigFormat::Toml),
             (false, true) => (json_path, ConfigFormat::Json),
-            (false, false) => bail!("no config file found (expected config.toml or config.json)"),
+            (false, false) => bail!(
+                "no config file found in '{}' (expected config.toml or config.json)",
+                work_dir.display()
+            ),
         };
 
         log::debug!("Parsing config from file '{}'...", path.display());
-        let content = fs::read_to_string(&path).context("failed to read config file")?;
+        let content = fs::read_to_string(&path)
+            .with_context(|| format!("failed to read config file '{}'", path.display()))?;
         let mut config: Config = match format {
-            ConfigFormat::Toml => {
-                toml::from_str(&content).context("failed to parse config TOML file")?
-            }
-            ConfigFormat::Json => {
-                serde_json::from_str(&content).context("failed to parse config JSON file")?
-            }
+            ConfigFormat::Toml => toml::from_str(&content).with_context(|| {
+                format!("failed to parse config TOML file '{}'", path.display())
+            })?,
+            ConfigFormat::Json => serde_json::from_str(&content).with_context(|| {
+                format!("failed to parse config JSON file '{}'", path.display())
+            })?,
         };
         config.work_dir = work_dir.to_path_buf();
 
