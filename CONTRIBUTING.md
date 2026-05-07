@@ -51,10 +51,14 @@ left over from a previous run.
 
 Before computing deltas, the library detects field layout changes by comparing
 each table's stored fields in the STATE file against the current config's
-`ordered_field_names()`. Tables whose layout changed are recorded in the block
-as a `TableChange` with no delta (`delta: None`), signaling that patch
-consolidation should use a full state snapshot for that table instead of
-attempting to merge incompatible deltas.
+canonical field list (primary keys first, then subsidiaries; each group sorted
+lexicographically by name).
+
+Because tuple identity is canonical, reordering fields in `tables.toml` does not
+register as a layout change. Adding, removing, or renaming a field does. Tables
+whose layout changed are recorded in the block as a `TableChange` with no delta
+(`delta: None`), signaling that patch consolidation should use a full state
+snapshot for that table instead of attempting to merge incompatible deltas.
 
 All table changes are bundled into a block together with a parent hash and a
 timestamp, SHA-1 hashed, and stored as a file named by its hash. The `HEAD`
