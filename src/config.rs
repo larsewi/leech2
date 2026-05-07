@@ -455,21 +455,6 @@ impl TableConfig {
             .map(|field| field.name.clone())
             .collect()
     }
-
-    /// Return field names in PK-first order: primary key fields first (in
-    /// declaration order), then subsidiary fields (in declaration order).
-    /// This matches the ordering used by `Table::load()` when building the
-    /// in-memory table stored in the STATE file.
-    pub fn ordered_field_names(&self) -> Vec<String> {
-        let primary_key = self.primary_key();
-        let mut names = primary_key.clone();
-        for field in &self.fields {
-            if !primary_key.contains(&field.name) {
-                names.push(field.name.clone());
-            }
-        }
-        names
-    }
 }
 
 impl Validate for Config {
@@ -573,43 +558,6 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn make_field(name: &str, primary_key: bool) -> FieldConfig {
-        FieldConfig {
-            name: name.to_string(),
-            primary_key,
-            ..Default::default()
-        }
-    }
-
-    #[test]
-    fn test_ordered_field_names() {
-        let config = TableConfig {
-            source: "test.csv".to_string(),
-            header: false,
-            fields: vec![
-                make_field("name", false),
-                make_field("id", true),
-                make_field("email", false),
-            ],
-        };
-        assert_eq!(config.ordered_field_names(), vec!["id", "name", "email"]);
-    }
-
-    #[test]
-    fn test_ordered_field_names_multiple_primary_keys() {
-        let config = TableConfig {
-            source: "test.csv".to_string(),
-            header: false,
-            fields: vec![
-                make_field("value", false),
-                make_field("pk_b", true),
-                make_field("pk_a", true),
-            ],
-        };
-        // PKs in declaration order, then subsidiaries
-        assert_eq!(config.ordered_field_names(), vec!["pk_b", "pk_a", "value"]);
-    }
 
     #[test]
     fn test_validate_rejects_true_sentinel_on_non_boolean() {
