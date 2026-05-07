@@ -175,3 +175,62 @@ fields = [
 
     common::assert_wire_roundtrip(&config, &patch_from2);
 }
+
+#[test]
+fn test_consecutive_updates_same_column_consolidate() {
+    common::init_logging();
+    let tmp = tempfile::tempdir().unwrap();
+    let work_dir = tmp.path();
+
+    common::write_config(
+        work_dir,
+        "config.toml",
+        r#"
+[tables.products]
+source = "products.csv"
+fields = [
+    { name = "id", type = "NUMBER", primary-key = true },
+    { name = "name", type = "TEXT" },
+    { name = "price", type = "NUMBER" },
+]
+"#,
+    );
+
+    // Block 1: initial data
+    common::write_csv(work_dir, "products.csv", "3,Widget,249.95\n");
+    let config = Config::load(work_dir).unwrap();
+    let hash1 = Block::create(&config).unwrap();
+
+    // Block 2: bump price 249.95 -> 249.96
+    common::write_csv(work_dir, "products.csv", "3,Widget,249.96\n");
+    let _hash2 = Block::create(&config).unwrap();
+
+    // Block 3: bump price 249.96 -> 249.97
+    common::write_csv(work_dir, "products.csv", "3,Widget,249.97\n");
+    let hash3 = Block::create(&config).unwrap();
+
+    // Patch from hash1 should consolidate the two consecutive price updates
+    // into a single update from 249.95 to 249.97. The merge must not collapse
+    // into a degenerate update with old == new (which previously fell out of
+    // a swapped parent/child order in try_consolidate).
+    let patch = Patch::create(&config, &hash1).unwrap();
+    assert_eq!(patch.num_blocks, 2);
+    assert_eq!(patch.head, hash3);
+
+    let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
+
+    // The merge should produce a delta-path patch (not a state fallback).
+    assert!(
+        !sql.contains("TRUNCATE"),
+        "expected delta path, got state fallback:\n{sql}"
+    );
+    assert_eq!(common::count_sql(&sql, "UPDATE "), 1);
+    assert_eq!(common::count_sql(&sql, "INSERT INTO"), 0);
+    assert_eq!(common::count_sql(&sql, "DELETE FROM"), 0);
+    assert!(
+        sql.contains(r#"UPDATE "products" SET "price" = 249.97 WHERE "id" = 3;"#),
+        "expected price=249.97, got:\n{sql}"
+    );
+
+    common::assert_wire_roundtrip(&config, &patch);
+}

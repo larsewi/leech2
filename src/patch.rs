@@ -110,10 +110,11 @@ fn collect_block_hashes(
     Ok((created, hashes))
 }
 
-/// Merge a single block's deltas into per-table running results. The block is
-/// the older (parent) side and the running results are the newer (child) side,
-/// so the merge direction is `parent.merge(child)`. When `merged_deltas` is
-/// empty (first block), this simply extracts the block's deltas.
+/// Merge a single block's deltas into per-table running results. Blocks are
+/// fed in oldest-first, so the running results are the older (parent) side
+/// and the incoming block is the newer (child) side: the merge direction is
+/// `parent.merge(child)`. When `merged_deltas` is empty (first block), this
+/// simply extracts the block's deltas.
 ///
 /// Tables whose layout changed (delta is `None`) or whose merge failed are
 /// added to `skipped_tables` and fall back to full state.
@@ -139,11 +140,14 @@ fn merge_block_deltas(
             continue;
         };
 
-        let result = Delta::try_from(proto_delta).and_then(|mut parent| {
-            if let Some(child) = merged_deltas.remove(&table_name) {
-                parent.merge(child)?;
+        let result = Delta::try_from(proto_delta).and_then(|child| {
+            match merged_deltas.remove(&table_name) {
+                Some(mut parent) => {
+                    parent.merge(child)?;
+                    Ok(parent)
+                }
+                None => Ok(child),
             }
-            Ok(parent)
         });
 
         match result {
