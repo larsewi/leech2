@@ -38,18 +38,17 @@ fields = [
     let patch = Patch::create(&config, &hash1).unwrap();
     let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
 
-    // DELETE should use composite key with AND
+    // Composite-key columns appear in canonical (lex-sorted) order:
+    // course_id before student_id.
     assert!(
-        sql.contains(r#"DELETE FROM "enrollments" WHERE "student_id" = 1 AND "course_id" = 102;"#)
+        sql.contains(r#"DELETE FROM "enrollments" WHERE "course_id" = 102 AND "student_id" = 1;"#)
     );
 
-    // INSERT should include all columns
     assert!(sql.contains(
-        r#"INSERT INTO "enrollments" ("student_id", "course_id", "grade") VALUES (2, 103, 'B');"#
+        r#"INSERT INTO "enrollments" ("course_id", "student_id", "grade") VALUES (103, 2, 'B');"#
     ));
 
-    // UPDATE should use composite key in WHERE
-    assert!(sql.contains(r#"WHERE "student_id" = 1 AND "course_id" = 101;"#));
+    assert!(sql.contains(r#"WHERE "course_id" = 101 AND "student_id" = 1;"#));
     assert!(sql.contains(r#"SET "grade" = 'A+'"#));
 
     common::assert_wire_roundtrip(&config, &patch);

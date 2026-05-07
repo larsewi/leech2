@@ -14,6 +14,12 @@ use crate::value::{
 
 type ProtoTable = crate::proto::table::Table;
 
+/// Tuple positions (column index, field config) for one half of a row,
+/// either the primary-key columns or the subsidiaries. Sorted
+/// lexicographically by field name to keep tuple identity stable across
+/// config field reorderings.
+type CanonicalColumns<'a> = Vec<(usize, &'a FieldConfig)>;
+
 /// A table with records stored in a hash map for efficient lookup.
 /// Fields are ordered with primary key columns first, followed by subsidiary columns.
 #[derive(Debug, Clone, PartialEq)]
@@ -116,23 +122,35 @@ impl Table {
         Ok(indices)
     }
 
-    /// Split field indices into primary-key and subsidiary groups based on
-    /// which fields are marked as primary keys in the config.
-    fn compute_key_indices(
-        field_names: &[String],
-        primary_key: &[String],
+    /// Split columns into primary-key and subsidiary groups, each sorted
+    /// lexicographically by field name. Each entry pairs a column index
+    /// with the `FieldConfig` used to parse the value at that column. The
+    /// canonical ordering makes tuple identity independent of the order
+    /// fields are declared in the config, so reordering fields in
+    /// `tables.toml` does not change the on-disk or on-the-wire
+    /// representation.
+    fn compute_canonical_columns<'a>(
+        config: &'a TableConfig,
         field_indices: &[usize],
-    ) -> (Vec<usize>, Vec<usize>) {
-        let mut primary_indices = Vec::new();
-        let mut subsidiary_indices = Vec::new();
-        for (config_index, name) in field_names.iter().enumerate() {
-            if primary_key.contains(name) {
-                primary_indices.push(field_indices[config_index]);
+    ) -> (CanonicalColumns<'a>, CanonicalColumns<'a>) {
+        let mut entries: Vec<(&str, usize, &FieldConfig)> = config
+            .fields
+            .iter()
+            .zip(field_indices.iter())
+            .map(|(field, &idx)| (field.name.as_str(), idx, field))
+            .collect();
+        entries.sort_by_key(|(name, _, _)| *name);
+
+        let mut primary_columns: CanonicalColumns = Vec::new();
+        let mut subsidiary_columns: CanonicalColumns = Vec::new();
+        for (_, idx, field) in entries {
+            if field.primary_key {
+                primary_columns.push((idx, field));
             } else {
-                subsidiary_indices.push(field_indices[config_index]);
+                subsidiary_columns.push((idx, field));
             }
         }
-        (primary_indices, subsidiary_indices)
+        (primary_columns, subsidiary_columns)
     }
 
     #[cfg(test)]
@@ -153,21 +171,15 @@ impl Table {
         mut reader: csv::Reader<File>,
     ) -> Result<Self> {
         let field_names = config.field_names();
-        let primary_key = config.primary_key();
         let field_indices = Self::resolve_field_indices(config, &mut reader)?;
-        let (primary_indices, subsidiary_indices) =
-            Self::compute_key_indices(&field_names, &primary_key, &field_indices);
+        let (primary_columns, subsidiary_columns) =
+            Self::compute_canonical_columns(config, &field_indices);
 
-        // Field configs split by primary-key flag in declaration order. This
-        // matches the ordering of `primary_indices` / `subsidiary_indices` —
-        // both are derived from `config.fields` in declaration order — so
-        // zipping the two pairs lines up the right config with each value.
-        let primary_field_configs: Vec<&FieldConfig> =
-            config.fields.iter().filter(|f| f.primary_key).collect();
-        let subsidiary_field_configs: Vec<&FieldConfig> =
-            config.fields.iter().filter(|f| !f.primary_key).collect();
-
-        let fields = config.ordered_field_names();
+        let fields: Vec<String> = primary_columns
+            .iter()
+            .chain(subsidiary_columns.iter())
+            .map(|(_, field)| field.name.clone())
+            .collect();
 
         let mut records: HashMap<Vec<Value>, Vec<Value>> = HashMap::new();
 
@@ -190,9 +202,9 @@ impl Table {
                 continue;
             }
 
-            let primary_key = parse_columns(&record, &primary_indices, &primary_field_configs)
+            let primary_key = parse_columns(&record, &primary_columns)
                 .with_context(|| format!("row {}", row_num + 1))?;
-            let subsidiary = parse_columns(&record, &subsidiary_indices, &subsidiary_field_configs)
+            let subsidiary = parse_columns(&record, &subsidiary_columns)
                 .with_context(|| format!("row {}", row_num + 1))?;
 
             if records.insert(primary_key.clone(), subsidiary).is_some() {
@@ -204,17 +216,16 @@ impl Table {
     }
 }
 
-/// Pull values at `csv_indices` out of `record` and parse each one into a
-/// typed `Value` according to its corresponding `FieldConfig`. The two
-/// slices must be the same length and aligned 1-to-1.
+/// For each `(column_index, field_config)` entry, pull the value at
+/// `column_index` out of `record` and parse it into a typed `Value`
+/// according to `field_config`.
 fn parse_columns(
     record: &csv::StringRecord,
-    csv_indices: &[usize],
-    field_configs: &[&FieldConfig],
+    columns: &[(usize, &FieldConfig)],
 ) -> Result<Vec<Value>> {
-    let mut out = Vec::with_capacity(csv_indices.len());
-    for (&csv_index, &field) in csv_indices.iter().zip(field_configs.iter()) {
-        out.push(parse_field_value(&record[csv_index], field)?);
+    let mut out = Vec::with_capacity(columns.len());
+    for &(column_index, field) in columns {
+        out.push(parse_field_value(&record[column_index], field)?);
     }
     Ok(out)
 }
@@ -267,59 +278,140 @@ mod tests {
         }
     }
 
-    // -- compute_key_indices tests --
+    // -- compute_canonical_columns tests --
 
-    #[test]
-    fn test_compute_key_indices_single_primary_key() {
-        let field_names = ["id", "name", "email"].map(String::from).to_vec();
-        let primary_key = ["id"].map(String::from).to_vec();
-        let field_indices = vec![0, 1, 2];
-
-        let (primary_indices, subsidiary_indices) =
-            Table::compute_key_indices(&field_names, &primary_key, &field_indices);
-
-        assert_eq!(primary_indices, vec![0]);
-        assert_eq!(subsidiary_indices, vec![1, 2]);
+    /// Project `compute_canonical_columns` output into `(column_index, name)`
+    /// pairs for easy assertion.
+    fn extract<'a>(columns: &[(usize, &'a FieldConfig)]) -> Vec<(usize, &'a str)> {
+        columns
+            .iter()
+            .map(|(idx, field)| (*idx, field.name.as_str()))
+            .collect()
     }
 
     #[test]
-    fn test_compute_key_indices_composite_primary_key() {
-        let field_names = ["region", "id", "name"].map(String::from).to_vec();
-        let primary_key = ["region", "id"].map(String::from).to_vec();
+    fn test_compute_canonical_columns_single_primary_key() {
+        let config = make_config(
+            vec![
+                make_field("id", true),
+                make_field("name", false),
+                make_field("email", false),
+            ],
+            false,
+        );
         let field_indices = vec![0, 1, 2];
 
-        let (primary_indices, subsidiary_indices) =
-            Table::compute_key_indices(&field_names, &primary_key, &field_indices);
+        let (primary, subsidiary) = Table::compute_canonical_columns(&config, &field_indices);
 
-        assert_eq!(primary_indices, vec![0, 1]);
-        assert_eq!(subsidiary_indices, vec![2]);
+        assert_eq!(extract(&primary), vec![(0, "id")]);
+        // Subsidiaries sorted lexicographically: email before name.
+        assert_eq!(extract(&subsidiary), vec![(2, "email"), (1, "name")]);
     }
 
     #[test]
-    fn test_compute_key_indices_reordered_columns() {
-        // CSV columns are in a different order than the config fields.
-        let field_names = ["id", "name", "email"].map(String::from).to_vec();
-        let primary_key = ["id"].map(String::from).to_vec();
+    fn test_compute_canonical_columns_composite_primary_key() {
+        let config = make_config(
+            vec![
+                make_field("region", true),
+                make_field("id", true),
+                make_field("name", false),
+            ],
+            false,
+        );
+        let field_indices = vec![0, 1, 2];
+
+        let (primary, subsidiary) = Table::compute_canonical_columns(&config, &field_indices);
+
+        // Primary keys sorted lexicographically: id before region.
+        assert_eq!(extract(&primary), vec![(1, "id"), (0, "region")]);
+        assert_eq!(extract(&subsidiary), vec![(2, "name")]);
+    }
+
+    #[test]
+    fn test_compute_canonical_columns_reordered_columns() {
+        // Source columns are in a different order than the declared fields.
+        let config = make_config(
+            vec![
+                make_field("id", true),
+                make_field("name", false),
+                make_field("email", false),
+            ],
+            true,
+        );
         let field_indices = vec![2, 0, 1]; // id->col2, name->col0, email->col1
 
-        let (primary_indices, subsidiary_indices) =
-            Table::compute_key_indices(&field_names, &primary_key, &field_indices);
+        let (primary, subsidiary) = Table::compute_canonical_columns(&config, &field_indices);
 
-        assert_eq!(primary_indices, vec![2]);
-        assert_eq!(subsidiary_indices, vec![0, 1]);
+        assert_eq!(extract(&primary), vec![(2, "id")]);
+        assert_eq!(extract(&subsidiary), vec![(1, "email"), (0, "name")]);
     }
 
     #[test]
-    fn test_compute_key_indices_all_primary_keys() {
-        let field_names = ["a", "b"].map(String::from).to_vec();
-        let primary_key = ["a", "b"].map(String::from).to_vec();
+    fn test_compute_canonical_columns_all_primary_keys() {
+        let config = make_config(vec![make_field("b", true), make_field("a", true)], false);
         let field_indices = vec![0, 1];
 
-        let (primary_indices, subsidiary_indices) =
-            Table::compute_key_indices(&field_names, &primary_key, &field_indices);
+        let (primary, subsidiary) = Table::compute_canonical_columns(&config, &field_indices);
 
-        assert_eq!(primary_indices, vec![0, 1]);
-        assert!(subsidiary_indices.is_empty());
+        // Both PKs, sorted lexicographically: a before b. The column index
+        // at each tuple position follows the field's source position.
+        assert_eq!(extract(&primary), vec![(1, "a"), (0, "b")]);
+        assert!(subsidiary.is_empty());
+    }
+
+    #[test]
+    fn test_parse_csv_tuple_identity_invariant_under_field_reorder() {
+        // Two configs with the same fields in different declaration orders
+        // produce identical tables when fed the same source data.
+        let config_a = make_config(
+            vec![
+                make_field("id", true),
+                make_field("name", false),
+                make_field("email", false),
+            ],
+            true,
+        );
+        let config_b = make_config(
+            vec![
+                make_field("email", false),
+                make_field("id", true),
+                make_field("name", false),
+            ],
+            true,
+        );
+        let csv = "id,name,email\n1,Alice,alice@example.com\n";
+
+        let reader_a = Table::test_reader(csv, true);
+        let table_a = Table::parse_csv("t", &config_a, &FilterConfig::default(), reader_a).unwrap();
+        let reader_b = Table::test_reader(csv, true);
+        let table_b = Table::parse_csv("t", &config_b, &FilterConfig::default(), reader_b).unwrap();
+
+        assert_eq!(table_a.fields, vec!["id", "email", "name"]);
+        assert_eq!(table_a.fields, table_b.fields);
+        assert_eq!(table_a.records, table_b.records);
+    }
+
+    #[test]
+    fn test_parse_csv_no_header_uses_canonical_tuple_layout() {
+        // header=false: source columns are matched positionally against the
+        // declaration order, but the resulting tuple is still canonical.
+        let config = make_config(
+            vec![
+                make_field("name", false),
+                make_field("id", true),
+                make_field("email", false),
+            ],
+            false,
+        );
+        let reader = Table::test_reader("Alice,1,a@b.com\n", false);
+        let table = Table::parse_csv("t", &config, &FilterConfig::default(), reader).unwrap();
+
+        // Canonical layout: id (PK), then subsidiaries sorted lex.
+        assert_eq!(table.fields, vec!["id", "email", "name"]);
+        assert_eq!(
+            table.records.get(&vec!["1".into()]),
+            Some(&vec!["a@b.com".into(), "Alice".into()])
+        );
     }
 
     // -- resolve_field_indices tests --
