@@ -699,8 +699,7 @@ mod tests {
     fn test_should_filter_max_field_length() {
         let filter = FilterConfig {
             max_field_length: Some(5),
-            include: vec![],
-            exclude: vec![],
+            ..Default::default()
         };
         let fields = vec!["id".to_string(), "name".to_string()];
 
@@ -719,9 +718,8 @@ mod tests {
     #[test]
     fn test_should_filter_exclude_anchored_regex() {
         let filter = FilterConfig {
-            max_field_length: None,
-            include: vec![],
             exclude: vec![make_rule(vec![], "status", "^inactive$")],
+            ..Default::default()
         };
         let fields = vec!["id".to_string(), "status".to_string()];
 
@@ -746,9 +744,8 @@ mod tests {
     #[test]
     fn test_should_filter_exclude_unanchored_regex() {
         let filter = FilterConfig {
-            max_field_length: None,
-            include: vec![],
             exclude: vec![make_rule(vec![], "desc", "DEPRECATED")],
+            ..Default::default()
         };
         let fields = vec!["id".to_string(), "desc".to_string()];
 
@@ -767,9 +764,8 @@ mod tests {
     #[test]
     fn test_should_filter_exclude_alternation_regex() {
         let filter = FilterConfig {
-            max_field_length: None,
-            include: vec![],
             exclude: vec![make_rule(vec![], "status", "^(inactive|archived)$")],
+            ..Default::default()
         };
         let fields = vec!["id".to_string(), "status".to_string()];
 
@@ -795,9 +791,8 @@ mod tests {
     #[test]
     fn test_should_filter_exclude_skipped_when_field_not_in_table() {
         let filter = FilterConfig {
-            max_field_length: None,
-            include: vec![],
             exclude: vec![make_rule(vec![], "nonexistent", "^value$")],
+            ..Default::default()
         };
         let fields = vec!["id".to_string(), "name".to_string()];
 
@@ -811,9 +806,8 @@ mod tests {
     #[test]
     fn test_should_filter_exclude_table_scoped() {
         let filter = FilterConfig {
-            max_field_length: None,
-            include: vec![],
             exclude: vec![make_rule(vec!["users"], "status", "^inactive$")],
+            ..Default::default()
         };
         let fields = vec!["id".to_string(), "status".to_string()];
 
@@ -834,9 +828,8 @@ mod tests {
     #[test]
     fn test_should_filter_exclude_multiple_tables() {
         let filter = FilterConfig {
-            max_field_length: None,
-            include: vec![],
             exclude: vec![make_rule(vec!["users", "admins"], "status", "^inactive$")],
+            ..Default::default()
         };
         let fields = vec!["id".to_string(), "status".to_string()];
 
@@ -893,9 +886,8 @@ fields = [
     #[test]
     fn test_should_filter_include_match_keeps_record() {
         let filter = FilterConfig {
-            max_field_length: None,
             include: vec![make_rule(vec![], "status", "^(active|pending)$")],
-            exclude: vec![],
+            ..Default::default()
         };
         let fields = vec!["id".to_string(), "status".to_string()];
 
@@ -914,9 +906,8 @@ fields = [
     #[test]
     fn test_should_filter_include_no_match_drops_record() {
         let filter = FilterConfig {
-            max_field_length: None,
             include: vec![make_rule(vec![], "status", "^(active|pending)$")],
-            exclude: vec![],
+            ..Default::default()
         };
         let fields = vec!["id".to_string(), "status".to_string()];
 
@@ -930,9 +921,8 @@ fields = [
     #[test]
     fn test_should_filter_include_unanchored_regex() {
         let filter = FilterConfig {
-            max_field_length: None,
             include: vec![make_rule(vec![], "desc", "PRODUCTION")],
-            exclude: vec![],
+            ..Default::default()
         };
         let fields = vec!["id".to_string(), "desc".to_string()];
 
@@ -953,12 +943,11 @@ fields = [
     #[test]
     fn test_should_filter_include_or_semantics() {
         let filter = FilterConfig {
-            max_field_length: None,
             include: vec![
                 make_rule(vec![], "status", "^active$"),
                 make_rule(vec![], "status", "^pending$"),
             ],
-            exclude: vec![],
+            ..Default::default()
         };
         let fields = vec!["id".to_string(), "status".to_string()];
 
@@ -984,9 +973,8 @@ fields = [
     #[test]
     fn test_should_filter_include_skipped_when_field_not_in_table() {
         let filter = FilterConfig {
-            max_field_length: None,
             include: vec![make_rule(vec![], "nonexistent", "^value$")],
-            exclude: vec![],
+            ..Default::default()
         };
         let fields = vec!["id".to_string(), "name".to_string()];
 
@@ -1002,9 +990,8 @@ fields = [
     #[test]
     fn test_should_filter_include_no_applicable_rule_keeps_record() {
         let filter = FilterConfig {
-            max_field_length: None,
             include: vec![make_rule(vec!["users"], "status", "^active$")],
-            exclude: vec![],
+            ..Default::default()
         };
         let fields = vec!["id".to_string(), "status".to_string()];
 
@@ -1018,9 +1005,8 @@ fields = [
     #[test]
     fn test_should_filter_include_table_scoped() {
         let filter = FilterConfig {
-            max_field_length: None,
             include: vec![make_rule(vec!["users"], "status", "^active$")],
-            exclude: vec![],
+            ..Default::default()
         };
         let fields = vec!["id".to_string(), "status".to_string()];
 
@@ -1049,9 +1035,9 @@ fields = [
     #[test]
     fn test_should_filter_exclude_wins_over_include() {
         let filter = FilterConfig {
-            max_field_length: None,
             include: vec![make_rule(vec![], "status", "^(active|pending)$")],
             exclude: vec![make_rule(vec![], "status", "^pending$")],
+            ..Default::default()
         };
         let fields = vec!["id".to_string(), "status".to_string()];
 
