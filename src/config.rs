@@ -538,12 +538,13 @@ impl Config {
         let toml_path = work_dir.join("config.toml");
         let json_path = work_dir.join("config.json");
 
-        let (path, format) = if toml_path.exists() {
-            (toml_path, ConfigFormat::Toml)
-        } else if json_path.exists() {
-            (json_path, ConfigFormat::Json)
-        } else {
-            bail!("no config file found (expected config.toml or config.json)");
+        let (path, format) = match (toml_path.exists(), json_path.exists()) {
+            (true, true) => {
+                bail!("found both config.toml and config.json (don't know which one to pick)")
+            }
+            (true, false) => (toml_path, ConfigFormat::Toml),
+            (false, true) => (json_path, ConfigFormat::Json),
+            (false, false) => bail!("no config file found (expected config.toml or config.json)"),
         };
 
         log::debug!("Parsing config from file '{}'...", path.display());
@@ -1076,6 +1077,34 @@ fields = [
                 .should_filter("t", &fields, &["3", "archived"])
                 .as_deref(),
             Some("no include rule matched"),
+        );
+    }
+
+    #[test]
+    fn test_load_fails_when_both_toml_and_json_present() {
+        let dir = tempfile::tempdir().unwrap();
+        let minimal_toml = r#"
+[tables.users]
+source = "users.csv"
+fields = [
+    { name = "id", type = "NUMBER", primary-key = true },
+]
+"#;
+        let minimal_json = r#"{
+  "tables": {
+    "users": {
+      "source": "users.csv",
+      "fields": [{ "name": "id", "type": "NUMBER", "primary-key": true }]
+    }
+  }
+}"#;
+        fs::write(dir.path().join("config.toml"), minimal_toml).unwrap();
+        fs::write(dir.path().join("config.json"), minimal_json).unwrap();
+
+        let err = Config::load(dir.path()).expect_err("expected ambiguity error");
+        assert!(
+            err.to_string().contains("both config.toml and config.json"),
+            "unexpected error: {err}"
         );
     }
 
