@@ -335,6 +335,10 @@ fn format_update(
         ));
     }
 
+    if set_parts.is_empty() {
+        bail!("update has no SET assignments — would emit an empty SET clause");
+    }
+
     let where_clause = primary_key_where_clause(&update.key, schema, injected_fields)?;
 
     Ok(format!(
@@ -586,6 +590,28 @@ mod tests {
 
         let result = patch_to_sql(&config, &patch).unwrap().unwrap();
         assert!(result.contains("INSERT INTO"));
+    }
+
+    #[test]
+    fn test_patch_to_sql_rejects_update_with_no_set_assignments() {
+        // A sparse update with empty `changed_indices` and empty `new_value`
+        // would render as `UPDATE "t" SET  WHERE ...;` with an empty SET
+        // clause. Reject it instead of emitting malformed SQL.
+        let table_config = dummy_table(&[("id", true), ("name", false)]);
+        let config = dummy_config(HashMap::from([("test_table".to_string(), table_config)]));
+
+        let mut delta = dummy_delta(&["id", "name"]);
+        delta.updates.push(ProtoUpdate {
+            key: text_proto_values(&["1"]),
+            changed_indices: vec![],
+            old_value: vec![],
+            new_value: vec![],
+        });
+        let patch = dummy_patch(HashMap::from([("test_table".to_string(), delta)]));
+
+        let err = patch_to_sql(&config, &patch).unwrap_err();
+        let msg = format!("{:#}", err);
+        assert!(msg.contains("empty SET clause"), "got: {}", msg);
     }
 
     #[test]
