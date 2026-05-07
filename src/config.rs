@@ -538,12 +538,13 @@ impl Config {
         let toml_path = work_dir.join("config.toml");
         let json_path = work_dir.join("config.json");
 
-        let (path, format) = if toml_path.exists() {
-            (toml_path, ConfigFormat::Toml)
-        } else if json_path.exists() {
-            (json_path, ConfigFormat::Json)
-        } else {
-            bail!("no config file found (expected config.toml or config.json)");
+        let (path, format) = match (toml_path.exists(), json_path.exists()) {
+            (true, true) => {
+                bail!("found both config.toml and config.json (don't know which one to pick)")
+            }
+            (true, false) => (toml_path, ConfigFormat::Toml),
+            (false, true) => (json_path, ConfigFormat::Json),
+            (false, false) => bail!("no config file found (expected config.toml or config.json)"),
         };
 
         log::debug!("Parsing config from file '{}'...", path.display());
