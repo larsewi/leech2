@@ -37,6 +37,7 @@ jobs:
       PGPASSWORD: leech2
       PGDATABASE: leech2
       ROUND_TRIP_SEED: ${{ inputs.seed }}
+      LEECH2_LOG: info
     steps:
       - uses: actions/checkout@v6
       - name: Install protobuf compiler
