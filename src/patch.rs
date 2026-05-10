@@ -110,6 +110,16 @@ fn collect_block_hashes(
     Ok((created, hashes))
 }
 
+/// Running tally of how many entries of each kind a table contributed
+/// across the blocks in a consolidation run, before the merge collapses
+/// them. Used to log the pre -> post reduction.
+#[derive(Clone, Copy, Default)]
+struct DeltaCounts {
+    inserts: usize,
+    updates: usize,
+    deletes: usize,
+}
+
 /// Merge a single block's deltas into per-table running results. Blocks are
 /// fed in oldest-first, so the running results are the older (parent) side
 /// and the incoming block is the newer (child) side: the merge direction is
@@ -122,6 +132,7 @@ fn merge_block_deltas(
     block: Block,
     merged_deltas: &mut HashMap<String, Delta>,
     skipped_tables: &mut HashSet<String>,
+    pre_counts: &mut HashMap<String, DeltaCounts>,
 ) {
     for (table_name, payload) in block.payload {
         if skipped_tables.contains(&table_name) {
@@ -139,6 +150,11 @@ fn merge_block_deltas(
             skipped_tables.insert(table_name);
             continue;
         };
+
+        let counts = pre_counts.entry(table_name.clone()).or_default();
+        counts.inserts += proto_delta.inserts.len();
+        counts.updates += proto_delta.updates.len();
+        counts.deletes += proto_delta.deletes.len();
 
         let result = Delta::try_from(proto_delta).and_then(|child| {
             match merged_deltas.remove(&table_name) {
@@ -188,6 +204,7 @@ fn try_consolidate(work_dir: &Path, head: &str, last_known: &str) -> Result<Cons
     // memory at a time.
     let mut merged_deltas: HashMap<String, Delta> = HashMap::new();
     let mut skipped_tables: HashSet<String> = HashSet::new();
+    let mut pre_counts: HashMap<String, DeltaCounts> = HashMap::new();
 
     for (index, hash) in block_hashes.iter().rev().enumerate() {
         log::trace!(
@@ -197,7 +214,12 @@ fn try_consolidate(work_dir: &Path, head: &str, last_known: &str) -> Result<Cons
             hash
         );
         let block = Block::load(work_dir, hash)?;
-        merge_block_deltas(block, &mut merged_deltas, &mut skipped_tables);
+        merge_block_deltas(
+            block,
+            &mut merged_deltas,
+            &mut skipped_tables,
+            &mut pre_counts,
+        );
     }
 
     // Load state for per-table size comparison and fallback.
@@ -229,6 +251,19 @@ fn try_consolidate(work_dir: &Path, head: &str, last_known: &str) -> Result<Cons
         for update in &mut merged_delta.updates {
             update.sparse_encode();
         }
+
+        let pre = pre_counts.get(&table_name).copied().unwrap_or_default();
+        log::info!(
+            "Table '{}': consolidated {} block(s); inserts {}→{}, updates {}→{}, deletes {}→{}",
+            table_name,
+            num_blocks,
+            pre.inserts,
+            merged_delta.inserts.len(),
+            pre.updates,
+            merged_delta.updates.len(),
+            pre.deletes,
+            merged_delta.deletes.len(),
+        );
 
         // Per-table size comparison: use full state if it's smaller.
         if let Some(state_table) = state_tables.get(&table_name)
