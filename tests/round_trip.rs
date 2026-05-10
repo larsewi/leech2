@@ -31,6 +31,11 @@ const MUTATIONS_PER_BLOCK_MAX: usize = 10;
 const SHIP_PROBABILITY: f64 = 0.3;
 const DEFAULT_SEED: u64 = 0xdead_beef_cafe_f00d;
 
+/// CSV value treated as SQL NULL by the `email` field's `null` sentinel.
+/// When the agent emits this string in the email column, leech2 maps it
+/// to `Value::Null` and the resulting SQL writes `NULL` to the hub.
+const EMAIL_NULL_SENTINEL: &str = "N/A";
+
 /// The hub schema is the *superset* of every column the agent might ever
 /// declare — leech2's generated INSERTs only mention currently-active
 /// columns, so any column the agent has dropped just stays NULL on the hub.
@@ -39,12 +44,15 @@ CREATE TABLE "users" (
     "id" DOUBLE PRECISION,
     "name" TEXT,
     "email" TEXT,
+    "active" BOOLEAN,
     PRIMARY KEY ("id")
 );
 "#;
 
 /// Build the agent's `config.toml` for a given schema state. `email` is the
-/// only toggleable column for now; `id` and `name` are always present.
+/// only toggleable column for now; `id`, `name`, and `active` are always
+/// present. The email field declares a `null` sentinel so the agent can
+/// emit `EMAIL_NULL_SENTINEL` in the CSV to mean "no value".
 fn config_toml(email_active: bool) -> String {
     let mut s = String::from(
         r#"[tables.users]
@@ -55,8 +63,11 @@ fields = [
 "#,
     );
     if email_active {
-        s.push_str("    { name = \"email\", type = \"TEXT\" },\n");
+        s.push_str(&format!(
+            "    {{ name = \"email\", type = \"TEXT\", null = \"{EMAIL_NULL_SENTINEL}\" }},\n"
+        ));
     }
+    s.push_str("    { name = \"active\", type = \"BOOLEAN\" },\n");
     s.push_str("]\n");
     s
 }
@@ -64,7 +75,9 @@ fields = [
 #[derive(Clone, Debug)]
 struct Row {
     name: String,
+    /// Either a real email or `EMAIL_NULL_SENTINEL` to mean "no value".
     email: String,
+    active: bool,
 }
 
 /// One simulated agent: a tempdir with `config.toml` and `users.csv` plus an
@@ -108,14 +121,17 @@ impl AgentSim {
 
     /// Serialize the in-memory model to `users.csv` so the next
     /// `Block::create` call observes the post-mutation state. The CSV
-    /// column set tracks `email_active`.
+    /// column set tracks `email_active`; `active` is always present.
     fn write_csv(&self) -> Result<()> {
         let mut content = String::new();
         for (id, row) in &self.model {
             if self.email_active {
-                content.push_str(&format!("{},{},{}\n", id, row.name, row.email));
+                content.push_str(&format!(
+                    "{},{},{},{}\n",
+                    id, row.name, row.email, row.active
+                ));
             } else {
-                content.push_str(&format!("{},{}\n", id, row.name));
+                content.push_str(&format!("{},{},{}\n", id, row.name, row.active));
             }
         }
         std::fs::write(self.work_dir.join("users.csv"), content)
@@ -140,6 +156,7 @@ impl AgentSim {
                         Row {
                             name: random_name(rng),
                             email: random_email(rng),
+                            active: rng.random_bool(0.5),
                         },
                     );
                 }
@@ -154,12 +171,16 @@ impl AgentSim {
                     None => return,
                 };
                 let mut changed = false;
-                if rng.random_bool(0.6) {
+                if rng.random_bool(0.5) {
                     row.name = random_name(rng);
                     changed = true;
                 }
-                if rng.random_bool(0.6) || !changed {
+                if rng.random_bool(0.5) {
                     row.email = random_email(rng);
+                    changed = true;
+                }
+                if rng.random_bool(0.5) || !changed {
+                    row.active = rng.random_bool(0.5);
                 }
             }
             MutationKind::Delete => {
@@ -245,8 +266,14 @@ fn random_name(rng: &mut StdRng) -> String {
 }
 
 /// Pick an email from a small pool, for the same reason as `random_name`.
+/// Occasionally emit the null sentinel instead of a real email so the
+/// CSV exercises the leech2 null-sentinel path; leech2 maps it to
+/// `Value::Null` and the resulting SQL writes NULL to the hub.
 /// No commas or quotes appear in the output, keeping CSV comparisons literal.
 fn random_email(rng: &mut StdRng) -> String {
+    if rng.random_bool(0.2) {
+        return EMAIL_NULL_SENTINEL.to_string();
+    }
     const DOMAINS: &[&str] = &["example.com", "test.org", "leech2.dev"];
     let user = random_name(rng);
     let domain = DOMAINS
@@ -337,22 +364,30 @@ impl HubSim {
     /// syntactically valid SQL that produces the wrong final state still
     /// mismatches here.
     ///
+    /// `active::text` casts the boolean to "true"/"false" (psql's default
+    /// CSV format would render "t"/"f", which doesn't match what the agent
+    /// wrote in the source CSV).
+    ///
     /// When `email_active` is false, the hub's email column should be NULL
     /// for every row (the most recent ship was a TRUNCATE+INSERT that did
-    /// not name the column). psql renders NULL as the empty string in CSV
-    /// mode, so the expected row formats with a trailing empty field.
+    /// not name the column). When the agent emitted `EMAIL_NULL_SENTINEL`
+    /// for a particular row, leech2 wrote NULL for that cell. psql renders
+    /// NULL as the empty string in CSV mode, so the expected row formats
+    /// with an empty email field in both cases.
     fn assert_matches(&self, agent: &AgentSim) -> Result<()> {
-        let csv = self.psql("SELECT id, name, email FROM \"users\" ORDER BY id;\n")?;
+        let csv =
+            self.psql("SELECT id, name, email, active::text FROM \"users\" ORDER BY id;\n")?;
         let hub_rows: Vec<String> = csv.lines().map(|s| s.to_string()).collect();
         let want_rows: Vec<String> = agent
             .model
             .iter()
             .map(|(id, r)| {
-                if agent.email_active {
-                    format!("{},{},{}", id, r.name, r.email)
+                let email = if agent.email_active && r.email != EMAIL_NULL_SENTINEL {
+                    r.email.as_str()
                 } else {
-                    format!("{},{},", id, r.name)
-                }
+                    ""
+                };
+                format!("{},{},{},{}", id, r.name, email, r.active)
             })
             .collect();
         if hub_rows != want_rows {
