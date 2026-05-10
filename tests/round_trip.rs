@@ -188,29 +188,32 @@ impl AgentSim {
                     self.model.remove(&id);
                 }
             }
-            MutationKind::SchemaChange => {
-                self.email_active = !self.email_active;
-                if self.email_active {
-                    // Re-adding the column: backfill fresh values for all
-                    // existing rows so the next CSV write has something to
-                    // put in the new column.
-                    for row in self.model.values_mut() {
-                        row.email = random_email(rng);
-                    }
-                }
-                self.write_config()
-                    .expect("rewrite config.toml after schema change");
-                log::info!(
-                    "Schema change: email is now {}",
-                    if self.email_active {
-                        "active"
-                    } else {
-                        "inactive"
-                    }
-                );
-            }
             MutationKind::NoOp => {}
         }
+    }
+
+    /// Toggle `email_active` and rewrite `config.toml`. When the column is
+    /// being re-added, backfill fresh email values for every existing row
+    /// so the next CSV write has something to put in the new column.
+    /// Triggers leech2's layout-fallback path on the next consolidation
+    /// that crosses this boundary.
+    fn toggle_email_active(&mut self, rng: &mut StdRng) {
+        self.email_active = !self.email_active;
+        if self.email_active {
+            for row in self.model.values_mut() {
+                row.email = random_email(rng);
+            }
+        }
+        self.write_config()
+            .expect("rewrite config.toml after schema change");
+        log::info!(
+            "Schema change: email is now {}",
+            if self.email_active {
+                "active"
+            } else {
+                "inactive"
+            }
+        );
     }
 
     /// Pick an id from `1..1000` that is not currently in the model, or
@@ -228,19 +231,15 @@ enum MutationKind {
     Insert,
     Update,
     Delete,
-    SchemaChange,
     NoOp,
 }
 
 /// Mutation weights matching the plan's table. Inserts and updates dominate
 /// so the model grows and consecutive same-row changes are likely.
-/// Schema changes are kept rare so the test mostly exercises the delta
-/// path, with occasional excursions through the layout-fallback path.
 const MUTATION_WEIGHTS: &[(MutationKind, u32)] = &[
     (MutationKind::Insert, 4),
     (MutationKind::Update, 4),
     (MutationKind::Delete, 2),
-    (MutationKind::SchemaChange, 1),
     (MutationKind::NoOp, 1),
 ];
 
@@ -450,8 +449,20 @@ fn round_trip_single_agent() {
     let hub = HubSim::new(format!("rt_{seed}"));
     hub.bootstrap().unwrap();
 
+    // Pick two distinct rounds for schema changes so the test exercises
+    // both removing the column and re-adding it (since email starts
+    // active, the first toggle removes and the second re-adds).
+    let schema_change_rounds: std::collections::HashSet<usize> = (0..ROUNDS)
+        .choose_multiple(&mut rng, 2)
+        .into_iter()
+        .collect();
+    log::info!("Scheduled schema changes at rounds {schema_change_rounds:?}");
+
     let mut last_known = GENESIS_HASH.to_string();
     for round in 0..ROUNDS {
+        if schema_change_rounds.contains(&round) {
+            agent.toggle_email_active(&mut rng);
+        }
         let mutations = rng.random_range(0..=MUTATIONS_PER_BLOCK_MAX);
         for _ in 0..mutations {
             agent.mutate(&mut rng);
