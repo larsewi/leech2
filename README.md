@@ -96,11 +96,11 @@ name = "price"
 type = "NUMBER"
 ```
 
-| Type      | SQL literal    | Notes                                                                    |
-| --------- | -------------- | ------------------------------------------------------------------------ |
-| `TEXT`    | `'value'`      | Single quotes, escaped                                                   |
-| `NUMBER`  | `42` / `3.14`  | Stored as `f64`; integers above 2^53 lose precision                      |
-| `BOOLEAN` | `TRUE`/`FALSE` | Accepts the exact strings `true` / `false` (case-sensitive); see below   |
+| Type      | SQL literal    | Notes                                                                  |
+| --------- | -------------- | ---------------------------------------------------------------------- |
+| `TEXT`    | `'value'`      | Single quotes, escaped                                                 |
+| `NUMBER`  | `42` / `3.14`  | Stored as `f64`; integers above 2^53 lose precision                    |
+| `BOOLEAN` | `TRUE`/`FALSE` | Accepts the exact strings `true` / `false` (case-sensitive); see below |
 
 Fields can have an optional `null` sentinel that specifies which CSV value
 should be emitted as SQL `NULL` instead of a typed literal. This is not allowed
