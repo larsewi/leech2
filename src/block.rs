@@ -58,7 +58,7 @@ fn load_decode<T: Message + Default>(work_dir: &Path, hash: &str, kind: &str) ->
         .with_context(|| format!("failed to load block '{:.7}...'", hash))?;
     let value = T::decode(data.as_slice())
         .with_context(|| format!("failed to decode {} '{:.7}...'", kind, hash))?;
-    log::info!("Loaded {} '{:.7}...'", kind, hash);
+    log::debug!("Loaded {} '{:.7}...'", kind, hash);
     Ok(value)
 }
 
