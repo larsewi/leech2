@@ -373,6 +373,7 @@ impl HubSim {
     /// the SQL is syntactically invalid or violates a constraint — both are
     /// bugs the test is designed to catch.
     fn apply(&self, sql: &str) -> Result<()> {
+        log::info!("Applying SQL to schema '{}':\n{sql}", self.schema);
         self.psql(sql).map(|_| ())
     }
 
