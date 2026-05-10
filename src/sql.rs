@@ -189,7 +189,7 @@ impl InjectedField {
 }
 
 /// Double-quote a SQL identifier, escaping embedded double quotes.
-fn quote_identifier(name: &str) -> String {
+pub fn quote_identifier(name: &str) -> String {
     format!("\"{}\"", name.replace('"', "\"\""))
 }
 

@@ -1,0 +1,47 @@
+name: Round-trip
+
+on:
+  pull_request:
+    branches: ["master"]
+  push:
+    branches: ["master"]
+  workflow_dispatch:
+    inputs:
+      seed:
+        description: "Seed for the mutation generator (leave blank for the default)"
+        required: false
+        type: string
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  round-trip:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: leech2
+          POSTGRES_PASSWORD: leech2
+          POSTGRES_DB: leech2
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGHOST: localhost
+      PGUSER: leech2
+      PGPASSWORD: leech2
+      PGDATABASE: leech2
+      ROUND_TRIP_SEED: ${{ inputs.seed }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install protobuf compiler
+        uses: ./.github/actions/setup-protoc
+      - name: Install postgresql-client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Run round-trip test
+        run: cargo test --release --test round_trip -- --include-ignored --nocapture
