@@ -259,11 +259,10 @@ impl Delta {
         } else if self.deletes.contains_key(&key) {
             // Rule 11: update after delete → error
             bail!("rule 11: key {:?} deleted in parent, updated in child", key);
-        } else if let Some((merged_old, merged_new)) = self.updates.get_mut(&key) {
-            // Rule 15: combine parent and child updates per column. Keep
-            // the earliest "before" and the latest "after" for each
+        } else if let Some((mut merged_old, mut merged_new)) = self.updates.remove(&key) {
+            // Rules 15a/15b: combine parent and child updates per column.
+            // Keep the earliest "before" and the latest "after" for each
             // column.
-            log::trace!("Rule 15: update + update merged for key {:?}", key);
             if merged_old.len() != merged_new.len()
                 || merged_old.len() != child_old.len()
                 || merged_old.len() != child_new.len()
@@ -294,6 +293,17 @@ impl Delta {
                     // Neither changed: nothing to do.
                     (false, false) => {}
                 }
+            }
+            if merged_old != merged_new {
+                // Rule 15a: net change is non-zero, keep the merged update.
+                log::trace!("Rule 15a: update + update merged for key {:?}", key);
+                self.updates.insert(key, (merged_old, merged_new));
+            } else {
+                // Rule 15b: parent's update was cancelled by the child
+                // (e.g. column went A→B then B→A). Drop the entry rather
+                // than emit a degenerate update; the SQL layer rejects
+                // updates with no SET assignments.
+                log::trace!("Rule 15b: update + update cancel out for key {:?}", key);
             }
         } else {
             // Rule 3: pass through
@@ -1018,7 +1028,48 @@ mod tests {
         assert!(merged_delta.is_err());
     }
 
-    // Rule 15: update then update → update(old1 → new2)
+    // Rule 15b: parent A→B then child B→A cancels — no entry remains.
+    #[test]
+    fn test_merge_rule15b_update_then_update_cancels() {
+        let mut parent_delta = empty_delta();
+        parent_delta.updates.insert(
+            text_values(&["1"]),
+            (text_values(&["Alice"]), text_values(&["Alicia"])),
+        );
+        let mut child_delta = empty_delta();
+        child_delta.updates.insert(
+            text_values(&["1"]),
+            (text_values(&["Alicia"]), text_values(&["Alice"])),
+        );
+
+        parent_delta.merge(child_delta).unwrap();
+
+        assert!(parent_delta.updates.is_empty());
+        assert!(parent_delta.inserts.is_empty());
+        assert!(parent_delta.deletes.is_empty());
+    }
+
+    // Rule 15b multi-column: each column's net change cancels independently
+    // → no entry remains.
+    #[test]
+    fn test_merge_rule15b_multi_column_cancels() {
+        let mut parent_delta = empty_delta();
+        parent_delta.updates.insert(
+            text_values(&["1"]),
+            (text_values(&["a", "b"]), text_values(&["x", "y"])),
+        );
+        let mut child_delta = empty_delta();
+        child_delta.updates.insert(
+            text_values(&["1"]),
+            (text_values(&["x", "y"]), text_values(&["a", "b"])),
+        );
+
+        parent_delta.merge(child_delta).unwrap();
+
+        assert!(parent_delta.updates.is_empty());
+    }
+
+    // Rule 15a: update then update → update(old1 → new2)
     #[test]
     fn test_merge_rule15_update_then_update() {
         let mut parent_delta = empty_delta();

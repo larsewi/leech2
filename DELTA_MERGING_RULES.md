@@ -167,14 +167,21 @@ inconsistent.
 
 | Rule | Parent                 | Child                  | Result                   |
 | ---- | ---------------------- | ---------------------- | ------------------------ |
-| 15   | `update(key, old → X)` | `update(key, X → new)` | `update(key, old → new)` |
+| 15a  | `update(key, old → X)` | `update(key, X → new)` | `update(key, old → new)` |
+| 15b  | `update(key, val → X)` | `update(key, X → val)` |                          |
 
 When two updates are stacked, the result is an update from the first update's
 old value to the second update's new value. The intermediate value (`X`) does
-not matter for the result.
+not matter for the result. If, after the merge, every column in the resulting
+update would have an unchanged value (rule 15b), the update is dropped
+entirely — emitting it would produce SQL with an empty `SET` clause.
 
-**Example:** Parent updates `(1, Alice)` to `(1, Alicia)`. Child updates key
-`1` from `Alicia` to `Ali`. Result: `update(1, Alice → Ali)`.
+**Example (15a):** Parent updates `(1, Alice)` to `(1, Alicia)`. Child updates
+key `1` from `Alicia` to `Ali`. Result: `update(1, Alice → Ali)`.
+
+**Example (15b):** Parent updates row `1`'s name from `Alice` to `Alicia`.
+Child updates the same row's name from `Alicia` back to `Alice`. The net
+effect is no change; the update is dropped.
 
 ---
 
@@ -198,6 +205,10 @@ not matter for the result.
 | 13   | `update` | `insert`  | `error`             |
 | 14a  | `update` | `delete=` | `delete(old)`       |
 | 14b  | `update` | `delete≠` | `error`             |
-| 15   | `update` | `update`  | `update(old → new)` |
+| 15a  | `update` | `update≠` | `update(old → new)` |
+| 15b  | `update` | `update=` |                     |
 
-`=` means values match, `≠` means values differ.
+`=` means values match, `≠` means values differ. For rule 15, the
+comparison is between the parent's `old` and the child's `new`: matching
+means the net effect across the two updates is no change, so the entry
+is dropped.
