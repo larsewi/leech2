@@ -474,7 +474,7 @@ struct AgentRun {
 fn setup_agents(rng: &mut StdRng, base_dir: &Path, seed: u64) -> Vec<AgentRun> {
     let mut agents = Vec::with_capacity(NUM_AGENTS);
     for i in 0..NUM_AGENTS {
-        let name = format!("agent{}", char::from(b'a' + i as u8));
+        let name = format!("agent_{}", char::from(b'a' + i as u8));
         let agent_dir = base_dir.join(&name);
         std::fs::create_dir_all(&agent_dir).unwrap();
         let agent = AgentSim::new(&agent_dir).unwrap();
