@@ -550,7 +550,7 @@ impl Config {
 
         config.validate()?;
 
-        log::info!("Initialized config with {} tables", config.tables.len());
+        log::debug!("Initialized config with {} tables", config.tables.len());
         Ok(config)
     }
 }
