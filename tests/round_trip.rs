@@ -35,7 +35,6 @@ const NUM_AGENTS: usize = 3;
 const ROUNDS: usize = 100;
 const MUTATIONS_PER_BLOCK_MAX: usize = 10;
 const SHIP_PROBABILITY: f64 = 0.3;
-const DEFAULT_SEED: u64 = 0xdead_beef_cafe_f00d;
 
 /// CSV value treated as SQL NULL by the `email` field's `null` sentinel.
 /// When the agent emits this string in the email column, leech2 maps it
@@ -438,17 +437,22 @@ impl HubSim {
 }
 
 /// Pick the RNG seed: parse `ROUND_TRIP_SEED` if it's set to a valid `u64`,
-/// otherwise use `DEFAULT_SEED`. The CI workflow forwards its optional
-/// `seed` input through this env var; an unset or blank value is treated
-/// as "use the default". A non-empty but unparsable value panics so a
-/// typo doesn't silently run a different seed than the user asked for.
+/// otherwise generate a fresh random seed (the thread RNG is initialized
+/// from OS entropy on first use, so each test run gets a different value).
+/// The CI workflow forwards its optional `seed` input through this env
+/// var; an unset or blank value means "give me a random seed for this
+/// run". A non-empty but unparsable value panics so a typo doesn't
+/// silently run a different seed than the user asked for.
+///
+/// The chosen seed is printed at the start of the test so a failed run
+/// can be reproduced by re-running with `ROUND_TRIP_SEED=<that value>`.
 fn read_seed() -> u64 {
     let Ok(raw) = env::var("ROUND_TRIP_SEED") else {
-        return DEFAULT_SEED;
+        return rand::random();
     };
     let trimmed = raw.trim();
     if trimmed.is_empty() {
-        return DEFAULT_SEED;
+        return rand::random();
     }
     trimmed
         .parse::<u64>()
