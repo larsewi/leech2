@@ -1,0 +1,16 @@
+name: Cargo cache
+description: Cache the cargo registry, git checkouts, and target/ directory across workflows. Uses the same key everywhere so all workflows share a single cache.
+
+runs:
+  using: composite
+  steps:
+    - name: Cache cargo registry, git, and target
+      uses: actions/cache@v5
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-
