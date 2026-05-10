@@ -12,7 +12,7 @@ pub fn load(work_dir: &Path) -> Result<String> {
         Some(data) => String::from_utf8(data)?.trim().to_string(),
         None => GENESIS_HASH.to_string(),
     };
-    log::info!("Current head is '{:.7}...'", hash);
+    log::debug!("Current head is '{:.7}...'", hash);
     Ok(hash)
 }
 

@@ -20,6 +20,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
+      - name: Cache cargo
+        uses: ./.github/actions/cargo-cache
+        with:
+          profile: debug
       - name: Install protobuf compiler
         uses: ./.github/actions/setup-protoc
       - name: Build
