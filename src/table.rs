@@ -90,7 +90,7 @@ impl Table {
         log::debug!("Parsing csv file '{}'...", path.display());
         let table = Self::parse_csv(name, config, filters, reader)?;
 
-        log::info!(
+        log::debug!(
             "Loaded table '{}' with {} records",
             name,
             table.records.len()
