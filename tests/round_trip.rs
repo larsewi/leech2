@@ -26,6 +26,7 @@ use rand::seq::{IndexedRandom, IteratorRandom};
 use rand::{Rng, SeedableRng};
 
 const ROUNDS: usize = 50;
+const MUTATIONS_PER_BLOCK_MAX: usize = 10;
 const SHIP_PROBABILITY: f64 = 0.3;
 const DEFAULT_SEED: u64 = 0xdead_beef_cafe_f00d;
 
@@ -370,7 +371,10 @@ fn round_trip_phase1_single_agent() {
 
     let mut last_known = GENESIS_HASH.to_string();
     for round in 0..ROUNDS {
-        agent.mutate(&mut rng);
+        let mutations = rng.random_range(0..=MUTATIONS_PER_BLOCK_MAX);
+        for _ in 0..mutations {
+            agent.mutate(&mut rng);
+        }
         agent.write_csv().unwrap();
         let head = Block::create(&config).unwrap();
 
