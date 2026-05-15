@@ -18,13 +18,7 @@ Prefix with `LEECH2_LOG=<level>` to enable logging (`error`, `warn`, `info`,
 
 ## Terminology
 
-- **Agent** — an application that creates blocks and produces patches. Agents run
-  on the data-source side, reading CSV files and building the block chain.
-- **Hub** — an application that converts patches to SQL and applies them to the
-  target database.
-- **Genesis** — the zero hash representing the start of the chain before any
-  blocks exist. When the reference point is genesis, a full state snapshot is
-  produced for all tables.
+See [TERMINOLOGY.md](TERMINOLOGY.md) for the project's vocabulary.
 
 ## Core architecture
 
