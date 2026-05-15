@@ -110,9 +110,10 @@ against its full state and picks whichever is smaller. This means a single patch
 can contain a mix of delta tables and full state tables.
 
 The hub validates each patch against its own config at SQL-generation
-time. `delta.fields`/`table.fields` (carried per-table on the wire) must
-match the hub's field set in count and names, and the wire's primary-key
-prefix must equal the hub's primary-key set. Each cell's `Cell` variant
+time. The wire's `primary_key_names` and `subsidiary_value_names` lists
+(carried per-table on the `Delta`/`Table` message) must together match
+the hub's field set in count and names, and the wire's primary-key set
+must equal the hub's primary-key set. Each cell's `Cell` variant
 is then checked against the hub's declared `sql_type`, and `NULL` is only
 accepted on fields with a configured null sentinel. Together these
 defend against agents that misrepresent the schema or emit values of the

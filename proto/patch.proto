@@ -22,7 +22,4 @@ message Patch {
   map<string, delta.Delta> deltas = 5;
   // Tables requiring a full state snapshot (key = table name).
   map<string, table.Table> states = 6;
-  // Tag 7 was a per-table field hash for agent-hub schema validation;
-  // replaced by per-cell type and nullability checks at SQL-rendering time.
-  reserved 7;
 }
