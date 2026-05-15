@@ -367,17 +367,17 @@ impl Patch {
     }
 
     /// Add or overwrite an injected field on this patch. Validates that the
-    /// name is non-empty and the sql_type is one of TEXT, NUMBER, or BOOLEAN.
+    /// name is non-empty and the kind is one of TEXT, NUMBER, or BOOLEAN.
     /// If a field with the same name already exists (whether from static
     /// config or a previous inject_field call), its value is replaced; a
     /// warning is logged when the replacement actually differs from the
     /// existing value.
-    pub fn inject_field(&mut self, name: &str, value: &str, sql_type: &str) -> Result<()> {
+    pub fn inject_field(&mut self, name: &str, value: &str, kind: &str) -> Result<()> {
         if name.is_empty() {
             bail!("inject_field: name must not be empty");
         }
 
-        let kind = Kind::from_config(sql_type).context("inject_field: invalid sql_type")?;
+        let kind = Kind::from_config(kind).context("inject_field: invalid kind")?;
         let parsed = parse_typed_cell(value, kind).context("inject_field: invalid value")?;
         let new_value: crate::proto::cell::Cell = parsed.into();
 
@@ -491,7 +491,7 @@ mod tests {
     fn test_inject_field_rejects_invalid_type() {
         let mut patch = empty_patch();
         let err = patch.inject_field("foo", "bar", "BOGUS").unwrap_err();
-        assert!(err.to_string().contains("invalid sql_type"));
+        assert!(err.to_string().contains("invalid kind"));
     }
 
     #[test]

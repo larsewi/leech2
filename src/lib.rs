@@ -294,7 +294,7 @@ pub unsafe extern "C" fn lch_patch_to_sql(
 /// # Safety
 /// `config` must be a valid, non-null pointer returned by `lch_init`.
 /// `in_buf` must be a valid, non-null pointer to `in_len` bytes.
-/// `name`, `value`, and `sql_type` must be valid, non-null, null-terminated C strings.
+/// `name`, `value`, and `kind` must be valid, non-null, null-terminated C strings.
 /// `out_buf` and `out_len` must be valid, non-null pointers.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn lch_patch_inject(
@@ -303,7 +303,7 @@ pub unsafe extern "C" fn lch_patch_inject(
     in_len: usize,
     name: *const c_char,
     value: *const c_char,
-    sql_type: *const c_char,
+    kind: *const c_char,
     out_buf: *mut *mut u8,
     out_len: *mut usize,
 ) -> i32 {
@@ -327,7 +327,7 @@ pub unsafe extern "C" fn lch_patch_inject(
         let Some(value) = (unsafe { cstr_arg("lch_patch_inject", "value", value) }) else {
             return FAILURE;
         };
-        let Some(sql_type) = (unsafe { cstr_arg("lch_patch_inject", "sql_type", sql_type) }) else {
+        let Some(kind) = (unsafe { cstr_arg("lch_patch_inject", "kind", kind) }) else {
             return FAILURE;
         };
 
@@ -342,7 +342,7 @@ pub unsafe extern "C" fn lch_patch_inject(
             }
         };
 
-        if let Err(e) = patch.inject_field(name, value, sql_type) {
+        if let Err(e) = patch.inject_field(name, value, kind) {
             log::error!("lch_patch_inject(): {:#}", e);
             return FAILURE;
         }

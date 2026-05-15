@@ -76,9 +76,9 @@ enum PatchCmd {
         name: String,
         /// Value
         value: String,
-        /// SQL type: TEXT, NUMBER, or BOOLEAN
+        /// Kind: TEXT, NUMBER, or BOOLEAN
         #[arg(default_value = "TEXT")]
-        sql_type: String,
+        kind: String,
     },
     /// Mark the current patch as applied (saves head hash to REPORTED)
     Applied,
@@ -266,9 +266,9 @@ fn cmd_patch_sql(config: &Config) -> Result<String> {
     }
 }
 
-fn cmd_patch_inject(config: &Config, name: &str, value: &str, sql_type: &str) -> Result<()> {
+fn cmd_patch_inject(config: &Config, name: &str, value: &str, kind: &str) -> Result<()> {
     let mut patch = load_patch(config)?;
-    patch.inject_field(name, value, sql_type)?;
+    patch.inject_field(name, value, kind)?;
 
     let encoded = leech2::wire::encode_patch(config, &patch)?;
     leech2::storage::store(&config.work_dir, PATCH_FILE, &encoded)?;
@@ -360,12 +360,8 @@ fn run(cli: Cli) -> Result<()> {
                     let output = cmd_patch_sql(&config)?;
                     print_with_pager(&output);
                 }
-                PatchCmd::Inject {
-                    name,
-                    value,
-                    sql_type,
-                } => {
-                    cmd_patch_inject(&config, name, value, sql_type)?;
+                PatchCmd::Inject { name, value, kind } => {
+                    cmd_patch_inject(&config, name, value, kind)?;
                 }
                 PatchCmd::Applied => {
                     cmd_patch_applied(&config)?;

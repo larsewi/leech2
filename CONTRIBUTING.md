@@ -114,7 +114,7 @@ time. The wire's `primary_key_names` and `subsidiary_value_names` lists
 (carried per-table on the `Delta`/`Table` message) must together match
 the hub's field set in count and names, and the wire's primary-key set
 must equal the hub's primary-key set. Each cell's `Cell` variant
-is then checked against the hub's declared `sql_type`, and `NULL` is only
+is then checked against the hub's declared `kind`, and `NULL` is only
 accepted on fields with a configured null sentinel. Together these
 defend against agents that misrepresent the schema or emit values of the
 wrong type. Sentinel strings themselves are agent-local CSV parsing rules
