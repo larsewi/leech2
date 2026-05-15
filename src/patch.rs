@@ -9,6 +9,7 @@ use prost::Message;
 use prost_types::Timestamp;
 
 use crate::block::Block;
+use crate::cell::{Kind, parse_typed_cell};
 use crate::config::{Config, InjectedFieldConfig};
 use crate::delta::Delta;
 use crate::head;
@@ -18,13 +19,12 @@ use crate::proto::state::State as ProtoState;
 use crate::proto::table::Table as ProtoTable;
 use crate::utils;
 use crate::utils::GENESIS_HASH;
-use crate::value::{ValueKind, parse_typed_value};
 
 impl TryFrom<&InjectedFieldConfig> for Field {
     type Error = anyhow::Error;
 
     fn try_from(config: &InjectedFieldConfig) -> Result<Self> {
-        let value = parse_typed_value(&config.value, config.value_kind)
+        let value = parse_typed_cell(&config.value, config.kind)
             .with_context(|| format!("injected field '{}'", config.name))?;
         Ok(Field {
             name: config.name.clone(),
@@ -377,9 +377,9 @@ impl Patch {
             bail!("inject_field: name must not be empty");
         }
 
-        let kind = ValueKind::from_config(sql_type).context("inject_field: invalid sql_type")?;
-        let parsed = parse_typed_value(value, kind).context("inject_field: invalid value")?;
-        let new_value: crate::proto::cell::Value = parsed.into();
+        let kind = Kind::from_config(sql_type).context("inject_field: invalid sql_type")?;
+        let parsed = parse_typed_cell(value, kind).context("inject_field: invalid value")?;
+        let new_value: crate::proto::cell::Cell = parsed.into();
 
         if let Some(existing) = self.injected_fields.iter_mut().find(|f| f.name == name) {
             if existing.value.as_ref() != Some(&new_value) {
@@ -408,7 +408,7 @@ impl Patch {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::value::Value;
+    use crate::cell::Cell;
 
     fn empty_patch() -> Patch {
         Patch {
@@ -421,8 +421,8 @@ mod tests {
         }
     }
 
-    fn injected_value(field: &Field) -> Value {
-        Value::try_from(field.value.as_ref().unwrap()).unwrap()
+    fn injected_value(field: &Field) -> Cell {
+        Cell::try_from(field.value.as_ref().unwrap()).unwrap()
     }
 
     #[test]
@@ -431,10 +431,7 @@ mod tests {
         patch.inject_field("hostkey", "abc", "TEXT").unwrap();
         assert_eq!(patch.injected_fields.len(), 1);
         assert_eq!(patch.injected_fields[0].name, "hostkey");
-        assert_eq!(
-            injected_value(&patch.injected_fields[0]),
-            Value::from("abc")
-        );
+        assert_eq!(injected_value(&patch.injected_fields[0]), Cell::from("abc"));
     }
 
     #[test]
@@ -443,7 +440,7 @@ mod tests {
         patch.inject_field("count", "42", "NUMBER").unwrap();
         assert_eq!(
             injected_value(&patch.injected_fields[0]),
-            Value::Number(42.0)
+            Cell::Number(42.0)
         );
     }
 
@@ -453,7 +450,7 @@ mod tests {
         patch.inject_field("enabled", "true", "BOOLEAN").unwrap();
         assert_eq!(
             injected_value(&patch.injected_fields[0]),
-            Value::Boolean(true)
+            Cell::Boolean(true)
         );
     }
 
@@ -462,14 +459,14 @@ mod tests {
         let mut patch = empty_patch();
         patch.injected_fields.push(Field {
             name: "host".to_string(),
-            value: Some(Value::Number(1.0).into()),
+            value: Some(Cell::Number(1.0).into()),
         });
         patch.inject_field("host", "new-value", "TEXT").unwrap();
         assert_eq!(patch.injected_fields.len(), 1);
         assert_eq!(patch.injected_fields[0].name, "host");
         assert_eq!(
             injected_value(&patch.injected_fields[0]),
-            Value::from("new-value")
+            Cell::from("new-value")
         );
     }
 

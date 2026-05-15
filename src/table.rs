@@ -5,12 +5,12 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 
-use crate::config::{FieldConfig, FilterConfig, TableConfig};
-use crate::entry::decode_proto_records;
-use crate::value::{
-    DEFAULT_FALSE_SENTINEL, DEFAULT_TRUE_SENTINEL, Value, ValueKind, display_proto_values,
-    parse_boolean, parse_typed_value,
+use crate::cell::{
+    Cell, DEFAULT_FALSE_SENTINEL, DEFAULT_TRUE_SENTINEL, Kind, display_proto_cells, parse_boolean,
+    parse_typed_cell,
 };
+use crate::config::{FieldConfig, FilterConfig, TableConfig};
+use crate::record::decode_proto_records;
 
 type ProtoTable = crate::proto::table::Table;
 
@@ -27,14 +27,14 @@ pub struct Table {
     /// The names of all columns in the table, primary key columns first.
     pub fields: Vec<String>,
     /// Map from primary key values to subsidiary values.
-    pub records: HashMap<Vec<Value>, Vec<Value>>,
+    pub records: HashMap<Vec<Cell>, Vec<Cell>>,
 }
 
 impl TryFrom<ProtoTable> for Table {
     type Error = anyhow::Error;
 
     fn try_from(proto: ProtoTable) -> Result<Self> {
-        let records = decode_proto_records(proto.entries)?;
+        let records = decode_proto_records(proto.records)?;
         Ok(Table {
             fields: proto.fields,
             records,
@@ -44,10 +44,10 @@ impl TryFrom<ProtoTable> for Table {
 
 impl From<Table> for ProtoTable {
     fn from(table: Table) -> Self {
-        let entries = table.records.into_iter().map(Into::into).collect();
+        let records = table.records.into_iter().map(Into::into).collect();
         ProtoTable {
             fields: table.fields,
-            entries,
+            records,
         }
     }
 }
@@ -55,12 +55,12 @@ impl From<Table> for ProtoTable {
 impl fmt::Display for ProtoTable {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "[{}]", self.fields.join(", "))?;
-        for entry in &self.entries {
+        for record in &self.records {
             write!(
                 f,
                 "\n  ({}) {}",
-                display_proto_values(&entry.key),
-                display_proto_values(&entry.value)
+                display_proto_cells(&record.key),
+                display_proto_cells(&record.value)
             )?;
         }
         Ok(())
@@ -181,7 +181,7 @@ impl Table {
             .map(|(_, field)| field.name.clone())
             .collect();
 
-        let mut records: HashMap<Vec<Value>, Vec<Value>> = HashMap::new();
+        let mut records: HashMap<Vec<Cell>, Vec<Cell>> = HashMap::new();
 
         for (row_num, record) in reader.into_records().enumerate() {
             let record = record?;
@@ -217,12 +217,12 @@ impl Table {
 }
 
 /// For each `(column_index, field_config)` entry, pull the value at
-/// `column_index` out of `record` and parse it into a typed `Value`
+/// `column_index` out of `record` and parse it into a typed `Cell`
 /// according to `field_config`.
 fn parse_columns(
     record: &csv::StringRecord,
     columns: &[(usize, &FieldConfig)],
-) -> Result<Vec<Value>> {
+) -> Result<Vec<Cell>> {
     let mut out = Vec::with_capacity(columns.len());
     for &(column_index, field) in columns {
         out.push(parse_field_value(&record[column_index], field)?);
@@ -230,18 +230,18 @@ fn parse_columns(
     Ok(out)
 }
 
-/// Parse a single CSV value into a `Value` based on its field config.
-/// Values matching the `null` sentinel become `Value::Null`; otherwise the
+/// Parse a single CSV value into a `Cell` based on its field config.
+/// Values matching the `null` sentinel become `Cell::Null`; otherwise the
 /// value is parsed by its declared kind (`TEXT`/`NUMBER`/`BOOLEAN`). For
 /// BOOLEAN fields the per-field `true` / `false` sentinels are honoured,
 /// falling back to the strict defaults `"true"` / `"false"`.
-fn parse_field_value(value: &str, field: &FieldConfig) -> Result<Value> {
+fn parse_field_value(value: &str, field: &FieldConfig) -> Result<Cell> {
     if let Some(sentinel) = &field.null_sentinel
         && value == sentinel
     {
-        return Ok(Value::Null);
+        return Ok(Cell::Null);
     }
-    if let ValueKind::Boolean = field.value_kind {
+    if let Kind::Boolean = field.kind {
         let true_sentinel = field
             .true_sentinel
             .as_deref()
@@ -251,10 +251,10 @@ fn parse_field_value(value: &str, field: &FieldConfig) -> Result<Value> {
             .as_deref()
             .unwrap_or(DEFAULT_FALSE_SENTINEL);
         return parse_boolean(value, true_sentinel, false_sentinel)
-            .map(Value::Boolean)
+            .map(Cell::Boolean)
             .with_context(|| format!("field '{}'", field.name));
     }
-    parse_typed_value(value, field.value_kind).with_context(|| format!("field '{}'", field.name))
+    parse_typed_cell(value, field.kind).with_context(|| format!("field '{}'", field.name))
 }
 
 #[cfg(test)]
@@ -484,13 +484,13 @@ mod tests {
 
     fn make_typed_field(
         name: &str,
-        value_kind: ValueKind,
+        kind: Kind,
         primary_key: bool,
         null_sentinel: Option<&str>,
     ) -> FieldConfig {
         FieldConfig {
             name: name.to_string(),
-            value_kind,
+            kind,
             primary_key,
             null_sentinel: null_sentinel.map(str::to_string),
             ..Default::default()
@@ -501,9 +501,9 @@ mod tests {
     fn test_parse_csv_parses_numbers() {
         let config = make_config(
             vec![
-                make_typed_field("id", ValueKind::Number, true, None),
-                make_typed_field("count", ValueKind::Number, false, None),
-                make_typed_field("name", ValueKind::Text, false, None),
+                make_typed_field("id", Kind::Number, true, None),
+                make_typed_field("count", Kind::Number, false, None),
+                make_typed_field("name", Kind::Text, false, None),
             ],
             true,
         );
@@ -512,13 +512,13 @@ mod tests {
 
         // "0.0" parses to 0.0; "1e2" parses to 100.0
         assert_eq!(
-            table.records.get(&vec![Value::Number(0.0)]),
-            Some(&vec![Value::Number(100.0), "Alice".into()])
+            table.records.get(&vec![Cell::Number(0.0)]),
+            Some(&vec![Cell::Number(100.0), "Alice".into()])
         );
         // "+5" parses to 5.0; "1.10" parses to 1.1
         assert_eq!(
-            table.records.get(&vec![Value::Number(5.0)]),
-            Some(&vec![Value::Number(1.1), "Bob".into()])
+            table.records.get(&vec![Cell::Number(5.0)]),
+            Some(&vec![Cell::Number(1.1), "Bob".into()])
         );
     }
 
@@ -526,23 +526,23 @@ mod tests {
     fn test_parse_csv_respects_null_sentinel_on_number() {
         let config = make_config(
             vec![
-                make_typed_field("id", ValueKind::Number, true, None),
-                make_typed_field("count", ValueKind::Number, false, Some("N/A")),
+                make_typed_field("id", Kind::Number, true, None),
+                make_typed_field("count", Kind::Number, false, Some("N/A")),
             ],
             true,
         );
         let reader = Table::test_reader("id,count\n1,N/A\n2,3.0\n", true);
         let table = Table::parse_csv("t", &config, &FilterConfig::default(), reader).unwrap();
 
-        // Sentinel becomes Value::Null, even though "N/A" is not a number.
+        // Sentinel becomes Cell::Null, even though "N/A" is not a number.
         assert_eq!(
-            table.records.get(&vec![Value::Number(1.0)]),
-            Some(&vec![Value::Null])
+            table.records.get(&vec![Cell::Number(1.0)]),
+            Some(&vec![Cell::Null])
         );
         // Non-sentinel parses as a number.
         assert_eq!(
-            table.records.get(&vec![Value::Number(2.0)]),
-            Some(&vec![Value::Number(3.0)])
+            table.records.get(&vec![Cell::Number(2.0)]),
+            Some(&vec![Cell::Number(3.0)])
         );
     }
 
@@ -550,8 +550,8 @@ mod tests {
     fn test_parse_csv_parses_booleans_with_default_sentinels() {
         let config = make_config(
             vec![
-                make_typed_field("id", ValueKind::Number, true, None),
-                make_typed_field("active", ValueKind::Boolean, false, None),
+                make_typed_field("id", Kind::Number, true, None),
+                make_typed_field("active", Kind::Boolean, false, None),
             ],
             true,
         );
@@ -559,12 +559,12 @@ mod tests {
         let table = Table::parse_csv("t", &config, &FilterConfig::default(), reader).unwrap();
 
         assert_eq!(
-            table.records.get(&vec![Value::Number(1.0)]),
-            Some(&vec![Value::Boolean(true)])
+            table.records.get(&vec![Cell::Number(1.0)]),
+            Some(&vec![Cell::Boolean(true)])
         );
         assert_eq!(
-            table.records.get(&vec![Value::Number(2.0)]),
-            Some(&vec![Value::Boolean(false)])
+            table.records.get(&vec![Cell::Number(2.0)]),
+            Some(&vec![Cell::Boolean(false)])
         );
     }
 
@@ -572,8 +572,8 @@ mod tests {
     fn test_parse_csv_default_boolean_sentinels_are_strict() {
         let config = make_config(
             vec![
-                make_typed_field("id", ValueKind::Number, true, None),
-                make_typed_field("active", ValueKind::Boolean, false, None),
+                make_typed_field("id", Kind::Number, true, None),
+                make_typed_field("active", Kind::Boolean, false, None),
             ],
             true,
         );
@@ -585,23 +585,23 @@ mod tests {
 
     #[test]
     fn test_parse_csv_respects_custom_boolean_sentinels() {
-        let mut field = make_typed_field("active", ValueKind::Boolean, false, None);
+        let mut field = make_typed_field("active", Kind::Boolean, false, None);
         field.true_sentinel = Some("Y".to_string());
         field.false_sentinel = Some("N".to_string());
         let config = make_config(
-            vec![make_typed_field("id", ValueKind::Number, true, None), field],
+            vec![make_typed_field("id", Kind::Number, true, None), field],
             true,
         );
         let reader = Table::test_reader("id,active\n1,Y\n2,N\n", true);
         let table = Table::parse_csv("t", &config, &FilterConfig::default(), reader).unwrap();
 
         assert_eq!(
-            table.records.get(&vec![Value::Number(1.0)]),
-            Some(&vec![Value::Boolean(true)])
+            table.records.get(&vec![Cell::Number(1.0)]),
+            Some(&vec![Cell::Boolean(true)])
         );
         assert_eq!(
-            table.records.get(&vec![Value::Number(2.0)]),
-            Some(&vec![Value::Boolean(false)])
+            table.records.get(&vec![Cell::Number(2.0)]),
+            Some(&vec![Cell::Boolean(false)])
         );
     }
 
@@ -609,11 +609,11 @@ mod tests {
     fn test_parse_csv_custom_boolean_sentinels_reject_defaults() {
         // When per-field sentinels are configured, the strict defaults are no
         // longer accepted — only the configured strings.
-        let mut field = make_typed_field("active", ValueKind::Boolean, false, None);
+        let mut field = make_typed_field("active", Kind::Boolean, false, None);
         field.true_sentinel = Some("Y".to_string());
         field.false_sentinel = Some("N".to_string());
         let config = make_config(
-            vec![make_typed_field("id", ValueKind::Number, true, None), field],
+            vec![make_typed_field("id", Kind::Number, true, None), field],
             true,
         );
         let reader = Table::test_reader("id,active\n1,true\n", true);
@@ -626,8 +626,8 @@ mod tests {
     fn test_parse_csv_rejects_invalid_number() {
         let config = make_config(
             vec![
-                make_typed_field("id", ValueKind::Number, true, None),
-                make_typed_field("count", ValueKind::Number, false, None),
+                make_typed_field("id", Kind::Number, true, None),
+                make_typed_field("count", Kind::Number, false, None),
             ],
             true,
         );

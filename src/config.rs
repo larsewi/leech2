@@ -7,8 +7,8 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 
+use crate::cell::{Kind, parse_typed_cell};
 use crate::utils::parse_duration;
-use crate::value::{ValueKind, parse_typed_value};
 
 /// Post-deserialize semantic checks for config structs (cross-field
 /// invariants, value ranges, etc.) that serde can't express on its own.
@@ -28,15 +28,15 @@ where
     Regex::new(&pattern).map_err(serde::de::Error::custom)
 }
 
-// Custom deserializer for ValueKind: reads the field as a string and parses it
-// via `ValueKind::from_config`, surfacing unknown types as deserialization
+// Custom deserializer for Kind: reads the field as a string and parses it
+// via `Kind::from_config`, surfacing unknown types as deserialization
 // errors so invalid `type` values fail config loading.
-fn deserialize_value_kind<'de, D>(deserializer: D) -> Result<ValueKind, D::Error>
+fn deserialize_kind<'de, D>(deserializer: D) -> Result<Kind, D::Error>
 where
     D: Deserializer<'de>,
 {
     let type_str = String::deserialize(deserializer)?;
-    ValueKind::from_config(&type_str).map_err(serde::de::Error::custom)
+    Kind::from_config(&type_str).map_err(serde::de::Error::custom)
 }
 
 // Custom deserializer for an optional Duration: reads the field as an
@@ -139,9 +139,9 @@ impl Validate for CompressionConfig {
 pub struct InjectedFieldConfig {
     /// Column name in the target database.
     pub name: String,
-    /// Value type; one of `TEXT`, `NUMBER`, or `BOOLEAN`.
-    #[serde(rename = "type", deserialize_with = "deserialize_value_kind")]
-    pub value_kind: ValueKind,
+    /// Cell kind; one of `TEXT`, `NUMBER`, or `BOOLEAN`.
+    #[serde(rename = "type", deserialize_with = "deserialize_kind")]
+    pub kind: Kind,
     /// The static value written into the column for every row.
     pub value: String,
 }
@@ -150,7 +150,7 @@ impl Default for InjectedFieldConfig {
     fn default() -> Self {
         Self {
             name: String::new(),
-            value_kind: ValueKind::Text,
+            kind: Kind::Text,
             value: String::new(),
         }
     }
@@ -164,8 +164,7 @@ impl Validate for InjectedFieldConfig {
         if self.value.is_empty() {
             bail!("'{}': value must not be empty", self.name);
         }
-        parse_typed_value(&self.value, self.value_kind)
-            .with_context(|| format!("'{}'", self.name))?;
+        parse_typed_cell(&self.value, self.kind).with_context(|| format!("'{}'", self.name))?;
         Ok(())
     }
 }
@@ -315,16 +314,16 @@ pub struct Config {
     pub filters: FilterConfig,
 }
 
-/// One column in a table entry.
+/// One column in a table record.
 #[derive(Debug, Deserialize)]
 #[serde(default)]
 pub struct FieldConfig {
     /// Column name. Matches a CSV header when `header = true`; otherwise
     /// only used as the SQL column name.
     pub name: String,
-    /// Value type; one of `TEXT`, `NUMBER`, or `BOOLEAN`.
-    #[serde(rename = "type", deserialize_with = "deserialize_value_kind")]
-    pub value_kind: ValueKind,
+    /// Cell kind; one of `TEXT`, `NUMBER`, or `BOOLEAN`.
+    #[serde(rename = "type", deserialize_with = "deserialize_kind")]
+    pub kind: Kind,
     /// When true, this field is part of the table's composite primary key.
     #[serde(rename = "primary-key")]
     pub primary_key: bool,
@@ -345,7 +344,7 @@ impl Default for FieldConfig {
     fn default() -> Self {
         Self {
             name: String::new(),
-            value_kind: ValueKind::Text,
+            kind: Kind::Text,
             primary_key: false,
             null_sentinel: None,
             true_sentinel: None,
@@ -382,7 +381,7 @@ impl Validate for FieldConfig {
         }
 
         if (self.true_sentinel.is_some() || self.false_sentinel.is_some())
-            && self.value_kind != ValueKind::Boolean
+            && self.kind != Kind::Boolean
         {
             bail!(
                 "field '{}': 'true' and 'false' sentinels are only valid on BOOLEAN fields",
@@ -563,7 +562,7 @@ mod tests {
     fn test_validate_rejects_true_sentinel_on_non_boolean() {
         let field = FieldConfig {
             name: "name".to_string(),
-            value_kind: ValueKind::Text,
+            kind: Kind::Text,
             true_sentinel: Some("Y".to_string()),
             ..Default::default()
         };
@@ -575,7 +574,7 @@ mod tests {
     fn test_validate_rejects_false_sentinel_on_non_boolean() {
         let field = FieldConfig {
             name: "count".to_string(),
-            value_kind: ValueKind::Number,
+            kind: Kind::Number,
             false_sentinel: Some("none".to_string()),
             ..Default::default()
         };
@@ -587,7 +586,7 @@ mod tests {
     fn test_validate_rejects_equal_true_and_false_sentinels() {
         let field = FieldConfig {
             name: "flag".to_string(),
-            value_kind: ValueKind::Boolean,
+            kind: Kind::Boolean,
             true_sentinel: Some("X".to_string()),
             false_sentinel: Some("X".to_string()),
             ..Default::default()
@@ -600,7 +599,7 @@ mod tests {
     fn test_validate_rejects_true_sentinel_collision_with_null() {
         let field = FieldConfig {
             name: "flag".to_string(),
-            value_kind: ValueKind::Boolean,
+            kind: Kind::Boolean,
             null_sentinel: Some("X".to_string()),
             true_sentinel: Some("X".to_string()),
             ..Default::default()
@@ -613,7 +612,7 @@ mod tests {
     fn test_validate_rejects_false_sentinel_collision_with_null() {
         let field = FieldConfig {
             name: "flag".to_string(),
-            value_kind: ValueKind::Boolean,
+            kind: Kind::Boolean,
             null_sentinel: Some("X".to_string()),
             false_sentinel: Some("X".to_string()),
             ..Default::default()
@@ -626,7 +625,7 @@ mod tests {
     fn test_validate_accepts_distinct_sentinels_on_boolean() {
         let field = FieldConfig {
             name: "flag".to_string(),
-            value_kind: ValueKind::Boolean,
+            kind: Kind::Boolean,
             null_sentinel: Some("?".to_string()),
             true_sentinel: Some("Y".to_string()),
             false_sentinel: Some("N".to_string()),

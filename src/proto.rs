@@ -2,8 +2,8 @@
 //! These types serve as the serialization layer and are imported throughout the
 //! codebase via `use crate::proto::*`.
 
-pub mod entry {
-    include!(concat!(env!("OUT_DIR"), "/entry.rs"));
+pub mod record {
+    include!(concat!(env!("OUT_DIR"), "/record.rs"));
 }
 pub mod table {
     include!(concat!(env!("OUT_DIR"), "/table.rs"));
@@ -26,6 +26,10 @@ pub mod update {
 pub mod block {
     include!(concat!(env!("OUT_DIR"), "/block.rs"));
 }
+// The `Cell` message's oneof generates a nested `cell` submodule, which
+// triggers clippy's `module_inception` lint. The collision is inherent to
+// how prost names oneof submodules and not worth working around.
+#[allow(clippy::module_inception)]
 pub mod cell {
     include!(concat!(env!("OUT_DIR"), "/cell.rs"));
 }

@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+package record;
+
+import "cell.proto";
+
+// Record represents one row of a table, split into key and value halves.
+message Record {
+  // The cells that make up the composite primary key.
+  repeated cell.Cell key = 1;
+  // The subsidiary (non-key) cells.
+  repeated cell.Cell value = 2;
+}

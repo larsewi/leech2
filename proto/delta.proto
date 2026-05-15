@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package delta;
 
-import "entry.proto";
+import "record.proto";
 import "update.proto";
 
 // Delta represents the changes to a single table between two states.
@@ -10,10 +10,10 @@ import "update.proto";
 message Delta {
   // The names of all columns, primary key columns first.
   repeated string fields = 1;
-  // Entries that were added (new keys).
-  repeated entry.Entry inserts = 2;
-  // Entries that were removed (keys no longer present).
-  repeated entry.Entry deletes = 3;
-  // Entries that were modified (existing keys with changed values).
+  // Records that were added (new keys).
+  repeated record.Record inserts = 2;
+  // Records that were removed (keys no longer present).
+  repeated record.Record deletes = 3;
+  // Records that were modified (existing keys with changed values).
   repeated update.Update updates = 4;
 }

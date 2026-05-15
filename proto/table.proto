@@ -2,15 +2,15 @@ syntax = "proto3";
 
 package table;
 
-import "entry.proto";
+import "record.proto";
 
-// Table represents a collection of rows with a defined schema.
+// Table represents a collection of records with a defined schema.
 // Fields are ordered with primary key columns first, followed by subsidiary columns.
-// The number of primary key columns can be inferred from the Entry key length.
+// The number of primary key columns can be inferred from each record's key length.
 // The table name is stored as the map key in the parent message.
 message Table {
   // The names of all columns in the table, primary key columns first.
   repeated string fields = 1;
-  // The data entries in the table.
-  repeated entry.Entry entries = 2;
+  // The records in the table.
+  repeated record.Record records = 2;
 }
