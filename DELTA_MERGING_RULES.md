@@ -8,9 +8,9 @@ When multiple blocks of changes need to be combined (e.g. replaying history),
 their deltas are **merged** by examining what happened to each primary key
 across both blocks.
 
-We call the two blocks being merged **Parent** (the earlier block) and
-**Child** (the later block). The merge produces a single **Result** delta that
-represents the combined effect of both.
+We call the two blocks being merged **Parent** (the earlier block) and **Child**
+(the later block). The merge produces a single **Result** delta that represents
+the combined effect of both.
 
 ### Notation
 
@@ -173,15 +173,15 @@ inconsistent.
 When two updates are stacked, the result is an update from the first update's
 old value to the second update's new value. The intermediate value (`X`) does
 not matter for the result. If, after the merge, every column in the resulting
-update would have an unchanged value (rule 15b), the update is dropped
-entirely — emitting it would produce SQL with an empty `SET` clause.
+update would have an unchanged value (rule 15b), the update is dropped entirely
+— emitting it would produce SQL with an empty `SET` clause.
 
 **Example (15a):** Parent updates `(1, Alice)` to `(1, Alicia)`. Child updates
 key `1` from `Alicia` to `Ali`. Result: `update(1, Alice → Ali)`.
 
-**Example (15b):** Parent updates row `1`'s name from `Alice` to `Alicia`.
-Child updates the same row's name from `Alicia` back to `Alice`. The net
-effect is no change; the update is dropped.
+**Example (15b):** Parent updates row `1`'s name from `Alice` to `Alicia`. Child
+updates the same row's name from `Alicia` back to `Alice`. The net effect is no
+change; the update is dropped.
 
 ---
 
@@ -208,7 +208,6 @@ effect is no change; the update is dropped.
 | 15a  | `update` | `update≠` | `update(old → new)` |
 | 15b  | `update` | `update=` |                     |
 
-`=` means values match, `≠` means values differ. For rule 15, the
-comparison is between the parent's `old` and the child's `new`: matching
-means the net effect across the two updates is no change, so the entry
-is dropped.
+`=` means values match, `≠` means values differ. For rule 15, the comparison is
+between the parent's `old` and the child's `new`: matching means the net effect
+across the two updates is no change, so the record is dropped.

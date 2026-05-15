@@ -9,7 +9,7 @@ use crate::proto::update::Update as ProtoUpdate;
 
 pub type UpdateMap = HashMap<Vec<Cell>, (Vec<Cell>, Vec<Cell>)>;
 
-/// An entry whose subsidiary (non-key) cells changed between two states.
+/// A record whose subsidiary (non-key) cells changed between two states.
 ///
 /// `Update` is the domain counterpart to `proto::update::Update`. The proto
 /// representation carries `Vec<proto::cell::Cell>`; the domain type unwraps
@@ -195,7 +195,7 @@ fn format_update_column(new: Option<&ProtoCell>, old: Option<&ProtoCell>, has_ol
     }
 }
 
-/// Decode a `Vec<ProtoUpdate>` into a `HashMap` keyed by each entry's key.
+/// Decode a `Vec<ProtoUpdate>` into a `HashMap` keyed by each record's key.
 ///
 /// Updates are stored sparsely on the wire: only changed column indices and
 /// their values are included. Expand them back to full-width value vectors

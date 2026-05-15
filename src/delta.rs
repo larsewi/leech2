@@ -18,11 +18,11 @@ use crate::update::decode_proto_updates;
 pub struct Delta {
     /// The names of all columns, primary key columns first.
     pub fields: Vec<String>,
-    /// Entries that were added (key -> value).
+    /// Records that were added (key -> value).
     pub inserts: RecordMap,
-    /// Entries that were removed (key -> value).
+    /// Records that were removed (key -> value).
     pub deletes: RecordMap,
-    /// Entries that were modified (key -> (old_value, new_value)).
+    /// Records that were modified (key -> (old_value, new_value)).
     pub updates: UpdateMap,
 }
 
@@ -291,7 +291,7 @@ impl Delta {
                 self.updates.insert(key, (merged_old, merged_new));
             } else {
                 // Rule 15b: parent's update was cancelled by the child
-                // (e.g. column went A→B then B→A). Drop the entry rather
+                // (e.g. column went A→B then B→A). Drop the record rather
                 // than emit a degenerate update; the SQL layer rejects
                 // updates with no SET assignments.
                 log::trace!("Rule 15b: update + update cancel out for key {:?}", key);
@@ -1019,7 +1019,7 @@ mod tests {
         assert!(merged_delta.is_err());
     }
 
-    // Rule 15b: parent A→B then child B→A cancels — no entry remains.
+    // Rule 15b: parent A→B then child B→A cancels — no record remains.
     #[test]
     fn test_merge_rule15b_update_then_update_cancels() {
         let mut parent_delta = empty_delta();
@@ -1041,7 +1041,7 @@ mod tests {
     }
 
     // Rule 15b multi-column: each column's net change cancels independently
-    // → no entry remains.
+    // → no record remains.
     #[test]
     fn test_merge_rule15b_multi_column_cancels() {
         let mut parent_delta = empty_delta();
