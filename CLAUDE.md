@@ -28,6 +28,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - When a proto type clashes with a domain type of the same name, prefix the import with `Proto` (e.g., `use crate::proto::delta::Delta as ProtoDelta`).
 - Avoid abbreviations in variable names. Prefer descriptive names (e.g., `table_config` over `tc`).
 - Use American English spelling in code, comments, and documentation (e.g., `honor` not `honour`, `color` not `colour`).
+- Avoid non-ASCII characters in code, comments, commit messages, and documentation (e.g., `->` not `→`, `--` not `—`).
 - Place `#[cfg(test)] mod tests` at the bottom of each file, after all production code.
 - Prefer `From`/`Into` (or `TryFrom`/`TryInto` for fallible conversions) over manual construction when converting between types, especially domain-to-proto conversions.
 - After implementing new features, look for opportunities to refactor the code to improve readability and reduce duplication.
