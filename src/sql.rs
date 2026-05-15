@@ -2,15 +2,15 @@ use std::collections::{HashMap, HashSet};
 
 use anyhow::{Context, Result, anyhow, bail};
 
+use crate::cell::{Cell, ValueKind};
 use crate::config::{Config, FieldConfig};
-use crate::proto::cell::Value as ProtoValue;
+use crate::proto::cell::Cell as ProtoCell;
 use crate::proto::delta::Delta as ProtoDelta;
 use crate::proto::entry::Entry as ProtoEntry;
 use crate::proto::injected::Field as ProtoInjectedField;
 use crate::proto::patch::Patch as ProtoPatch;
 use crate::proto::table::Table as ProtoTable;
 use crate::proto::update::Update as ProtoUpdate;
-use crate::value::{Value, ValueKind};
 
 /// Schema information for a single table, derived from the wire-declared
 /// field list. Column ordering follows the wire (i.e. the agent's
@@ -24,7 +24,7 @@ struct TableSchema<'a> {
     /// Number of primary key fields (the first `num_primary_keys` entries).
     num_primary_keys: usize,
     /// Hub-config field metadata keyed by field name. Used at SQL-rendering
-    /// time to validate that each wire `Value`'s variant agrees with the
+    /// time to validate that each wire cell's variant agrees with the
     /// hub's declared type and that nulls only appear in nullable columns.
     field_configs: HashMap<&'a str, &'a FieldConfig>,
 }
@@ -123,9 +123,9 @@ impl<'a> TableSchema<'a> {
     }
 }
 
-/// Validate that a wire `Value`'s variant agrees with the field's declared
+/// Validate that a wire cell's variant agrees with the field's declared
 /// type, and that `Null` only appears in nullable fields.
-fn check_value_matches_field(value: &Value, field: &FieldConfig) -> Result<()> {
+fn check_value_matches_field(value: &Cell, field: &FieldConfig) -> Result<()> {
     if value.kind() == ValueKind::Null {
         if field.null_sentinel.is_none() {
             bail!(
@@ -150,7 +150,7 @@ fn check_value_matches_field(value: &Value, field: &FieldConfig) -> Result<()> {
 /// A static field injected into all SQL output (resolved from proto).
 struct InjectedField {
     name: String,
-    value: Value,
+    value: Cell,
 }
 
 impl TryFrom<&ProtoInjectedField> for InjectedField {
@@ -161,7 +161,7 @@ impl TryFrom<&ProtoInjectedField> for InjectedField {
             .value
             .as_ref()
             .with_context(|| format!("injected field '{}': missing value", proto.name))?;
-        let value = Value::try_from(proto_value)
+        let value = Cell::try_from(proto_value)
             .with_context(|| format!("injected field '{}'", proto.name))?;
         Ok(InjectedField {
             name: proto.name.clone(),
@@ -193,23 +193,19 @@ pub fn quote_identifier(name: &str) -> String {
     format!("\"{}\"", name.replace('"', "\"\""))
 }
 
-/// Format a `Value` as a SQL literal.
-pub fn quote_literal(value: &Value) -> String {
+/// Format a `Cell` as a SQL literal.
+pub fn quote_literal(value: &Cell) -> String {
     match value {
-        Value::Null => "NULL".to_string(),
-        Value::Text(s) => format!("'{}'", s.replace('\'', "''")),
-        Value::Boolean(true) => "TRUE".to_string(),
-        Value::Boolean(false) => "FALSE".to_string(),
-        Value::Number(n) => n.to_string(),
+        Cell::Null => "NULL".to_string(),
+        Cell::Text(s) => format!("'{}'", s.replace('\'', "''")),
+        Cell::Boolean(true) => "TRUE".to_string(),
+        Cell::Boolean(false) => "FALSE".to_string(),
+        Cell::Number(n) => n.to_string(),
     }
 }
 
-/// Convert key + value proto-value slices into a list of SQL literal strings.
-fn format_row(
-    key: &[ProtoValue],
-    value: &[ProtoValue],
-    schema: &TableSchema,
-) -> Result<Vec<String>> {
+/// Convert key + value proto-cell slices into a list of SQL literal strings.
+fn format_row(key: &[ProtoCell], value: &[ProtoCell], schema: &TableSchema) -> Result<Vec<String>> {
     let primary_keys = schema.primary_key_names();
     let subsidiary_fields = schema.subsidiary_names();
 
@@ -230,12 +226,12 @@ fn format_row(
 
     let mut literals = Vec::with_capacity(key.len() + value.len());
     for (proto_value, name) in key.iter().zip(primary_keys) {
-        let v = Value::try_from(proto_value).with_context(|| format!("field '{}'", name))?;
+        let v = Cell::try_from(proto_value).with_context(|| format!("field '{}'", name))?;
         check_value_matches_field(&v, schema.field_config(name)?)?;
         literals.push(quote_literal(&v));
     }
     for (proto_value, name) in value.iter().zip(subsidiary_fields) {
-        let v = Value::try_from(proto_value).with_context(|| format!("field '{}'", name))?;
+        let v = Cell::try_from(proto_value).with_context(|| format!("field '{}'", name))?;
         check_value_matches_field(&v, schema.field_config(name)?)?;
         literals.push(quote_literal(&v));
     }
@@ -326,7 +322,7 @@ fn format_update(
                 subsidiary_names.len()
             )
         })?;
-        let value = Value::try_from(proto_value).with_context(|| format!("field '{}'", name))?;
+        let value = Cell::try_from(proto_value).with_context(|| format!("field '{}'", name))?;
         check_value_matches_field(&value, schema.field_config(name)?)?;
         set_parts.push(format!(
             "{} = {}",
@@ -376,13 +372,13 @@ fn emit_updates(
 
 /// Build a WHERE clause from primary key values and injected fields.
 fn primary_key_where_clause(
-    key: &[ProtoValue],
+    key: &[ProtoCell],
     schema: &TableSchema,
     injected_fields: &[InjectedField],
 ) -> Result<String> {
     let mut where_parts = Vec::new();
     for (proto_value, name) in key.iter().zip(schema.primary_key_names()) {
-        let value = Value::try_from(proto_value).with_context(|| format!("field '{}'", name))?;
+        let value = Cell::try_from(proto_value).with_context(|| format!("field '{}'", name))?;
         check_value_matches_field(&value, schema.field_config(name)?)?;
         where_parts.push(format!(
             "{} = {}",
@@ -481,8 +477,8 @@ pub fn patch_to_sql(config: &Config, patch: &ProtoPatch) -> Result<Option<String
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cell::text_proto_cells;
     use crate::config::{FieldConfig, TruncateConfig};
-    use crate::value::text_proto_values;
 
     fn dummy_config(tables: HashMap<String, crate::config::TableConfig>) -> Config {
         Config {
@@ -558,21 +554,21 @@ mod tests {
 
     #[test]
     fn test_quote_literal_null() {
-        assert_eq!(quote_literal(&Value::Null), "NULL");
+        assert_eq!(quote_literal(&Cell::Null), "NULL");
     }
 
     #[test]
     fn test_quote_literal_number() {
-        assert_eq!(quote_literal(&Value::from(42.0)), "42");
-        assert_eq!(quote_literal(&Value::from(-100.0)), "-100");
-        assert_eq!(quote_literal(&Value::from(2.5)), "2.5");
-        assert_eq!(quote_literal(&Value::from(-0.5)), "-0.5");
+        assert_eq!(quote_literal(&Cell::from(42.0)), "42");
+        assert_eq!(quote_literal(&Cell::from(-100.0)), "-100");
+        assert_eq!(quote_literal(&Cell::from(2.5)), "2.5");
+        assert_eq!(quote_literal(&Cell::from(-0.5)), "-0.5");
     }
 
     #[test]
     fn test_quote_literal_boolean() {
-        assert_eq!(quote_literal(&Value::from(true)), "TRUE");
-        assert_eq!(quote_literal(&Value::from(false)), "FALSE");
+        assert_eq!(quote_literal(&Cell::from(true)), "TRUE");
+        assert_eq!(quote_literal(&Cell::from(false)), "FALSE");
     }
 
     #[test]
@@ -582,7 +578,7 @@ mod tests {
 
         let mut delta = dummy_delta(&["id"]);
         delta.inserts.push(ProtoEntry {
-            key: text_proto_values(&["1"]),
+            key: text_proto_cells(&["1"]),
             value: vec![],
         });
         let patch = dummy_patch(HashMap::from([("test_table".to_string(), delta)]));
@@ -601,7 +597,7 @@ mod tests {
 
         let mut delta = dummy_delta(&["id", "name"]);
         delta.updates.push(ProtoUpdate {
-            key: text_proto_values(&["1"]),
+            key: text_proto_cells(&["1"]),
             changed_indices: vec![],
             old_value: vec![],
             new_value: vec![],
@@ -622,10 +618,10 @@ mod tests {
 
         let mut delta = dummy_delta(&["id", "name"]);
         delta.updates.push(ProtoUpdate {
-            key: text_proto_values(&["1"]),
+            key: text_proto_cells(&["1"]),
             changed_indices: vec![5],
             old_value: vec![],
-            new_value: text_proto_values(&["x"]),
+            new_value: text_proto_cells(&["x"]),
         });
         let patch = dummy_patch(HashMap::from([("test_table".to_string(), delta)]));
 
@@ -648,8 +644,8 @@ mod tests {
         // laid out in the agent's declaration order, i.e. [name, email].
         let mut delta = dummy_delta(&["id", "name", "email"]);
         delta.inserts.push(ProtoEntry {
-            key: text_proto_values(&["1"]),
-            value: text_proto_values(&["Alice", "alice@example.com"]),
+            key: text_proto_cells(&["1"]),
+            value: text_proto_cells(&["Alice", "alice@example.com"]),
         });
 
         let patch = dummy_patch(HashMap::from([("users".to_string(), delta)]));
@@ -703,17 +699,17 @@ mod tests {
     #[test]
     fn test_check_value_matches_field_accepts_correct_types() {
         check_value_matches_field(
-            &Value::Text("hello".into()),
+            &Cell::Text("hello".into()),
             &make_field("name", ValueKind::Text, false),
         )
         .unwrap();
         check_value_matches_field(
-            &Value::Number(2.5),
+            &Cell::Number(2.5),
             &make_field("price", ValueKind::Number, false),
         )
         .unwrap();
         check_value_matches_field(
-            &Value::Boolean(true),
+            &Cell::Boolean(true),
             &make_field("flag", ValueKind::Boolean, false),
         )
         .unwrap();
@@ -723,7 +719,7 @@ mod tests {
     fn test_check_value_matches_field_rejects_type_drift() {
         // Wire sends a Number into a column the hub config declared TEXT.
         let err = check_value_matches_field(
-            &Value::Number(42.0),
+            &Cell::Number(42.0),
             &make_field("note", ValueKind::Text, false),
         )
         .unwrap_err();
@@ -734,7 +730,7 @@ mod tests {
     #[test]
     fn test_check_value_matches_field_rejects_null_in_non_nullable() {
         let err =
-            check_value_matches_field(&Value::Null, &make_field("name", ValueKind::Text, false))
+            check_value_matches_field(&Cell::Null, &make_field("name", ValueKind::Text, false))
                 .unwrap_err();
         let msg = format!("{:#}", err);
         assert!(msg.contains("not nullable"), "got: {msg}");
@@ -742,8 +738,7 @@ mod tests {
 
     #[test]
     fn test_check_value_matches_field_accepts_null_in_nullable() {
-        check_value_matches_field(&Value::Null, &make_field("name", ValueKind::Text, true))
-            .unwrap();
+        check_value_matches_field(&Cell::Null, &make_field("name", ValueKind::Text, true)).unwrap();
     }
 
     #[test]
@@ -756,8 +751,8 @@ mod tests {
 
         let mut delta = dummy_delta(&["id", "score"]);
         delta.inserts.push(ProtoEntry {
-            key: text_proto_values(&["1"]),
-            value: text_proto_values(&["not-a-number"]),
+            key: text_proto_cells(&["1"]),
+            value: text_proto_cells(&["not-a-number"]),
         });
         let patch = dummy_patch(HashMap::from([("t".to_string(), delta)]));
 

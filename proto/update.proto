@@ -4,14 +4,14 @@ package update;
 
 import "cell.proto";
 
-// Update represents a row whose subsidiary (non-key) values changed between two states.
+// Update represents a row whose subsidiary (non-key) cells changed between two states.
 message Update {
-  // The values that make up the composite primary key.
-  repeated cell.Value key = 1;
+  // The cells that make up the composite primary key.
+  repeated cell.Cell key = 1;
   // Indices into the parent Delta's subsidiary fields identifying which columns changed.
   repeated uint32 changed_indices = 2;
-  // The subsidiary (non-key) values before the change (only for changed columns).
-  repeated cell.Value old_value = 3;
-  // The subsidiary (non-key) values after the change (only for changed columns).
-  repeated cell.Value new_value = 4;
+  // The subsidiary (non-key) cells before the change (only for changed columns).
+  repeated cell.Cell old_value = 3;
+  // The subsidiary (non-key) cells after the change (only for changed columns).
+  repeated cell.Cell new_value = 4;
 }

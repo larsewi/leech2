@@ -3,23 +3,23 @@ use std::fmt;
 
 use anyhow::Result;
 
+use crate::cell::Cell;
+use crate::cell::{decode_proto_cells, display_proto_cells};
 use crate::proto::entry::Entry as ProtoEntry;
-use crate::value::Value;
-use crate::value::{decode_proto_values, display_proto_values};
 
-pub type RecordMap = HashMap<Vec<Value>, Vec<Value>>;
+pub type RecordMap = HashMap<Vec<Cell>, Vec<Cell>>;
 
 /// A row in a table, split into key and value components.
 ///
 /// `Entry` is the domain counterpart to `proto::entry::Entry`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Entry {
-    pub key: Vec<Value>,
-    pub value: Vec<Value>,
+    pub key: Vec<Cell>,
+    pub value: Vec<Cell>,
 }
 
 impl Entry {
-    pub fn new(key: Vec<Value>, value: Vec<Value>) -> Self {
+    pub fn new(key: Vec<Cell>, value: Vec<Cell>) -> Self {
         Entry { key, value }
     }
 }
@@ -29,8 +29,8 @@ impl TryFrom<ProtoEntry> for Entry {
 
     fn try_from(proto: ProtoEntry) -> Result<Self> {
         Ok(Entry {
-            key: decode_proto_values(proto.key)?,
-            value: decode_proto_values(proto.value)?,
+            key: decode_proto_cells(proto.key)?,
+            value: decode_proto_cells(proto.value)?,
         })
     }
 }
@@ -44,8 +44,8 @@ impl From<Entry> for ProtoEntry {
     }
 }
 
-impl From<(Vec<Value>, Vec<Value>)> for ProtoEntry {
-    fn from((key, value): (Vec<Value>, Vec<Value>)) -> Self {
+impl From<(Vec<Cell>, Vec<Cell>)> for ProtoEntry {
+    fn from((key, value): (Vec<Cell>, Vec<Cell>)) -> Self {
         ProtoEntry {
             key: key.into_iter().map(Into::into).collect(),
             value: value.into_iter().map(Into::into).collect(),
@@ -53,14 +53,14 @@ impl From<(Vec<Value>, Vec<Value>)> for ProtoEntry {
     }
 }
 
-impl From<Entry> for (Vec<Value>, Vec<Value>) {
+impl From<Entry> for (Vec<Cell>, Vec<Cell>) {
     fn from(entry: Entry) -> Self {
         (entry.key, entry.value)
     }
 }
 
-impl From<(Vec<Value>, Vec<Value>)> for Entry {
-    fn from((key, value): (Vec<Value>, Vec<Value>)) -> Self {
+impl From<(Vec<Cell>, Vec<Cell>)> for Entry {
+    fn from((key, value): (Vec<Cell>, Vec<Cell>)) -> Self {
         Entry { key, value }
     }
 }
@@ -72,7 +72,7 @@ impl fmt::Display for Entry {
 }
 
 /// Decode a `Vec<ProtoEntry>` into a `HashMap` keyed by each entry's key.
-pub fn decode_proto_records(protos: Vec<ProtoEntry>) -> Result<HashMap<Vec<Value>, Vec<Value>>> {
+pub fn decode_proto_records(protos: Vec<ProtoEntry>) -> Result<HashMap<Vec<Cell>, Vec<Cell>>> {
     let mut records = HashMap::with_capacity(protos.len());
     for proto in protos {
         let entry = Entry::try_from(proto)?;
@@ -86,8 +86,8 @@ impl fmt::Display for ProtoEntry {
         write!(
             f,
             "({}) {}",
-            display_proto_values(&self.key),
-            display_proto_values(&self.value)
+            display_proto_cells(&self.key),
+            display_proto_cells(&self.value)
         )
     }
 }
@@ -99,7 +99,7 @@ mod tests {
     #[test]
     fn from_entry_to_tuple() {
         let entry = Entry::new(vec!["k".into()], vec!["v".into()]);
-        let (key, value): (Vec<Value>, Vec<Value>) = entry.into();
+        let (key, value): (Vec<Cell>, Vec<Cell>) = entry.into();
         assert_eq!(key, vec!["k".into()]);
         assert_eq!(value, vec!["v".into()]);
     }
@@ -113,7 +113,7 @@ mod tests {
 
     #[test]
     fn proto_round_trip() {
-        let entry = Entry::new(vec![1.0.into(), "a".into()], vec![true.into(), Value::Null]);
+        let entry = Entry::new(vec![1.0.into(), "a".into()], vec![true.into(), Cell::Null]);
         let proto: ProtoEntry = entry.clone().into();
         let back: Entry = proto.try_into().unwrap();
         assert_eq!(entry, back);

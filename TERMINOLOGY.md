@@ -135,7 +135,6 @@ An application that acts as both an agent and a hub.
 
 | Concept                  | Should be        | Currently     |
 | ------------------------ | ---------------- | ------------- |
-| Atomic typed datum       | `Cell`           | `Value`       |
 | Row of a table           | `Record`         | `Entry`       |
 | Non-key half of a record | `value` (field)  | `value` field |
 | Type tag                 | `Kind`           | `ValueKind`   |

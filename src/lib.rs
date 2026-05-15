@@ -2,6 +2,7 @@ use std::ffi::{CStr, CString, c_char, c_void};
 use std::path::PathBuf;
 
 pub mod block;
+pub mod cell;
 pub mod config;
 pub mod delta;
 pub mod entry;
@@ -17,7 +18,6 @@ pub mod table;
 pub mod truncate;
 pub mod update;
 pub mod utils;
-pub mod value;
 pub mod wire;
 
 const SUCCESS: i32 = 0;

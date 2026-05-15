@@ -5,12 +5,12 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 
+use crate::cell::{
+    Cell, DEFAULT_FALSE_SENTINEL, DEFAULT_TRUE_SENTINEL, ValueKind, display_proto_cells,
+    parse_boolean, parse_typed_cell,
+};
 use crate::config::{FieldConfig, FilterConfig, TableConfig};
 use crate::entry::decode_proto_records;
-use crate::value::{
-    DEFAULT_FALSE_SENTINEL, DEFAULT_TRUE_SENTINEL, Value, ValueKind, display_proto_values,
-    parse_boolean, parse_typed_value,
-};
 
 type ProtoTable = crate::proto::table::Table;
 
@@ -27,7 +27,7 @@ pub struct Table {
     /// The names of all columns in the table, primary key columns first.
     pub fields: Vec<String>,
     /// Map from primary key values to subsidiary values.
-    pub records: HashMap<Vec<Value>, Vec<Value>>,
+    pub records: HashMap<Vec<Cell>, Vec<Cell>>,
 }
 
 impl TryFrom<ProtoTable> for Table {
@@ -59,8 +59,8 @@ impl fmt::Display for ProtoTable {
             write!(
                 f,
                 "\n  ({}) {}",
-                display_proto_values(&entry.key),
-                display_proto_values(&entry.value)
+                display_proto_cells(&entry.key),
+                display_proto_cells(&entry.value)
             )?;
         }
         Ok(())
@@ -181,7 +181,7 @@ impl Table {
             .map(|(_, field)| field.name.clone())
             .collect();
 
-        let mut records: HashMap<Vec<Value>, Vec<Value>> = HashMap::new();
+        let mut records: HashMap<Vec<Cell>, Vec<Cell>> = HashMap::new();
 
         for (row_num, record) in reader.into_records().enumerate() {
             let record = record?;
@@ -217,12 +217,12 @@ impl Table {
 }
 
 /// For each `(column_index, field_config)` entry, pull the value at
-/// `column_index` out of `record` and parse it into a typed `Value`
+/// `column_index` out of `record` and parse it into a typed `Cell`
 /// according to `field_config`.
 fn parse_columns(
     record: &csv::StringRecord,
     columns: &[(usize, &FieldConfig)],
-) -> Result<Vec<Value>> {
+) -> Result<Vec<Cell>> {
     let mut out = Vec::with_capacity(columns.len());
     for &(column_index, field) in columns {
         out.push(parse_field_value(&record[column_index], field)?);
@@ -230,16 +230,16 @@ fn parse_columns(
     Ok(out)
 }
 
-/// Parse a single CSV value into a `Value` based on its field config.
-/// Values matching the `null` sentinel become `Value::Null`; otherwise the
+/// Parse a single CSV value into a `Cell` based on its field config.
+/// Values matching the `null` sentinel become `Cell::Null`; otherwise the
 /// value is parsed by its declared kind (`TEXT`/`NUMBER`/`BOOLEAN`). For
 /// BOOLEAN fields the per-field `true` / `false` sentinels are honoured,
 /// falling back to the strict defaults `"true"` / `"false"`.
-fn parse_field_value(value: &str, field: &FieldConfig) -> Result<Value> {
+fn parse_field_value(value: &str, field: &FieldConfig) -> Result<Cell> {
     if let Some(sentinel) = &field.null_sentinel
         && value == sentinel
     {
-        return Ok(Value::Null);
+        return Ok(Cell::Null);
     }
     if let ValueKind::Boolean = field.value_kind {
         let true_sentinel = field
@@ -251,10 +251,10 @@ fn parse_field_value(value: &str, field: &FieldConfig) -> Result<Value> {
             .as_deref()
             .unwrap_or(DEFAULT_FALSE_SENTINEL);
         return parse_boolean(value, true_sentinel, false_sentinel)
-            .map(Value::Boolean)
+            .map(Cell::Boolean)
             .with_context(|| format!("field '{}'", field.name));
     }
-    parse_typed_value(value, field.value_kind).with_context(|| format!("field '{}'", field.name))
+    parse_typed_cell(value, field.value_kind).with_context(|| format!("field '{}'", field.name))
 }
 
 #[cfg(test)]
@@ -512,13 +512,13 @@ mod tests {
 
         // "0.0" parses to 0.0; "1e2" parses to 100.0
         assert_eq!(
-            table.records.get(&vec![Value::Number(0.0)]),
-            Some(&vec![Value::Number(100.0), "Alice".into()])
+            table.records.get(&vec![Cell::Number(0.0)]),
+            Some(&vec![Cell::Number(100.0), "Alice".into()])
         );
         // "+5" parses to 5.0; "1.10" parses to 1.1
         assert_eq!(
-            table.records.get(&vec![Value::Number(5.0)]),
-            Some(&vec![Value::Number(1.1), "Bob".into()])
+            table.records.get(&vec![Cell::Number(5.0)]),
+            Some(&vec![Cell::Number(1.1), "Bob".into()])
         );
     }
 
@@ -534,15 +534,15 @@ mod tests {
         let reader = Table::test_reader("id,count\n1,N/A\n2,3.0\n", true);
         let table = Table::parse_csv("t", &config, &FilterConfig::default(), reader).unwrap();
 
-        // Sentinel becomes Value::Null, even though "N/A" is not a number.
+        // Sentinel becomes Cell::Null, even though "N/A" is not a number.
         assert_eq!(
-            table.records.get(&vec![Value::Number(1.0)]),
-            Some(&vec![Value::Null])
+            table.records.get(&vec![Cell::Number(1.0)]),
+            Some(&vec![Cell::Null])
         );
         // Non-sentinel parses as a number.
         assert_eq!(
-            table.records.get(&vec![Value::Number(2.0)]),
-            Some(&vec![Value::Number(3.0)])
+            table.records.get(&vec![Cell::Number(2.0)]),
+            Some(&vec![Cell::Number(3.0)])
         );
     }
 
@@ -559,12 +559,12 @@ mod tests {
         let table = Table::parse_csv("t", &config, &FilterConfig::default(), reader).unwrap();
 
         assert_eq!(
-            table.records.get(&vec![Value::Number(1.0)]),
-            Some(&vec![Value::Boolean(true)])
+            table.records.get(&vec![Cell::Number(1.0)]),
+            Some(&vec![Cell::Boolean(true)])
         );
         assert_eq!(
-            table.records.get(&vec![Value::Number(2.0)]),
-            Some(&vec![Value::Boolean(false)])
+            table.records.get(&vec![Cell::Number(2.0)]),
+            Some(&vec![Cell::Boolean(false)])
         );
     }
 
@@ -596,12 +596,12 @@ mod tests {
         let table = Table::parse_csv("t", &config, &FilterConfig::default(), reader).unwrap();
 
         assert_eq!(
-            table.records.get(&vec![Value::Number(1.0)]),
-            Some(&vec![Value::Boolean(true)])
+            table.records.get(&vec![Cell::Number(1.0)]),
+            Some(&vec![Cell::Boolean(true)])
         );
         assert_eq!(
-            table.records.get(&vec![Value::Number(2.0)]),
-            Some(&vec![Value::Boolean(false)])
+            table.records.get(&vec![Cell::Number(2.0)]),
+            Some(&vec![Cell::Boolean(false)])
         );
     }
 

@@ -3,23 +3,23 @@ use std::fmt;
 
 use anyhow::{Result, bail};
 
-use crate::proto::cell::Value as ProtoValue;
+use crate::cell::{Cell, decode_proto_cells, display_proto_cells};
+use crate::proto::cell::Cell as ProtoCell;
 use crate::proto::update::Update as ProtoUpdate;
-use crate::value::{Value, decode_proto_values, display_proto_values};
 
-pub type UpdateMap = HashMap<Vec<Value>, (Vec<Value>, Vec<Value>)>;
+pub type UpdateMap = HashMap<Vec<Cell>, (Vec<Cell>, Vec<Cell>)>;
 
-/// An entry whose subsidiary (non-key) values changed between two states.
+/// An entry whose subsidiary (non-key) cells changed between two states.
 ///
 /// `Update` is the domain counterpart to `proto::update::Update`. The proto
-/// representation carries `Vec<proto::cell::Value>`; the domain type unwraps
-/// each proto value into a typed domain `Value`.
+/// representation carries `Vec<proto::cell::Cell>`; the domain type unwraps
+/// each proto cell into a typed domain `Cell`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Update {
-    pub key: Vec<Value>,
+    pub key: Vec<Cell>,
     pub changed_indices: Vec<u32>,
-    pub old_value: Vec<Value>,
-    pub new_value: Vec<Value>,
+    pub old_value: Vec<Cell>,
+    pub new_value: Vec<Cell>,
 }
 
 impl TryFrom<ProtoUpdate> for Update {
@@ -27,10 +27,10 @@ impl TryFrom<ProtoUpdate> for Update {
 
     fn try_from(proto: ProtoUpdate) -> Result<Self> {
         Ok(Update {
-            key: decode_proto_values(proto.key)?,
+            key: decode_proto_cells(proto.key)?,
             changed_indices: proto.changed_indices,
-            old_value: decode_proto_values(proto.old_value)?,
-            new_value: decode_proto_values(proto.new_value)?,
+            old_value: decode_proto_cells(proto.old_value)?,
+            new_value: decode_proto_cells(proto.new_value)?,
         })
     }
 }
@@ -46,8 +46,8 @@ impl From<Update> for ProtoUpdate {
     }
 }
 
-impl From<(Vec<Value>, (Vec<Value>, Vec<Value>))> for ProtoUpdate {
-    fn from((key, (old_value, new_value)): (Vec<Value>, (Vec<Value>, Vec<Value>))) -> Self {
+impl From<(Vec<Cell>, (Vec<Cell>, Vec<Cell>))> for ProtoUpdate {
+    fn from((key, (old_value, new_value)): (Vec<Cell>, (Vec<Cell>, Vec<Cell>))) -> Self {
         ProtoUpdate {
             key: key.into_iter().map(Into::into).collect(),
             changed_indices: Vec::new(),
@@ -59,7 +59,7 @@ impl From<(Vec<Value>, (Vec<Value>, Vec<Value>))> for ProtoUpdate {
 
 impl ProtoUpdate {
     /// Expand a sparse `new_value` back to a full-length vector in place.
-    /// Positions not in `changed_indices` are filled with `Value::Null`.
+    /// Positions not in `changed_indices` are filled with `Cell::Null`.
     ///
     /// Expects the shape produced by `sparse_encode`: `new_value` length
     /// equals `changed_indices` length, `old_value` is empty, and every
@@ -89,9 +89,9 @@ impl ProtoUpdate {
         }
 
         // Move each sparse value into its true column position. Unchanged
-        // columns become `Value::Null`. Bounds-check column_index inside
+        // columns become `Cell::Null`. Bounds-check column_index inside
         // the loop so we fail fast on the first bad index.
-        let null_value: ProtoValue = Value::Null.into();
+        let null_value: ProtoCell = Cell::Null.into();
         let mut new_expanded = vec![null_value.clone(); num_values];
         for (sparse_index, &column_index) in self.changed_indices.iter().enumerate() {
             if (column_index as usize) >= num_values {
@@ -182,16 +182,12 @@ impl ProtoUpdate {
 /// When `old` is provided and differs from `new`, shows `"old -> new"`.
 /// When `old` equals `new`, shows `"_"` (unchanged).
 /// When there is no old value (i.e. due to sparse encoding), shows just `new`.
-fn format_update_column(
-    new: Option<&ProtoValue>,
-    old: Option<&ProtoValue>,
-    has_old: bool,
-) -> String {
-    let new_str = new.map_or("<missing>".to_string(), ProtoValue::to_string);
+fn format_update_column(new: Option<&ProtoCell>, old: Option<&ProtoCell>, has_old: bool) -> String {
+    let new_str = new.map_or("<missing>".to_string(), ProtoCell::to_string);
     if !has_old {
         return new_str;
     }
-    let old_str = old.map_or("<missing>".to_string(), ProtoValue::to_string);
+    let old_str = old.map_or("<missing>".to_string(), ProtoCell::to_string);
     if old_str == new_str {
         "_".to_string()
     } else {
@@ -219,10 +215,10 @@ impl fmt::Display for ProtoUpdate {
         write!(
             f,
             "[{}] [cols {:?}]: [{}] -> [{}]",
-            display_proto_values(&self.key),
+            display_proto_cells(&self.key),
             self.changed_indices,
-            display_proto_values(&self.old_value),
-            display_proto_values(&self.new_value)
+            display_proto_cells(&self.old_value),
+            display_proto_cells(&self.new_value)
         )
     }
 }
@@ -231,7 +227,7 @@ impl fmt::Display for ProtoUpdate {
 mod tests {
     use super::*;
 
-    use crate::value::{decode_proto_values, text_proto_values};
+    use crate::cell::{decode_proto_cells, text_proto_cells};
 
     fn make_proto_update(
         key: &[&str],
@@ -240,10 +236,10 @@ mod tests {
         new_value: &[&str],
     ) -> ProtoUpdate {
         ProtoUpdate {
-            key: text_proto_values(key),
+            key: text_proto_cells(key),
             changed_indices: changed_indices.to_vec(),
-            old_value: text_proto_values(old_value),
-            new_value: text_proto_values(new_value),
+            old_value: text_proto_cells(old_value),
+            new_value: text_proto_cells(new_value),
         }
     }
 
@@ -254,8 +250,8 @@ mod tests {
         update.expand_sparse(3).unwrap();
         assert!(update.old_value.is_empty());
         assert!(update.changed_indices.is_empty());
-        let decoded = decode_proto_values(update.new_value).unwrap();
-        assert_eq!(decoded, vec!["x".into(), Value::Null, "y".into()]);
+        let decoded = decode_proto_cells(update.new_value).unwrap();
+        assert_eq!(decoded, vec!["x".into(), Cell::Null, "y".into()]);
     }
 
     #[test]
@@ -293,7 +289,7 @@ mod tests {
         update.sparse_encode();
         assert_eq!(update.changed_indices, vec![1]);
         assert!(update.old_value.is_empty());
-        let decoded = decode_proto_values(update.new_value).unwrap();
+        let decoded = decode_proto_cells(update.new_value).unwrap();
         assert_eq!(decoded, vec!["x".into()]);
     }
 

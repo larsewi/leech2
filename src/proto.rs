@@ -26,6 +26,10 @@ pub mod update {
 pub mod block {
     include!(concat!(env!("OUT_DIR"), "/block.rs"));
 }
+// The `Cell` message's oneof generates a nested `cell` submodule, which
+// triggers clippy's `module_inception` lint. The collision is inherent to
+// how prost names oneof submodules and not worth working around.
+#[allow(clippy::module_inception)]
 pub mod cell {
     include!(concat!(env!("OUT_DIR"), "/cell.rs"));
 }

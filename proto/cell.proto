@@ -4,11 +4,11 @@ package cell;
 
 import "google/protobuf/empty.proto";
 
-// Value represents a single typed cell in a table row.
+// Cell represents a single typed value at one (row, column) in a table.
 //
 // The wire format carries the type via the oneof tag, so the receiver
 // knows the type without an additional discriminator field.
-message Value {
+message Cell {
   oneof kind {
     google.protobuf.Empty null = 1;
     string text = 2;

@@ -112,7 +112,7 @@ can contain a mix of delta tables and full state tables.
 The hub validates each patch against its own config at SQL-generation
 time. `delta.fields`/`table.fields` (carried per-table on the wire) must
 match the hub's field set in count and names, and the wire's primary-key
-prefix must equal the hub's primary-key set. Each cell's `Value` variant
+prefix must equal the hub's primary-key set. Each cell's `Cell` variant
 is then checked against the hub's declared `sql_type`, and `NULL` is only
 accepted on fields with a configured null sentinel. Together these
 defend against agents that misrepresent the schema or emit values of the
@@ -279,10 +279,10 @@ src/
   logger.rs     Callback-based log dispatch for FFI consumers
   main.rs       CLI (lch binary)
   config.rs     TOML/JSON config parsing
-  table.rs      CSV loading, in-memory table (HashMap<Vec<Value>, Vec<Value>>)
+  table.rs      CSV loading, in-memory table (HashMap<Vec<Cell>, Vec<Cell>>)
   state.rs      Snapshot of all tables, protobuf persistence
-  value.rs      Domain Value type + conversions to/from proto::cell::Value
-  entry.rs      Entry type (Vec<Value> key + value)
+  cell.rs       Domain Cell type + conversions to/from proto::cell::Cell
+  entry.rs      Entry type (Vec<Cell> key + value)
   update.rs     Update type (key, changed indices, old/new values)
   delta.rs      Diff computation + merge logic (see DELTA_MERGING_RULES.md)
   block.rs      Content-addressable block creation and loading
@@ -332,11 +332,11 @@ Domain types have `From` impls to convert to/from their proto counterparts.
 All protobuf types implement `Display`, so you can print them directly to
 inspect their contents (e.g. `println!("{}", block)`, `println!("{}", patch)`).
 
-Each table cell on the wire is a `proto::cell::Value` — a oneof of
+Each table cell on the wire is a `proto::cell::Cell` — a oneof of
 `null` / `text` / `boolean` / `number` (`f64`). The type travels with the
 data via the oneof tag, so the receiver doesn't re-parse strings to know
-the type. CSV ingest produces a typed domain `Value` per the config's
-`SqlType`; SQL emission consumes those `Value`s directly.
+the type. CSV ingest produces a typed domain `Cell` per the config's
+`SqlType`; SQL emission consumes those `Cell`s directly.
 
 ## Delta merging rules
 

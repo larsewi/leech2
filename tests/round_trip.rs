@@ -38,7 +38,7 @@ const SHIP_PROBABILITY: f64 = 0.3;
 
 /// CSV value treated as SQL NULL by the `email` field's `null` sentinel.
 /// When the agent emits this string in the email column, leech2 maps it
-/// to `Value::Null` and the resulting SQL writes `NULL` to the hub.
+/// to `Cell::Null` and the resulting SQL writes `NULL` to the hub.
 const EMAIL_NULL_SENTINEL: &str = "N/A";
 
 /// Per-agent schema DDL: the *superset* of every column the agent might
@@ -286,7 +286,7 @@ fn random_name(rng: &mut StdRng) -> String {
 /// Pick an email from a small pool, for the same reason as `random_name`.
 /// Occasionally emit the null sentinel instead of a real email so the
 /// CSV exercises the leech2 null-sentinel path; leech2 maps it to
-/// `Value::Null` and the resulting SQL writes NULL to the hub.
+/// `Cell::Null` and the resulting SQL writes NULL to the hub.
 /// No commas or quotes appear in the output, keeping CSV comparisons literal.
 fn random_email(rng: &mut StdRng) -> String {
     if rng.random_bool(0.2) {
