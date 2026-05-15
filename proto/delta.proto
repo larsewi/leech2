@@ -8,12 +8,14 @@ import "update.proto";
 // Delta represents the changes to a single table between two states.
 // The table name is stored as the map key in the parent message.
 message Delta {
-  // The names of all columns, primary key columns first.
-  repeated string fields = 1;
+  // The primary-key field names, in tuple order.
+  repeated string primary_key_names = 1;
+  // The subsidiary (non-key) field names, in tuple order.
+  repeated string subsidiary_value_names = 2;
   // Records that were added (new keys).
-  repeated record.Record inserts = 2;
+  repeated record.Record inserts = 3;
   // Records that were removed (keys no longer present).
-  repeated record.Record deletes = 3;
+  repeated record.Record deletes = 4;
   // Records that were modified (existing keys with changed values).
-  repeated update.Update updates = 4;
+  repeated update.Update updates = 5;
 }

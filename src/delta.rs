@@ -16,8 +16,10 @@ use crate::update::decode_proto_updates;
 /// Delta represents the changes to a single table between two states.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Delta {
-    /// The names of all columns, primary key columns first.
-    pub fields: Vec<String>,
+    /// The primary-key column names, in tuple order.
+    pub primary_key_names: Vec<String>,
+    /// The subsidiary (non-key) column names, in tuple order.
+    pub subsidiary_value_names: Vec<String>,
     /// Records that were added (key -> value).
     pub inserts: RecordMap,
     /// Records that were removed (key -> value).
@@ -30,7 +32,7 @@ impl TryFrom<ProtoDelta> for Delta {
     type Error = anyhow::Error;
 
     fn try_from(proto: ProtoDelta) -> Result<Self> {
-        let num_subsidiary = proto.num_subsidiary().context("corrupt delta")?;
+        let num_subsidiary = proto.subsidiary_value_names.len();
 
         let inserts = decode_proto_records(proto.inserts).context("decoding delta inserts")?;
         let deletes = decode_proto_records(proto.deletes).context("decoding delta deletes")?;
@@ -38,7 +40,8 @@ impl TryFrom<ProtoDelta> for Delta {
             .context("decoding delta updates")?;
 
         Ok(Delta {
-            fields: proto.fields,
+            primary_key_names: proto.primary_key_names,
+            subsidiary_value_names: proto.subsidiary_value_names,
             inserts,
             deletes,
             updates,
@@ -49,7 +52,8 @@ impl TryFrom<ProtoDelta> for Delta {
 impl From<Delta> for ProtoDelta {
     fn from(delta: Delta) -> Self {
         ProtoDelta {
-            fields: delta.fields,
+            primary_key_names: delta.primary_key_names,
+            subsidiary_value_names: delta.subsidiary_value_names,
             inserts: delta.inserts.into_iter().map(Into::into).collect(),
             deletes: delta.deletes.into_iter().map(Into::into).collect(),
             updates: delta.updates.into_iter().map(Into::into).collect(),
@@ -58,33 +62,6 @@ impl From<Delta> for ProtoDelta {
 }
 
 impl ProtoDelta {
-    /// Number of subsidiary (non-key) columns.
-    ///
-    /// The proto format stores keys and values separately, but `fields`
-    /// lists all columns together (PK first, then subsidiary). This method
-    /// determines the PK count from the first available record's key length
-    /// (trying inserts, then deletes, then updates; defaulting to 0 if the
-    /// delta is empty) and subtracts it from the total column count.
-    fn num_subsidiary(&self) -> Result<usize> {
-        let num_primary_keys = if let Some(record) = self.inserts.first() {
-            record.key.len()
-        } else if let Some(record) = self.deletes.first() {
-            record.key.len()
-        } else if let Some(update) = self.updates.first() {
-            update.key.len()
-        } else {
-            0
-        };
-        if self.fields.len() < num_primary_keys {
-            bail!(
-                "fields has {} entries but primary key has {}",
-                self.fields.len(),
-                num_primary_keys
-            );
-        }
-        Ok(self.fields.len() - num_primary_keys)
-    }
-
     fn fmt_inserts(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.inserts.is_empty() {
             return Ok(());
@@ -145,11 +122,11 @@ impl ProtoDelta {
 
 impl fmt::Display for ProtoDelta {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "[{}]", self.fields.join(", "))?;
-        let num_subsidiary = match self.num_subsidiary() {
-            Ok(num_subsidiary) => num_subsidiary,
-            Err(e) => return write!(f, " <corrupt delta: {}>", e),
-        };
+        let mut field_names = self.primary_key_names.clone();
+        field_names.extend_from_slice(&self.subsidiary_value_names);
+        write!(f, "[{}]", field_names.join(", "))?;
+
+        let num_subsidiary = self.subsidiary_value_names.len();
         self.fmt_inserts(f)?;
         self.fmt_deletes(f, num_subsidiary)?;
         self.fmt_updates(f, num_subsidiary)?;
@@ -162,8 +139,16 @@ impl Delta {
     /// represents the combined effect of both. See DELTA_MERGING_RULES.md for
     /// the full specification of the 15 rules.
     pub fn merge(&mut self, child: Delta) -> Result<()> {
-        if self.fields != child.fields {
-            bail!("field mismatch ({:?} vs {:?})", self.fields, child.fields);
+        if self.primary_key_names != child.primary_key_names
+            || self.subsidiary_value_names != child.subsidiary_value_names
+        {
+            bail!(
+                "field mismatch (parent pk={:?} sub={:?} vs child pk={:?} sub={:?})",
+                self.primary_key_names,
+                self.subsidiary_value_names,
+                child.primary_key_names,
+                child.subsidiary_value_names
+            );
         }
 
         for (key, value) in child.inserts {
@@ -324,7 +309,9 @@ impl Delta {
 
             // If the field layout changed, a meaningful delta cannot be computed.
             if let Some(previous_table) = previous_table
-                && previous_table.fields != current_table.fields
+                && (previous_table.primary_key_names != current_table.primary_key_names
+                    || previous_table.subsidiary_value_names
+                        != current_table.subsidiary_value_names)
             {
                 log::warn!(
                     "Table '{}': field layout changed, will use full state",
@@ -352,7 +339,8 @@ impl Delta {
             deltas.insert(
                 table_name.clone(),
                 Some(Delta {
-                    fields: current_table.fields.clone(),
+                    primary_key_names: current_table.primary_key_names.clone(),
+                    subsidiary_value_names: current_table.subsidiary_value_names.clone(),
                     inserts,
                     deletes,
                     updates,
@@ -376,7 +364,8 @@ impl Delta {
                 deltas.insert(
                     table_name.clone(),
                     Some(Delta {
-                        fields: table.fields.clone(),
+                        primary_key_names: table.primary_key_names.clone(),
+                        subsidiary_value_names: table.subsidiary_value_names.clone(),
                         inserts: HashMap::new(),
                         deletes: table.records.clone(),
                         updates: HashMap::new(),
@@ -439,7 +428,8 @@ mod tests {
             .map(|(key, value)| (text_cells(key), text_cells(value)))
             .collect();
         Table {
-            fields: vec![],
+            primary_key_names: vec![],
+            subsidiary_value_names: vec![],
             records,
         }
     }
@@ -625,7 +615,8 @@ mod tests {
         previous_tables.insert(
             "users".to_string(),
             Table {
-                fields: vec!["id".to_string(), "name".to_string()],
+                primary_key_names: vec!["id".to_string()],
+                subsidiary_value_names: vec!["name".to_string()],
                 records: HashMap::from([(text_cells(&["1"]), text_cells(&["alice"]))]),
             },
         );
@@ -637,7 +628,8 @@ mod tests {
         current_tables.insert(
             "users".to_string(),
             Table {
-                fields: vec!["id".to_string(), "name".to_string(), "email".to_string()],
+                primary_key_names: vec!["id".to_string()],
+                subsidiary_value_names: vec!["name".to_string(), "email".to_string()],
                 records: HashMap::from([(
                     text_cells(&["1"]),
                     text_cells(&["alice", "alice@example.com"]),
@@ -707,7 +699,8 @@ mod tests {
 
     fn empty_delta() -> Delta {
         Delta {
-            fields: vec![],
+            primary_key_names: vec![],
+            subsidiary_value_names: vec![],
             inserts: HashMap::new(),
             deletes: HashMap::new(),
             updates: HashMap::new(),
@@ -1146,13 +1139,15 @@ mod tests {
     #[test]
     fn test_merge_field_mismatch_error() {
         let mut parent_delta = Delta {
-            fields: vec!["id".to_string(), "name".to_string()],
+            primary_key_names: vec!["id".to_string()],
+            subsidiary_value_names: vec!["name".to_string()],
             inserts: HashMap::new(),
             deletes: HashMap::new(),
             updates: HashMap::new(),
         };
         let child_delta = Delta {
-            fields: vec!["id".to_string(), "email".to_string()],
+            primary_key_names: vec!["id".to_string()],
+            subsidiary_value_names: vec!["email".to_string()],
             inserts: HashMap::new(),
             deletes: HashMap::new(),
             updates: HashMap::new(),

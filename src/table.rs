@@ -21,11 +21,12 @@ type ProtoTable = crate::proto::table::Table;
 type CanonicalColumns<'a> = Vec<(usize, &'a FieldConfig)>;
 
 /// A table with records stored in a hash map for efficient lookup.
-/// Fields are ordered with primary key columns first, followed by subsidiary columns.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Table {
-    /// The names of all columns in the table, primary key columns first.
-    pub fields: Vec<String>,
+    /// The primary-key field names, in tuple order.
+    pub primary_key_names: Vec<String>,
+    /// The subsidiary (non-key) field names, in tuple order.
+    pub subsidiary_value_names: Vec<String>,
     /// Map from primary key values to subsidiary values.
     pub records: HashMap<Vec<Cell>, Vec<Cell>>,
 }
@@ -36,7 +37,8 @@ impl TryFrom<ProtoTable> for Table {
     fn try_from(proto: ProtoTable) -> Result<Self> {
         let records = decode_proto_records(proto.records)?;
         Ok(Table {
-            fields: proto.fields,
+            primary_key_names: proto.primary_key_names,
+            subsidiary_value_names: proto.subsidiary_value_names,
             records,
         })
     }
@@ -46,7 +48,8 @@ impl From<Table> for ProtoTable {
     fn from(table: Table) -> Self {
         let records = table.records.into_iter().map(Into::into).collect();
         ProtoTable {
-            fields: table.fields,
+            primary_key_names: table.primary_key_names,
+            subsidiary_value_names: table.subsidiary_value_names,
             records,
         }
     }
@@ -54,7 +57,9 @@ impl From<Table> for ProtoTable {
 
 impl fmt::Display for ProtoTable {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "[{}]", self.fields.join(", "))?;
+        let mut field_names = self.primary_key_names.clone();
+        field_names.extend_from_slice(&self.subsidiary_value_names);
+        write!(f, "[{}]", field_names.join(", "))?;
         for record in &self.records {
             write!(
                 f,
@@ -175,9 +180,12 @@ impl Table {
         let (primary_columns, subsidiary_columns) =
             Self::compute_canonical_columns(config, &field_indices);
 
-        let fields: Vec<String> = primary_columns
+        let primary_key_names: Vec<String> = primary_columns
             .iter()
-            .chain(subsidiary_columns.iter())
+            .map(|(_, field)| field.name.clone())
+            .collect();
+        let subsidiary_value_names: Vec<String> = subsidiary_columns
+            .iter()
             .map(|(_, field)| field.name.clone())
             .collect();
 
@@ -212,7 +220,11 @@ impl Table {
             }
         }
 
-        Ok(Table { fields, records })
+        Ok(Table {
+            primary_key_names,
+            subsidiary_value_names,
+            records,
+        })
     }
 }
 
@@ -386,8 +398,13 @@ mod tests {
         let reader_b = Table::test_reader(csv, true);
         let table_b = Table::parse_csv("t", &config_b, &FilterConfig::default(), reader_b).unwrap();
 
-        assert_eq!(table_a.fields, vec!["id", "email", "name"]);
-        assert_eq!(table_a.fields, table_b.fields);
+        assert_eq!(table_a.primary_key_names, vec!["id"]);
+        assert_eq!(table_a.subsidiary_value_names, vec!["email", "name"]);
+        assert_eq!(table_a.primary_key_names, table_b.primary_key_names);
+        assert_eq!(
+            table_a.subsidiary_value_names,
+            table_b.subsidiary_value_names
+        );
         assert_eq!(table_a.records, table_b.records);
     }
 
@@ -407,7 +424,8 @@ mod tests {
         let table = Table::parse_csv("t", &config, &FilterConfig::default(), reader).unwrap();
 
         // Canonical layout: id (PK), then subsidiaries sorted lex.
-        assert_eq!(table.fields, vec!["id", "email", "name"]);
+        assert_eq!(table.primary_key_names, vec!["id"]);
+        assert_eq!(table.subsidiary_value_names, vec!["email", "name"]);
         assert_eq!(
             table.records.get(&vec!["1".into()]),
             Some(&vec!["a@b.com".into(), "Alice".into()])

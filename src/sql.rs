@@ -13,16 +13,15 @@ use crate::proto::table::Table as ProtoTable;
 use crate::proto::update::Update as ProtoUpdate;
 
 /// Schema information for a single table, derived from the wire-declared
-/// field list. Column ordering follows the wire (i.e. the agent's
-/// declaration order): primary-key columns first, then subsidiary columns.
-/// The hub honors that order when generating SQL so values land in the
-/// columns the agent intended, regardless of how the hub config declares
-/// them.
+/// field lists. Column ordering follows the wire (i.e. the agent's
+/// declaration order). The hub honors that order when generating SQL so
+/// values land in the columns the agent intended, regardless of how the
+/// hub config declares them.
 struct TableSchema<'a> {
-    /// Field names in wire order: primary keys first, then subsidiary.
-    field_names: &'a [String],
-    /// Number of primary key fields (the first `num_primary_keys` entries).
-    num_primary_keys: usize,
+    /// Primary-key field names, in wire order.
+    primary_key_names: &'a [String],
+    /// Subsidiary (non-key) field names, in wire order.
+    subsidiary_value_names: &'a [String],
     /// Hub-config field metadata keyed by field name. Used at SQL-rendering
     /// time to validate that each wire cell's variant agrees with the
     /// hub's declared type and that nulls only appear in nullable columns.
@@ -30,22 +29,26 @@ struct TableSchema<'a> {
 }
 
 impl<'a> TableSchema<'a> {
-    /// Resolve a table's schema from a wire-declared field list (e.g.
-    /// `Delta.fields` or `Table.fields`), validating that the wire's view
-    /// of the schema agrees with the hub config.
+    /// Resolve a table's schema from the wire-declared primary-key and
+    /// subsidiary field lists, validating that the wire's view of the
+    /// schema agrees with the hub config.
     ///
-    /// - Field count must match — a wire that omits a column would
-    ///   silently leave it at the DB's default value.
-    /// - Every wire name must be declared in the hub config — otherwise an
-    ///   agent could target columns the operator never authorized leech2
-    ///   to write to.
-    /// - The wire's primary-key prefix must equal the hub's primary-key
+    /// - The union of primary-key and subsidiary names must equal the hub
+    ///   config field set — a wire that omits a column would silently
+    ///   leave it at the DB's default value, and an unknown name could
+    ///   target columns the operator never authorized leech2 to write to.
+    /// - The wire's primary-key set must equal the hub's primary-key
     ///   set — otherwise an agent could choose which column scopes the
     ///   WHERE clause on UPDATE/DELETE, allowing arbitrary-row targeting.
     ///
     /// Type and nullability drift is caught later, per cell, by
     /// [`check_value_matches_field`].
-    fn resolve(wire_fields: &'a [String], config: &'a Config, table_name: &str) -> Result<Self> {
+    fn resolve(
+        wire_primary_key_names: &'a [String],
+        wire_subsidiary_value_names: &'a [String],
+        config: &'a Config,
+        table_name: &str,
+    ) -> Result<Self> {
         let table_config = config
             .tables
             .get(table_name)
@@ -63,16 +66,20 @@ impl<'a> TableSchema<'a> {
             .map(|field| field.name.as_str())
             .collect();
 
-        if wire_fields.len() != table_config.fields.len() {
+        let wire_field_count = wire_primary_key_names.len() + wire_subsidiary_value_names.len();
+        if wire_field_count != table_config.fields.len() {
             bail!(
                 "wire field count {} disagrees with hub config field count {} for table '{}'",
-                wire_fields.len(),
+                wire_field_count,
                 table_config.fields.len(),
                 table_name
             );
         }
 
-        for name in wire_fields {
+        for name in wire_primary_key_names
+            .iter()
+            .chain(wire_subsidiary_value_names)
+        {
             if !field_configs.contains_key(name.as_str()) {
                 bail!(
                     "wire field '{}' is not declared in hub config for table '{}'",
@@ -82,39 +89,27 @@ impl<'a> TableSchema<'a> {
             }
         }
 
-        let num_primary_keys = hub_pk_set.len();
-        let wire_pk_prefix: HashSet<&str> = wire_fields
-            .iter()
-            .take(num_primary_keys)
-            .map(String::as_str)
-            .collect();
-        if wire_pk_prefix != hub_pk_set {
+        let wire_pk_set: HashSet<&str> =
+            wire_primary_key_names.iter().map(String::as_str).collect();
+        if wire_pk_set != hub_pk_set {
             bail!(
-                "wire primary-key prefix {:?} disagrees with hub primary-key set {:?} for table '{}'",
-                wire_pk_prefix,
+                "wire primary-key set {:?} disagrees with hub primary-key set {:?} for table '{}'",
+                wire_pk_set,
                 hub_pk_set,
                 table_name
             );
         }
 
         Ok(TableSchema {
-            field_names: wire_fields,
-            num_primary_keys,
+            primary_key_names: wire_primary_key_names,
+            subsidiary_value_names: wire_subsidiary_value_names,
             field_configs,
         })
     }
 
-    fn primary_key_names(&self) -> &[String] {
-        &self.field_names[..self.num_primary_keys]
-    }
-
-    fn subsidiary_names(&self) -> &[String] {
-        &self.field_names[self.num_primary_keys..]
-    }
-
     /// Look up the hub `FieldConfig` for a wire field name. The wire-field
-    /// validation in `resolve` guarantees every name in `field_names` has
-    /// a hub config entry, so a missing entry here is an internal bug.
+    /// validation in `resolve` guarantees every wire name has a hub config
+    /// entry, so a missing entry here is an internal bug.
     fn field_config(&self, name: &str) -> Result<&FieldConfig> {
         self.field_configs
             .get(name)
@@ -206,31 +201,28 @@ pub fn quote_literal(value: &Cell) -> String {
 
 /// Convert key + value proto-cell slices into a list of SQL literal strings.
 fn format_row(key: &[ProtoCell], value: &[ProtoCell], schema: &TableSchema) -> Result<Vec<String>> {
-    let primary_keys = schema.primary_key_names();
-    let subsidiary_fields = schema.subsidiary_names();
-
-    if key.len() != primary_keys.len() {
+    if key.len() != schema.primary_key_names.len() {
         bail!(
             "primary key field count mismatch: got {} values, expected {}",
             key.len(),
-            primary_keys.len()
+            schema.primary_key_names.len()
         );
     }
-    if value.len() != subsidiary_fields.len() {
+    if value.len() != schema.subsidiary_value_names.len() {
         bail!(
             "subsidiary field count mismatch: got {} values, expected {}",
             value.len(),
-            subsidiary_fields.len()
+            schema.subsidiary_value_names.len()
         );
     }
 
     let mut literals = Vec::with_capacity(key.len() + value.len());
-    for (proto_value, name) in key.iter().zip(primary_keys) {
+    for (proto_value, name) in key.iter().zip(schema.primary_key_names) {
         let v = Cell::try_from(proto_value).with_context(|| format!("field '{}'", name))?;
         check_value_matches_field(&v, schema.field_config(name)?)?;
         literals.push(quote_literal(&v));
     }
-    for (proto_value, name) in value.iter().zip(subsidiary_fields) {
+    for (proto_value, name) in value.iter().zip(schema.subsidiary_value_names) {
         let v = Cell::try_from(proto_value).with_context(|| format!("field '{}'", name))?;
         check_value_matches_field(&v, schema.field_config(name)?)?;
         literals.push(quote_literal(&v));
@@ -269,11 +261,15 @@ fn emit_inserts(
         return Ok(());
     }
 
-    let mut column_parts: Vec<String> = schema
-        .field_names
+    let mut column_parts: Vec<String> =
+        Vec::with_capacity(schema.primary_key_names.len() + schema.subsidiary_value_names.len());
+    for name in schema
+        .primary_key_names
         .iter()
-        .map(|name| quote_identifier(name))
-        .collect();
+        .chain(schema.subsidiary_value_names)
+    {
+        column_parts.push(quote_identifier(name));
+    }
 
     let injected_columns: Vec<String> = injected_fields.iter().map(|f| f.quoted_column()).collect();
     column_parts.splice(..0, injected_columns);
@@ -353,12 +349,10 @@ fn emit_updates(
     quoted_table: &str,
     out: &mut String,
 ) -> Result<()> {
-    let subsidiary_names = schema.subsidiary_names();
-
     for update in updates {
         let stmt = format_update(
             update,
-            subsidiary_names,
+            schema.subsidiary_value_names,
             schema,
             injected_fields,
             quoted_table,
@@ -377,7 +371,7 @@ fn primary_key_where_clause(
     injected_fields: &[InjectedField],
 ) -> Result<String> {
     let mut where_parts = Vec::new();
-    for (proto_value, name) in key.iter().zip(schema.primary_key_names()) {
+    for (proto_value, name) in key.iter().zip(schema.primary_key_names) {
         let value = Cell::try_from(proto_value).with_context(|| format!("field '{}'", name))?;
         check_value_matches_field(&value, schema.field_config(name)?)?;
         where_parts.push(format!(
@@ -401,7 +395,12 @@ fn delta_to_sql(
     injected_fields: &[InjectedField],
     out: &mut String,
 ) -> Result<()> {
-    let schema = TableSchema::resolve(&delta.fields, config, table_name)?;
+    let schema = TableSchema::resolve(
+        &delta.primary_key_names,
+        &delta.subsidiary_value_names,
+        config,
+        table_name,
+    )?;
     let table = quote_identifier(table_name);
 
     emit_deletes(&delta.deletes, &schema, injected_fields, &table, out)
@@ -422,7 +421,12 @@ fn state_table_to_sql(
     injected_fields: &[InjectedField],
     out: &mut String,
 ) -> Result<()> {
-    let schema = TableSchema::resolve(&table.fields, config, table_name)?;
+    let schema = TableSchema::resolve(
+        &table.primary_key_names,
+        &table.subsidiary_value_names,
+        config,
+        table_name,
+    )?;
     let quoted_table = quote_identifier(table_name);
 
     if injected_fields.is_empty() {
@@ -522,11 +526,13 @@ mod tests {
         }
     }
 
-    /// Build an empty ProtoDelta with the given column names. Tests push
-    /// inserts, deletes, or updates onto the returned delta as needed.
-    fn dummy_delta(fields: &[&str]) -> ProtoDelta {
+    /// Build an empty ProtoDelta with the given primary-key and subsidiary
+    /// field names. Tests push inserts, deletes, or updates onto the
+    /// returned delta as needed.
+    fn dummy_delta(primary_keys: &[&str], subsidiary_values: &[&str]) -> ProtoDelta {
         ProtoDelta {
-            fields: fields.iter().map(|s| s.to_string()).collect(),
+            primary_key_names: primary_keys.iter().map(|s| s.to_string()).collect(),
+            subsidiary_value_names: subsidiary_values.iter().map(|s| s.to_string()).collect(),
             inserts: vec![],
             deletes: vec![],
             updates: vec![],
@@ -576,7 +582,7 @@ mod tests {
         let table_config = dummy_table(&[("id", true)]);
         let config = dummy_config(HashMap::from([("test_table".to_string(), table_config)]));
 
-        let mut delta = dummy_delta(&["id"]);
+        let mut delta = dummy_delta(&["id"], &[]);
         delta.inserts.push(ProtoRecord {
             key: text_proto_cells(&["1"]),
             value: vec![],
@@ -595,7 +601,7 @@ mod tests {
         let table_config = dummy_table(&[("id", true), ("name", false)]);
         let config = dummy_config(HashMap::from([("test_table".to_string(), table_config)]));
 
-        let mut delta = dummy_delta(&["id", "name"]);
+        let mut delta = dummy_delta(&["id"], &["name"]);
         delta.updates.push(ProtoUpdate {
             key: text_proto_cells(&["1"]),
             changed_indices: vec![],
@@ -616,7 +622,7 @@ mod tests {
         let table_config = dummy_table(&[("id", true), ("name", false)]);
         let config = dummy_config(HashMap::from([("test_table".to_string(), table_config)]));
 
-        let mut delta = dummy_delta(&["id", "name"]);
+        let mut delta = dummy_delta(&["id"], &["name"]);
         delta.updates.push(ProtoUpdate {
             key: text_proto_cells(&["1"]),
             changed_indices: vec![5],
@@ -632,8 +638,8 @@ mod tests {
 
     /// When the agent and hub agree on field set, types, PK assignment, and
     /// nullability but disagree on subsidiary declaration order, the hub
-    /// honours the wire's `delta.fields` order so each value lands in the
-    /// column the agent intended.
+    /// honours the wire's `subsidiary_value_names` order so each value
+    /// lands in the column the agent intended.
     #[test]
     fn test_subsidiary_order_drift_uses_wire_order_for_columns() {
         // Hub config: subsidiary declaration order is [email, name].
@@ -642,7 +648,7 @@ mod tests {
 
         // Wire entry as the agent would have serialized it: subsidiary values
         // laid out in the agent's declaration order, i.e. [name, email].
-        let mut delta = dummy_delta(&["id", "name", "email"]);
+        let mut delta = dummy_delta(&["id"], &["name", "email"]);
         delta.inserts.push(ProtoRecord {
             key: text_proto_cells(&["1"]),
             value: text_proto_cells(&["Alice", "alice@example.com"]),
@@ -664,12 +670,13 @@ mod tests {
     fn test_resolve_rejects_wire_field_not_in_config() {
         // A malicious agent that passes the field-hash check could still
         // try to target a column outside the configured schema set by
-        // putting an unknown name in `delta.fields`.
+        // putting an unknown name in the wire field lists.
         let hub_config_table = dummy_table(&[("id", true), ("name", false)]);
         let hub_config = dummy_config(HashMap::from([("users".to_string(), hub_config_table)]));
 
-        let wire_fields = vec!["id".to_string(), "password_hash".to_string()];
-        let result = TableSchema::resolve(&wire_fields, &hub_config, "users");
+        let primary_keys = vec!["id".to_string()];
+        let subsidiary_values = vec!["password_hash".to_string()];
+        let result = TableSchema::resolve(&primary_keys, &subsidiary_values, &hub_config, "users");
         let msg = format!("{:#}", result.err().unwrap());
         assert!(msg.contains("not declared in hub config"), "got: {msg}");
     }
@@ -681,10 +688,11 @@ mod tests {
         let hub_config_table = dummy_table(&[("id", true), ("email", false)]);
         let hub_config = dummy_config(HashMap::from([("users".to_string(), hub_config_table)]));
 
-        let wire_fields = vec!["email".to_string(), "id".to_string()];
-        let result = TableSchema::resolve(&wire_fields, &hub_config, "users");
+        let primary_keys = vec!["email".to_string()];
+        let subsidiary_values = vec!["id".to_string()];
+        let result = TableSchema::resolve(&primary_keys, &subsidiary_values, &hub_config, "users");
         let msg = format!("{:#}", result.err().unwrap());
-        assert!(msg.contains("primary-key prefix"), "got: {msg}");
+        assert!(msg.contains("primary-key set"), "got: {msg}");
     }
 
     fn make_field(name: &str, kind: Kind, nullable: bool) -> FieldConfig {
@@ -746,7 +754,7 @@ mod tests {
         table.fields[1].kind = Kind::Number;
         let config = dummy_config(HashMap::from([("t".to_string(), table)]));
 
-        let mut delta = dummy_delta(&["id", "score"]);
+        let mut delta = dummy_delta(&["id"], &["score"]);
         delta.inserts.push(ProtoRecord {
             key: text_proto_cells(&["1"]),
             value: text_proto_cells(&["not-a-number"]),
