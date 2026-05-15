@@ -3,16 +3,15 @@ use std::fmt;
 
 use anyhow::{Context, Result, bail};
 
+use crate::entry::RecordMap;
 use crate::entry::decode_proto_records;
 use crate::proto::delta::Delta as ProtoDelta;
 use crate::state::State;
 use crate::table::Table;
-use crate::update::Update;
+use crate::update::UpdateMap;
+use crate::update::decode_proto_updates;
 use crate::value::Value;
 use crate::value::display_proto_values;
-
-type RecordMap = HashMap<Vec<Value>, Vec<Value>>;
-type UpdateMap = HashMap<Vec<Value>, (Vec<Value>, Vec<Value>)>;
 
 /// Delta represents the changes to a single table between two states.
 #[derive(Debug, Clone, PartialEq)]
@@ -33,18 +32,10 @@ impl TryFrom<ProtoDelta> for Delta {
     fn try_from(proto: ProtoDelta) -> Result<Self> {
         let num_subsidiary = proto.num_subsidiary().context("corrupt delta")?;
 
-        let inserts = decode_proto_records(proto.inserts)?;
-        let deletes = decode_proto_records(proto.deletes)?;
-
-        // Updates are stored sparsely on the wire: only changed column
-        // indices and their values are included. Expand them back to
-        // full-width value vectors (one element per subsidiary column).
-        let mut updates = HashMap::with_capacity(proto.updates.len());
-        for mut proto_update in proto.updates {
-            proto_update.expand_sparse(num_subsidiary)?;
-            let update = Update::try_from(proto_update)?;
-            updates.insert(update.key, (update.old_value, update.new_value));
-        }
+        let inserts = decode_proto_records(proto.inserts).context("decoding delta inserts")?;
+        let deletes = decode_proto_records(proto.deletes).context("decoding delta deletes")?;
+        let updates = decode_proto_updates(proto.updates, num_subsidiary)
+            .context("decoding delta updates")?;
 
         Ok(Delta {
             fields: proto.fields,

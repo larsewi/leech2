@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 
 use anyhow::{Result, bail};
@@ -6,6 +6,8 @@ use anyhow::{Result, bail};
 use crate::proto::cell::Value as ProtoValue;
 use crate::proto::update::Update as ProtoUpdate;
 use crate::value::{Value, decode_proto_values, display_proto_values};
+
+pub type UpdateMap = HashMap<Vec<Value>, (Vec<Value>, Vec<Value>)>;
 
 /// An entry whose subsidiary (non-key) values changed between two states.
 ///
@@ -195,6 +197,21 @@ fn format_update_column(
     } else {
         format!("{} -> {}", old_str, new_str)
     }
+}
+
+/// Decode a `Vec<ProtoUpdate>` into a `HashMap` keyed by each entry's key.
+///
+/// Updates are stored sparsely on the wire: only changed column indices and
+/// their values are included. Expand them back to full-width value vectors
+/// (one element per subsidiary column).
+pub fn decode_proto_updates(protos: Vec<ProtoUpdate>, num_subsidiary: usize) -> Result<UpdateMap> {
+    let mut updates = HashMap::with_capacity(protos.len());
+    for mut proto in protos {
+        proto.expand_sparse(num_subsidiary)?;
+        let update = Update::try_from(proto)?;
+        updates.insert(update.key, (update.old_value, update.new_value));
+    }
+    Ok(updates)
 }
 
 impl fmt::Display for ProtoUpdate {

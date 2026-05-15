@@ -7,6 +7,8 @@ use crate::proto::entry::Entry as ProtoEntry;
 use crate::value::Value;
 use crate::value::{decode_proto_values, display_proto_values};
 
+pub type RecordMap = HashMap<Vec<Value>, Vec<Value>>;
+
 /// A row in a table, split into key and value components.
 ///
 /// `Entry` is the domain counterpart to `proto::entry::Entry`.
@@ -70,8 +72,6 @@ impl fmt::Display for Entry {
 }
 
 /// Decode a `Vec<ProtoEntry>` into a `HashMap` keyed by each entry's key.
-/// Short-circuits on the first entry that fails to decode. Duplicate keys
-/// silently overwrite, matching `HashMap::insert` semantics.
 pub fn decode_proto_records(protos: Vec<ProtoEntry>) -> Result<HashMap<Vec<Value>, Vec<Value>>> {
     let mut records = HashMap::with_capacity(protos.len());
     for proto in protos {
