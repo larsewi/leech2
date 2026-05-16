@@ -230,6 +230,11 @@ fn find_field_value<'a>(
 }
 
 impl FilterConfig {
+    /// True if no filtering rules are configured.
+    pub fn is_default(&self) -> bool {
+        self.max_field_length.is_none() && self.include.is_empty() && self.exclude.is_empty()
+    }
+
     /// Returns `Some(reason)` if the record should be filtered out, `None` to keep.
     pub fn should_filter(
         &self,
