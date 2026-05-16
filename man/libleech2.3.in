@@ -10,7 +10,7 @@ libleech2 \- C API for tracking CSV changes and producing SQL patches
 .br
 .BI "void lch_deinit(lch_config_t *" cfg );
 .PP
-.BI "int lch_block_create(const lch_config_t *" cfg );
+.BI "int lch_block_create(const lch_config_t *" cfg ", const lch_callbacks_t *" callbacks );
 .PP
 .BI "int lch_patch_create(const lch_config_t *" cfg ", const char *" hash ", lch_buffer_t *" out );
 .br
@@ -92,10 +92,58 @@ Passing NULL is a safe no-op. After this call the handle is invalid and must not
 be used.
 .SS Block creation
 .TP
-.BI "int lch_block_create(const lch_config_t *" cfg )
-Read the configured CSV sources, compute the new state and the delta against
-the previous state, and write a new block together with updated STATE and HEAD
+.BI "int lch_block_create(const lch_config_t *" cfg ", const lch_callbacks_t *" callbacks )
+Read each table's contents -- from its configured CSV source, or via
+.I callbacks
+for tables that omit
+.B source
+in the configuration -- compute the new state and the delta against the
+previous state, and write a new block together with updated STATE and HEAD
 files. History truncation is performed afterwards.
+.IP
+.I callbacks
+may be NULL when every table in
+.I cfg
+is CSV-backed. A configuration that contains any callback-backed table
+requires
+.I callbacks
+to be non-NULL with
+.B read_cell
+set; otherwise the call returns
+.B LCH_FAILURE
+with a log message naming the offending table.
+.IP
+For each callback-backed table the hook order is:
+.B table_begin
+(if set, exactly once)
+.RB "->" "a number of"
+.B read_cell
+.RB "invocations ->" " table_end"
+(if set and
+.B table_begin
+returned
+.BR LCH_SUCCESS ,
+exactly once). CSV-backed tables do not trigger any hooks. Tables are
+processed one at a time; lifecycles do not overlap. All callbacks are invoked
+exclusively from the thread that called
+.BR lch_block_create ();
+re-entering the library from inside any callback is undefined.
+.IP
+The
+.B kind
+on each typed cell written by
+.B read_cell
+must match the field's declared kind (TEXT / NUMBER / BOOLEAN), with
+.B LCH_VALUE_NULL
+accepted on any non-primary-key field.
+.IP
+Filters configured in
+.B config.toml
+(\fBmax-field-length\fR, \fBinclude\fR, \fBexclude\fR) apply to CSV-backed
+tables only. When filters are configured alongside any callback-backed
+table, a warning is logged at block creation; the callback owns row
+inclusion for those tables via
+.BR LCH_FILTER_RECORD .
 .SS Patch operations
 .TP
 .BI "int lch_patch_create(const lch_config_t *" cfg ", const char *" hash ", lch_buffer_t *" out )
@@ -223,6 +271,44 @@ and
 .BI "size_t " len .
 Released with
 .BR lch_buffer_free ().
+.TP
+.B lch_callbacks_t
+Callback bundle passed to
+.BR lch_block_create ()
+for callback-backed tables. Fields:
+.RS
+.IP \(bu
+.B table_begin
+.RI "(type " lch_table_begin_cb_t ")"
+\- optional per-table setup hook. May be NULL.
+.IP \(bu
+.B read_cell
+.RI "(type " lch_read_cell_cb_t ")"
+\- per-cell hook; required when any table is callback-backed.
+.IP \(bu
+.B table_end
+.RI "(type " lch_table_end_cb_t ")"
+\- optional per-table teardown hook. May be NULL.
+.IP \(bu
+.B usr_data
+.RB "(" "void *" )
+\- opaque pointer forwarded verbatim to every invoked callback.
+.RE
+.IP
+The cell callback receives the field's 0-based declaration-order index
+.RB ( col )
+and the field name
+.RB ( field_name );
+the caller may dispatch on either. It returns
+.BR LCH_SUCCESS " after writing " out_cell ", "
+.B LCH_END_OF_TABLE
+to stop iteration,
+.B LCH_FILTER_RECORD
+to drop the current row, or
+.B LCH_FAILURE
+to abort block creation. See
+.BR <leech2.h>
+for full signatures.
 .SH RETURN VALUES
 Functions returning
 .B int
@@ -235,6 +321,14 @@ The operation completed successfully.
 An error occurred. If a log callback was installed with
 .BR lch_log_init (),
 detailed error messages are delivered through it.
+.PP
+The cell callback
+.RB ( lch_read_cell_cb_t )
+additionally uses
+.B LCH_END_OF_TABLE (1)
+to signal that no row exists at the requested index, and
+.B LCH_FILTER_RECORD (2)
+to drop the current row.
 .PP
 .BR lch_init ()
 returns a pointer on success or NULL on failure.
@@ -291,7 +385,8 @@ int main(void) {
     lch_config_t *cfg = lch_init("/path/to/.leech2");
     if (!cfg) return EXIT_FAILURE;
 
-    if (lch_block_create(cfg) != LCH_SUCCESS) {
+    /* No table is callback-backed, so no callback bundle is needed. */
+    if (lch_block_create(cfg, NULL) != LCH_SUCCESS) {
         lch_deinit(cfg);
         return EXIT_FAILURE;
     }

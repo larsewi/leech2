@@ -260,7 +260,10 @@ discover compile and link flags with `pkg-config --cflags --libs leech2`.
 ```c
 lch_config_t *cfg = lch_init("/path/to/workdir");
 
-lch_block_create(cfg);
+/* Every table in the config has a `source` key, so no callback bundle is
+ * needed -- pass NULL. See "Callback-backed tables" below for the case where
+ * a table's rows come from the application instead of a CSV file. */
+lch_block_create(cfg, NULL);
 
 lch_buffer_t patch = {0};
 lch_patch_create(cfg, NULL, &patch);
@@ -279,6 +282,42 @@ lch_buffer_free(&patch);
 
 lch_deinit(cfg);
 ```
+
+### Callback-backed tables
+
+A table can omit its `source` key in `config.toml`, in which case
+`lch_block_create()` pulls its rows from a caller-supplied callback bundle
+instead of a CSV file. This avoids staging in-memory data to disk just to
+feed it back to leech2.
+
+```c
+static int my_read_cell(const char *table, size_t row, size_t col,
+                        const char *field_name, lch_cell_t *out, void *ud) {
+  (void)col;
+  my_state_t *s = (my_state_t *)ud;
+  if (row >= s->len) return LCH_END_OF_TABLE;
+  if (strcmp(field_name, "id") == 0) {
+    out->kind = LCH_VALUE_NUMBER;
+    out->number = s->rows[row].id;
+    return LCH_SUCCESS;
+  }
+  /* ... other fields ... */
+  return LCH_FAILURE;
+}
+
+lch_callbacks_t cbs = {
+    .table_begin = NULL,         /* optional per-table setup */
+    .read_cell = my_read_cell,   /* required when any table is callback-backed */
+    .table_end = NULL,           /* optional per-table teardown */
+    .usr_data = &state,
+};
+lch_block_create(cfg, &cbs);
+```
+
+CSV-backed and callback-backed tables can coexist in the same config; the
+callback hooks fire only for tables that omit `source`. Filters configured
+in `[filters]` apply to CSV-backed tables only -- callbacks own row
+inclusion via `LCH_FILTER_RECORD`.
 
 ## Logging
 

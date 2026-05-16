@@ -30,11 +30,20 @@ block chain for change history. Changes flow through four primary operations:
 
 ### Block::create()
 
-`Block::create()` captures changes by comparing the current CSV table state
-against the previous state stored on disk. The library loads each CSV file into
-a hash map keyed by composite primary key, then computes a delta against the
-previous snapshot. Each delta records three operation types: inserts (new keys),
-deletes (removed keys), and updates (changed values).
+`Block::create()` captures changes by comparing the current table state against
+the previous state stored on disk. The library loads each table into a hash map
+keyed by composite primary key, then computes a delta against the previous
+snapshot. Each delta records three operation types: inserts (new keys), deletes
+(removed keys), and updates (changed values).
+
+Tables can be sourced two ways: from a CSV file declared via `source` in the
+config (the original path; values are parsed from text), or from a caller-
+supplied callback bundle when `source` is omitted (the C application produces
+typed cells directly via `lch_callbacks_t`). Both paths produce the same in-
+memory table representation; everything downstream — delta computation, layout
+change detection, block storage, truncation — is identical. Filters apply to
+CSV-backed tables only; callback-backed tables filter rows by returning
+`LCH_FILTER_RECORD`.
 
 When starting a fresh chain (HEAD is genesis), the block is stored with an empty
 payload — delta computation and STATE file loading are skipped entirely. The
@@ -277,10 +286,15 @@ reproduce a specific failure; the workflow exposes the same input via
 ```
 src/
   lib.rs        C FFI entry points
+  ffi.rs        Shared FFI plumbing (panic guard, arg checks, repr-C buffer/
+                cell types, cell decode helper)
+  callbacks.rs  Rust-side adapter for the lch_callbacks_t bundle used by
+                callback-backed tables
   logger.rs     Callback-based log dispatch for FFI consumers
   main.rs       CLI (lch binary)
   config.rs     TOML/JSON config parsing
-  table.rs      CSV loading, in-memory table (HashMap<Vec<Cell>, Vec<Cell>>)
+  table.rs      Table loading (CSV path + callback path) and the in-memory
+                table type (HashMap<Vec<Cell>, Vec<Cell>>)
   state.rs      Snapshot of all tables, protobuf persistence
   cell.rs       Domain Cell type + conversions to/from proto::cell::Cell
   record.rs     Record type (Vec<Cell> key + value)
