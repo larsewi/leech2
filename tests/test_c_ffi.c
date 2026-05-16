@@ -72,7 +72,7 @@ int main(int argc, char *argv[]) {
   ret = lch_patch_inject(cfg, &patch, "hostkey", &hostkey_cell, &injected);
   if (ret == LCH_FAILURE) {
     fprintf(stderr, "lch_patch_inject failed\n");
-    lch_patch_free(&patch);
+    lch_buffer_free(&patch);
     lch_deinit(cfg);
     return EXIT_FAILURE;
   }
@@ -81,8 +81,8 @@ int main(int argc, char *argv[]) {
   ret = lch_patch_to_sql(cfg, &injected, &sql);
   if (ret == LCH_FAILURE) {
     fprintf(stderr, "lch_patch_to_sql failed\n");
-    lch_patch_free(&injected);
-    lch_patch_free(&patch);
+    lch_buffer_free(&injected);
+    lch_buffer_free(&patch);
     lch_deinit(cfg);
     return EXIT_FAILURE;
   }
@@ -91,18 +91,18 @@ int main(int argc, char *argv[]) {
       strstr(sql, "'abc123'") == NULL) {
     fprintf(stderr, "lch_patch_inject: injected field not present in SQL\n");
     lch_sql_free(sql);
-    lch_patch_free(&injected);
-    lch_patch_free(&patch);
+    lch_buffer_free(&injected);
+    lch_buffer_free(&patch);
     lch_deinit(cfg);
     return EXIT_FAILURE;
   }
 
-  lch_patch_free(&injected);
+  lch_buffer_free(&injected);
 
   ret = lch_patch_applied(cfg, &patch);
   if (ret == LCH_FAILURE) {
     fprintf(stderr, "lch_patch_applied failed\n");
-    lch_patch_free(&patch);
+    lch_buffer_free(&patch);
     lch_deinit(cfg);
     return EXIT_FAILURE;
   }
@@ -110,12 +110,12 @@ int main(int argc, char *argv[]) {
   ret = lch_patch_failed(cfg);
   if (ret == LCH_FAILURE) {
     fprintf(stderr, "lch_patch_failed failed\n");
-    lch_patch_free(&patch);
+    lch_buffer_free(&patch);
     lch_deinit(cfg);
     return EXIT_FAILURE;
   }
 
-  lch_patch_free(&patch);
+  lch_buffer_free(&patch);
   lch_sql_free(sql);
   lch_deinit(cfg);
 

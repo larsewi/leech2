@@ -22,7 +22,7 @@ libleech2 \- C API for tracking CSV changes and producing SQL patches
 .br
 .BI "int lch_patch_failed(const lch_config_t *" cfg );
 .PP
-.BI "void lch_patch_free(lch_buffer_t *" buf );
+.BI "void lch_buffer_free(lch_buffer_t *" buf );
 .br
 .BI "void lch_sql_free(char *" sql );
 .SH DESCRIPTION
@@ -116,7 +116,7 @@ allows callers to bypass the built-in REPORTED mechanism and implement their own
 system for tracking which blocks have been reported.
 .IP
 The buffer must eventually be freed with
-.BR lch_patch_free ().
+.BR lch_buffer_free ().
 .TP
 .BI "int lch_patch_to_sql(const lch_config_t *" cfg ", const lch_buffer_t *" patch ", char **" sql )
 Decode the patch in
@@ -167,7 +167,7 @@ prior injection -- both its value and kind are replaced.
 The buffer written to
 .I out
 must eventually be freed with
-.BR lch_patch_free ().
+.BR lch_buffer_free ().
 .TP
 .BI "int lch_patch_applied(const lch_config_t *" cfg ", const lch_buffer_t *" patch )
 Mark a patch as applied by updating the REPORTED file with the patch's head
@@ -180,12 +180,8 @@ will produce a full state patch (TRUNCATE + INSERT for all tables). Safe to call
 regardless of whether a REPORTED file exists.
 .SS Memory management
 .TP
-.BI "void lch_patch_free(lch_buffer_t *" buf )
-Free a patch buffer previously filled in by
-.BR lch_patch_create ()
-or
-.BR lch_patch_inject ()
-without marking it as applied. Passing NULL is a safe no-op, as is passing a
+.BI "void lch_buffer_free(lch_buffer_t *" buf )
+Free a library-owned buffer. Passing NULL is a safe no-op, as is passing a
 buffer whose
 .B data
 field is NULL.
@@ -225,12 +221,8 @@ Owned byte buffer with fields
 .BI "uint8_t *" data
 and
 .BI "size_t " len .
-Filled in by
-.BR lch_patch_create ()
-and
-.BR lch_patch_inject ();
-released with
-.BR lch_patch_free ().
+Released with
+.BR lch_buffer_free ().
 .SH RETURN VALUES
 Functions returning
 .B int
@@ -248,7 +240,7 @@ detailed error messages are delivered through it.
 returns a pointer on success or NULL on failure.
 .PP
 .BR lch_deinit (),
-.BR lch_patch_free (),
+.BR lch_buffer_free (),
 and
 .BR lch_sql_free ()
 do not return a value.
@@ -312,7 +304,7 @@ int main(void) {
 
     char *sql;
     if (lch_patch_to_sql(cfg, &patch, &sql) != LCH_SUCCESS) {
-        lch_patch_free(&patch);
+        lch_buffer_free(&patch);
         lch_deinit(cfg);
         return EXIT_FAILURE;
     }
@@ -324,7 +316,7 @@ int main(void) {
 
     /* Mark as applied on success, or failed on error */
     lch_patch_applied(cfg, &patch);
-    lch_patch_free(&patch);
+    lch_buffer_free(&patch);
 
     lch_deinit(cfg);
     return EXIT_SUCCESS;

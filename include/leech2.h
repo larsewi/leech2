@@ -156,7 +156,8 @@ extern int lch_block_create(const lch_config_t *cfg);
  * mechanism (lch_patch_applied / lch_patch_failed) and implement their own
  * system for tracking which blocks have been reported.
  *
- * The buffer written to @p out must eventually be freed with lch_patch_free().
+ * The buffer written to @p out must eventually be freed with
+ * lch_buffer_free().
  *
  * @param cfg       Valid config handle (must not be NULL).
  * @param hash      Last-known block hash (null-terminated string), or NULL.
@@ -204,7 +205,8 @@ extern int lch_patch_to_sql(const lch_config_t *cfg, const lch_buffer_t *patch,
  * from static configuration or a prior injection -- both its value and kind
  * are replaced.
  *
- * The buffer written to @p out must eventually be freed with lch_patch_free().
+ * The buffer written to @p out must eventually be freed with
+ * lch_buffer_free().
  *
  * @param cfg       Valid config handle (must not be NULL).
  * @param in        Encoded input patch (must not be NULL).
@@ -243,16 +245,15 @@ extern int lch_patch_applied(const lch_config_t *cfg,
 extern int lch_patch_failed(const lch_config_t *cfg);
 
 /**
- * Free a patch buffer without marking it as applied.
+ * Free a library-owned buffer.
  *
  * Passing NULL is a safe no-op, as is passing a buffer with @c data set to
  * NULL. After this call, the buffer's @c data pointer is invalid and must not
  * be used; the caller may reset the struct or let it go out of scope.
  *
- * @param buf  Patch buffer previously filled in by lch_patch_create() or
- *             lch_patch_inject(), or NULL.
+ * @param buf  Buffer to free, or NULL.
  */
-extern void lch_patch_free(lch_buffer_t *buf);
+extern void lch_buffer_free(lch_buffer_t *buf);
 
 /**
  * Free an SQL string returned by lch_patch_to_sql().

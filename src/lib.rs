@@ -160,7 +160,7 @@ pub unsafe extern "C" fn lch_block_create(config: *const config::Config) -> i32 
 }
 
 /// ABI-compatible mirror of `lch_buffer_t` from `leech2.h`. An owned byte
-/// buffer handed across the FFI boundary; freed with `lch_patch_free`.
+/// buffer handed across the FFI boundary; freed with `lch_buffer_free`.
 #[repr(C)]
 pub struct LchBuffer {
     data: *mut u8,
@@ -168,7 +168,7 @@ pub struct LchBuffer {
 }
 
 /// Encode a Rust byte vector into an `LchBuffer` whose `data` pointer is
-/// owned by the caller and must be released with `lch_patch_free`.
+/// owned by the caller and must be released with `lch_buffer_free`.
 fn buffer_from_vec(buf: Vec<u8>) -> LchBuffer {
     let boxed = buf.into_boxed_slice();
     let len = boxed.len();
@@ -510,11 +510,11 @@ pub unsafe extern "C" fn lch_patch_failed(config: *const config::Config) -> i32 
 
 /// # Safety
 /// `buf` must be NULL (no-op) or a valid pointer to an `lch_buffer_t` whose
-/// `data` field was previously filled in by `lch_patch_create` or
-/// `lch_patch_inject`. A buffer with `data == NULL` is a no-op.
+/// `data` field was previously filled in by the library. A buffer with
+/// `data == NULL` is a no-op.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn lch_patch_free(buf: *mut LchBuffer) {
-    ffi_guard("lch_patch_free", (), || {
+pub unsafe extern "C" fn lch_buffer_free(buf: *mut LchBuffer) {
+    ffi_guard("lch_buffer_free", (), || {
         if buf.is_null() {
             return;
         }

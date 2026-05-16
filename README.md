@@ -275,7 +275,7 @@ if (hub_send(patch.data, patch.len)) {
 } else {
   lch_patch_failed(cfg);
 }
-lch_patch_free(&patch);
+lch_buffer_free(&patch);
 
 lch_deinit(cfg);
 ```
