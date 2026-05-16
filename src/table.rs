@@ -1,10 +1,12 @@
 use std::collections::HashMap;
+use std::ffi::CString;
 use std::fmt;
 use std::fs::File;
 use std::path::Path;
 
 use anyhow::{Context, Result};
 
+use crate::callbacks::{Callbacks, CellResult};
 use crate::cell::{
     Cell, DEFAULT_FALSE_SENTINEL, DEFAULT_TRUE_SENTINEL, Kind, display_proto_cells, parse_boolean,
     parse_typed_cell,
@@ -105,6 +107,92 @@ impl Table {
         );
 
         Ok(table)
+    }
+
+    /// Loads a table by pulling rows from a caller-supplied cell callback.
+    ///
+    /// Rows are requested in ascending order from `row = 0` until the callback
+    /// returns `LCH_END_OF_TABLE`. Within a row, leech2 requests cells in
+    /// canonical order (primary keys lex-sorted, then subsidiaries lex-sorted)
+    /// and the `col` it passes is the field's 0-based position in
+    /// `config.fields` (declaration order).
+    ///
+    /// `table_c` is the table name pre-encoded as a `CStr` so the row loop
+    /// reuses the same pointer across every cell call.
+    pub fn load_from_callbacks(
+        name: &str,
+        config: &TableConfig,
+        callbacks: &Callbacks,
+        table_c: &std::ffi::CStr,
+    ) -> Result<Self> {
+        // The "field indices" passed into compute_canonical_columns are the
+        // 0-based declaration-order positions in config.fields. That matches
+        // the index leech promises to pass to the callback as `col`, so we
+        // can synthesize it as the identity mapping.
+        let positions: Vec<usize> = (0..config.fields.len()).collect();
+        let (primary_columns, subsidiary_columns) =
+            Self::compute_canonical_columns(config, &positions);
+
+        let primary_key_names: Vec<String> = primary_columns
+            .iter()
+            .map(|(_, field)| field.name.clone())
+            .collect();
+        let subsidiary_value_names: Vec<String> = subsidiary_columns
+            .iter()
+            .map(|(_, field)| field.name.clone())
+            .collect();
+
+        // Pre-encode every field name as a `CStr` so the inner loop reuses
+        // the same pointers across every cell call.
+        let mut field_cstrings: Vec<CString> = Vec::with_capacity(config.fields.len());
+        for field in &config.fields {
+            field_cstrings.push(
+                CString::new(field.name.as_str())
+                    .with_context(|| format!("field name '{}' contains a NUL byte", field.name))?,
+            );
+        }
+
+        let mut records: HashMap<Vec<Cell>, Vec<Cell>> = HashMap::new();
+        let mut row: usize = 0;
+
+        loop {
+            let outcome = fetch_callback_row(
+                name,
+                callbacks,
+                table_c,
+                &field_cstrings,
+                row,
+                &primary_columns,
+                &subsidiary_columns,
+            )?;
+            match outcome {
+                RowOutcome::Row {
+                    primary_key,
+                    subsidiary,
+                } => {
+                    if records.insert(primary_key.clone(), subsidiary).is_some() {
+                        anyhow::bail!("duplicate primary key {:?}", primary_key);
+                    }
+                    row += 1;
+                }
+                RowOutcome::Filtered => {
+                    row += 1;
+                }
+                RowOutcome::EndOfTable => break,
+            }
+        }
+
+        log::debug!(
+            "Loaded table '{}' with {} records from callback",
+            name,
+            records.len()
+        );
+
+        Ok(Table {
+            primary_key_names,
+            subsidiary_value_names,
+            records,
+        })
     }
 
     /// Map each config field to its CSV column index.
@@ -243,6 +331,85 @@ fn parse_columns(
         out.push(parse_field_value(&record[column_index], field)?);
     }
     Ok(out)
+}
+
+/// Outcome of asking the caller's `read_cell` hook for every cell of one row.
+enum RowOutcome {
+    Row {
+        primary_key: Vec<Cell>,
+        subsidiary: Vec<Cell>,
+    },
+    Filtered,
+    EndOfTable,
+}
+
+/// Walk all canonical columns of a single row, returning what the caller said
+/// about that row: a populated row, a filtered row, or end-of-table.
+fn fetch_callback_row(
+    name: &str,
+    callbacks: &Callbacks,
+    table_c: &std::ffi::CStr,
+    field_cstrings: &[CString],
+    row: usize,
+    primary_columns: &[(usize, &FieldConfig)],
+    subsidiary_columns: &[(usize, &FieldConfig)],
+) -> Result<RowOutcome> {
+    let mut primary_key: Vec<Cell> = Vec::with_capacity(primary_columns.len());
+    let mut subsidiary: Vec<Cell> = Vec::with_capacity(subsidiary_columns.len());
+
+    for (group_out, group_cols) in [
+        (&mut primary_key, primary_columns),
+        (&mut subsidiary, subsidiary_columns),
+    ] {
+        for &(decl_idx, field_cfg) in group_cols {
+            let field_c = &field_cstrings[decl_idx];
+            match callbacks.read_cell(table_c, row, decl_idx, field_c)? {
+                CellResult::Cell(cell) => {
+                    validate_cell(&cell, field_cfg)
+                        .with_context(|| format!("row {} field '{}'", row + 1, field_cfg.name))?;
+                    group_out.push(cell);
+                }
+                CellResult::EndOfTable => return Ok(RowOutcome::EndOfTable),
+                CellResult::FilterRecord => {
+                    log::trace!(
+                        "Callback filtered row {} of table '{}' at field '{}'",
+                        row + 1,
+                        name,
+                        field_cfg.name,
+                    );
+                    return Ok(RowOutcome::Filtered);
+                }
+            }
+        }
+    }
+
+    Ok(RowOutcome::Row {
+        primary_key,
+        subsidiary,
+    })
+}
+
+/// Validate a cell pulled from a callback against its field configuration.
+/// Enforces:
+/// - `Cell::Null` is rejected on primary-key fields.
+/// - The cell's kind matches the field's declared kind (TEXT / NUMBER /
+///   BOOLEAN); `Null` is accepted for any non-primary-key field regardless
+///   of the declared kind.
+fn validate_cell(cell: &Cell, field: &FieldConfig) -> Result<()> {
+    if let Cell::Null = cell {
+        if field.primary_key {
+            anyhow::bail!("primary-key field must not be NULL");
+        }
+        return Ok(());
+    }
+    if cell.kind() != field.kind {
+        anyhow::bail!(
+            "cell kind {:?} does not match field kind {:?}",
+            cell.kind(),
+            field.kind,
+        );
+    }
+    Ok(())
 }
 
 /// Parse a single CSV value into a `Cell` based on its field config.
@@ -664,5 +831,276 @@ mod tests {
             msg.contains("invalid number"),
             "expected invalid-number cause: {msg}"
         );
+    }
+
+    // -- validate_cell tests --
+
+    #[test]
+    fn test_validate_cell_rejects_null_on_primary_key() {
+        let field = make_typed_field("id", Kind::Number, true, None);
+        let err = validate_cell(&Cell::Null, &field).unwrap_err();
+        assert!(format!("{:#}", err).contains("primary-key"), "got: {err:#}");
+    }
+
+    #[test]
+    fn test_validate_cell_accepts_null_on_subsidiary() {
+        let field = make_typed_field("count", Kind::Number, false, None);
+        validate_cell(&Cell::Null, &field).unwrap();
+    }
+
+    #[test]
+    fn test_validate_cell_rejects_kind_mismatch() {
+        let field = make_typed_field("count", Kind::Number, false, None);
+        let err = validate_cell(&Cell::Text("oops".to_string()), &field).unwrap_err();
+        assert!(format!("{:#}", err).contains("kind"), "got: {err:#}");
+    }
+
+    #[test]
+    fn test_validate_cell_accepts_matching_kind() {
+        let field = make_typed_field("name", Kind::Text, true, None);
+        validate_cell(&Cell::Text("Alice".to_string()), &field).unwrap();
+    }
+
+    // -- load_from_callbacks tests --
+    //
+    // Tests use a thread-local script that maps (row, field_name) -> action;
+    // the test callback walks the script and forwards the result back to leech2
+    // through an `LchCell`. The script owns the CStrings backing TEXT cells so
+    // their pointers stay valid for the duration of the call.
+
+    use crate::callbacks::{LCH_END_OF_TABLE, LCH_FILTER_RECORD, LchCallbacks};
+    use crate::ffi::{LCH_VALUE_NULL, LchCell, LchCellPayload, SUCCESS as FFI_SUCCESS};
+    use std::cell::RefCell;
+    use std::collections::HashMap;
+    use std::ffi::{CStr, CString, c_char, c_void};
+
+    enum CellAction {
+        Cell(CellValue),
+        Filter,
+    }
+
+    enum CellValue {
+        Null,
+        Text(CString),
+        Number(f64),
+    }
+
+    /// One row's worth of canned answers, keyed by field name. A field that
+    /// is not present in the map is treated as `EndOfTable` (so a test can
+    /// model "row past the end" by omitting it entirely).
+    type RowScript = HashMap<&'static str, CellAction>;
+
+    /// Sequence of row scripts. Row index `r` consults `rows[r]`; once `r`
+    /// exceeds `rows.len()`, every cell returns `EndOfTable`.
+    struct Script {
+        rows: Vec<RowScript>,
+    }
+
+    thread_local! {
+        static SCRIPT: RefCell<Option<Script>> = const { RefCell::new(None) };
+    }
+
+    fn install_script(script: Script) {
+        SCRIPT.with(|s| *s.borrow_mut() = Some(script));
+    }
+
+    fn clear_script() {
+        SCRIPT.with(|s| *s.borrow_mut() = None);
+    }
+
+    unsafe extern "C" fn test_read_cell(
+        _table: *const c_char,
+        row: usize,
+        _col: usize,
+        field: *const c_char,
+        out_cell: *mut LchCell,
+        _usr_data: *mut c_void,
+    ) -> i32 {
+        let field_name = unsafe { CStr::from_ptr(field) }.to_str().unwrap();
+        SCRIPT.with(|s| {
+            let s = s.borrow();
+            let script = s.as_ref().expect("SCRIPT not installed");
+            if row >= script.rows.len() {
+                return LCH_END_OF_TABLE;
+            }
+            let Some(action) = script.rows[row].get(field_name) else {
+                return LCH_END_OF_TABLE;
+            };
+            match action {
+                CellAction::Filter => LCH_FILTER_RECORD,
+                CellAction::Cell(value) => {
+                    let cell = match value {
+                        CellValue::Null => LchCell {
+                            kind: LCH_VALUE_NULL,
+                            payload: LchCellPayload { number: 0.0 },
+                        },
+                        CellValue::Text(s) => LchCell {
+                            kind: 1, // LCH_VALUE_TEXT
+                            payload: LchCellPayload { text: s.as_ptr() },
+                        },
+                        CellValue::Number(n) => LchCell {
+                            kind: 2, // LCH_VALUE_NUMBER
+                            payload: LchCellPayload { number: *n },
+                        },
+                    };
+                    unsafe { *out_cell = cell };
+                    FFI_SUCCESS
+                }
+            }
+        })
+    }
+
+    fn make_callbacks() -> Callbacks {
+        Callbacks::from_ffi(&LchCallbacks {
+            table_begin: None,
+            read_cell: Some(test_read_cell),
+            table_end: None,
+            usr_data: std::ptr::null_mut(),
+        })
+    }
+
+    fn typed_config(fields: Vec<FieldConfig>) -> TableConfig {
+        TableConfig {
+            source: None,
+            header: false,
+            fields,
+        }
+    }
+
+    fn cell_text(s: &str) -> CellAction {
+        CellAction::Cell(CellValue::Text(CString::new(s).unwrap()))
+    }
+
+    fn cell_number(n: f64) -> CellAction {
+        CellAction::Cell(CellValue::Number(n))
+    }
+
+    #[test]
+    fn test_load_from_callbacks_happy_path() {
+        let config = typed_config(vec![
+            make_typed_field("id", Kind::Number, true, None),
+            make_typed_field("name", Kind::Text, false, None),
+        ]);
+        install_script(Script {
+            rows: vec![
+                HashMap::from([("id", cell_number(1.0)), ("name", cell_text("Alice"))]),
+                HashMap::from([("id", cell_number(2.0)), ("name", cell_text("Bob"))]),
+            ],
+        });
+
+        let table_c = CString::new("t").unwrap();
+        let table = Table::load_from_callbacks("t", &config, &make_callbacks(), &table_c).unwrap();
+
+        assert_eq!(table.primary_key_names, vec!["id".to_string()]);
+        assert_eq!(table.subsidiary_value_names, vec!["name".to_string()]);
+        assert_eq!(table.records.len(), 2);
+        assert_eq!(
+            table.records.get(&vec![Cell::Number(1.0)]),
+            Some(&vec!["Alice".into()])
+        );
+        clear_script();
+    }
+
+    #[test]
+    fn test_load_from_callbacks_empty_table() {
+        let config = typed_config(vec![
+            make_typed_field("id", Kind::Number, true, None),
+            make_typed_field("name", Kind::Text, false, None),
+        ]);
+        install_script(Script { rows: vec![] });
+
+        let table_c = CString::new("t").unwrap();
+        let table = Table::load_from_callbacks("t", &config, &make_callbacks(), &table_c).unwrap();
+
+        assert!(table.records.is_empty());
+        clear_script();
+    }
+
+    #[test]
+    fn test_load_from_callbacks_filter_record_drops_row() {
+        let config = typed_config(vec![
+            make_typed_field("id", Kind::Number, true, None),
+            make_typed_field("name", Kind::Text, false, None),
+        ]);
+        install_script(Script {
+            rows: vec![
+                HashMap::from([("id", cell_number(1.0)), ("name", cell_text("Alice"))]),
+                // Row 2 is filtered when leech asks for its primary key.
+                HashMap::from([("id", CellAction::Filter), ("name", cell_text("Bob"))]),
+                HashMap::from([("id", cell_number(3.0)), ("name", cell_text("Carol"))]),
+            ],
+        });
+
+        let table_c = CString::new("t").unwrap();
+        let table = Table::load_from_callbacks("t", &config, &make_callbacks(), &table_c).unwrap();
+
+        assert_eq!(table.records.len(), 2);
+        assert!(table.records.contains_key(&vec![Cell::Number(1.0)]));
+        assert!(table.records.contains_key(&vec![Cell::Number(3.0)]));
+        assert!(!table.records.contains_key(&vec![Cell::Number(2.0)]));
+        clear_script();
+    }
+
+    #[test]
+    fn test_load_from_callbacks_duplicate_primary_key_errors() {
+        let config = typed_config(vec![
+            make_typed_field("id", Kind::Number, true, None),
+            make_typed_field("name", Kind::Text, false, None),
+        ]);
+        install_script(Script {
+            rows: vec![
+                HashMap::from([("id", cell_number(1.0)), ("name", cell_text("Alice"))]),
+                HashMap::from([("id", cell_number(1.0)), ("name", cell_text("Alice2"))]),
+            ],
+        });
+
+        let table_c = CString::new("t").unwrap();
+        let err =
+            Table::load_from_callbacks("t", &config, &make_callbacks(), &table_c).unwrap_err();
+        assert!(
+            format!("{:#}", err).contains("duplicate primary key"),
+            "got: {err:#}"
+        );
+        clear_script();
+    }
+
+    #[test]
+    fn test_load_from_callbacks_rejects_null_primary_key() {
+        let config = typed_config(vec![
+            make_typed_field("id", Kind::Number, true, None),
+            make_typed_field("name", Kind::Text, false, None),
+        ]);
+        install_script(Script {
+            rows: vec![HashMap::from([
+                ("id", CellAction::Cell(CellValue::Null)),
+                ("name", cell_text("Alice")),
+            ])],
+        });
+
+        let table_c = CString::new("t").unwrap();
+        let err =
+            Table::load_from_callbacks("t", &config, &make_callbacks(), &table_c).unwrap_err();
+        assert!(format!("{:#}", err).contains("primary-key"), "got: {err:#}");
+        clear_script();
+    }
+
+    #[test]
+    fn test_load_from_callbacks_rejects_kind_mismatch() {
+        let config = typed_config(vec![
+            make_typed_field("id", Kind::Number, true, None),
+            make_typed_field("count", Kind::Number, false, None),
+        ]);
+        install_script(Script {
+            rows: vec![HashMap::from([
+                ("id", cell_number(1.0)),
+                ("count", cell_text("not a number")),
+            ])],
+        });
+
+        let table_c = CString::new("t").unwrap();
+        let err =
+            Table::load_from_callbacks("t", &config, &make_callbacks(), &table_c).unwrap_err();
+        assert!(format!("{:#}", err).contains("kind"), "got: {err:#}");
+        clear_script();
     }
 }
