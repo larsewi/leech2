@@ -9,6 +9,7 @@
 #ifndef __LEECH2_H__
 #define __LEECH2_H__
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -32,6 +33,26 @@ typedef enum {
   LCH_LOG_DEBUG = 4,
   LCH_LOG_TRACE = 5,
 } lch_log_level_t;
+
+typedef enum {
+  LCH_VALUE_NULL = 0,
+  LCH_VALUE_TEXT = 1,
+  LCH_VALUE_NUMBER = 2,
+  LCH_VALUE_BOOLEAN = 3,
+} lch_kind_t;
+
+typedef struct {
+  lch_kind_t kind;
+  union {
+    /* Valid when kind == LCH_VALUE_TEXT. Null-terminated, must not be NULL;
+     * use LCH_VALUE_NULL to represent a null value. */
+    const char *text;
+    /* Valid when kind == LCH_VALUE_NUMBER. Must be finite (not NaN/Inf). */
+    double number;
+    /* Valid when kind == LCH_VALUE_BOOLEAN. */
+    bool boolean;
+  };
+} lch_cell_t;
 
 /**
  * Callback type for receiving log messages.
@@ -161,16 +182,17 @@ extern int lch_patch_to_sql(const lch_config_t *cfg, const uint8_t *buf,
  * Inject a field into an encoded patch.
  *
  * Decodes the patch in @p in_buf, adds or overwrites an injected field with
- * the given @p name, @p value, and @p kind, and encodes the result into a
- * new caller-owned buffer written to @p out_buf and @p out_len. The input
- * buffer is not modified; the caller manages its lifetime independently.
+ * the given @p name and @p cell, and encodes the result into a new
+ * caller-owned buffer written to @p out_buf and @p out_len. The input buffer
+ * is not modified; the caller manages its lifetime independently.
  *
- * @p kind controls how @p value is formatted as a SQL literal. It must be
- * one of "TEXT" (single-quoted), "NUMBER" (numeric, unquoted), or "BOOLEAN"
- * (emitted as TRUE/FALSE). Matching is case-insensitive.
+ * The kind tag on @p cell determines how the value is formatted as a SQL
+ * literal (TEXT becomes single-quoted, NUMBER is emitted as a numeric
+ * literal, BOOLEAN is emitted as TRUE/FALSE). LCH_VALUE_NULL is not
+ * accepted.
  *
- * If a field with the same @p name is already present on the patch — whether
- * from static configuration or a prior injection — both its value and kind
+ * If a field with the same @p name is already present on the patch -- whether
+ * from static configuration or a prior injection -- both its value and kind
  * are replaced.
  *
  * The buffer written to @p out_buf must eventually be freed with
@@ -180,15 +202,14 @@ extern int lch_patch_to_sql(const lch_config_t *cfg, const uint8_t *buf,
  * @param in_buf        Pointer to the encoded input patch (must not be NULL).
  * @param in_len        Length of @p in_buf in bytes.
  * @param name          Column name (non-empty, null-terminated).
- * @param value         Value to inject (null-terminated).
- * @param kind          "TEXT", "NUMBER", or "BOOLEAN" (null-terminated).
+ * @param cell          Typed value to inject (must not be NULL).
  * @param[out] out_buf  Receives a pointer to the encoded output patch.
  * @param[out] out_len  Receives the length of @p out_buf in bytes.
  * @return LCH_SUCCESS on success, LCH_FAILURE on error.
  */
 extern int lch_patch_inject(const lch_config_t *cfg, const uint8_t *in_buf,
-                            size_t in_len, const char *name, const char *value,
-                            const char *kind, uint8_t **out_buf,
+                            size_t in_len, const char *name,
+                            const lch_cell_t *cell, uint8_t **out_buf,
                             size_t *out_len);
 
 /**

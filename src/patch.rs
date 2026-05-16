@@ -9,7 +9,7 @@ use prost::Message;
 use prost_types::Timestamp;
 
 use crate::block::Block;
-use crate::cell::{Kind, parse_typed_cell};
+use crate::cell::{Cell, parse_typed_cell};
 use crate::config::{Config, InjectedFieldConfig};
 use crate::delta::Delta;
 use crate::head;
@@ -367,19 +367,19 @@ impl Patch {
     }
 
     /// Add or overwrite an injected field on this patch. Validates that the
-    /// name is non-empty and the kind is one of TEXT, NUMBER, or BOOLEAN.
-    /// If a field with the same name already exists (whether from static
-    /// config or a previous inject_field call), its value is replaced; a
-    /// warning is logged when the replacement actually differs from the
-    /// existing value.
-    pub fn inject_field(&mut self, name: &str, value: &str, kind: &str) -> Result<()> {
+    /// name is non-empty and the value is not [`Cell::Null`]. If a field
+    /// with the same name already exists (whether from static config or a
+    /// previous inject_field call), its value is replaced; a warning is
+    /// logged when the replacement actually differs from the existing value.
+    pub fn inject_field(&mut self, name: &str, value: Cell) -> Result<()> {
         if name.is_empty() {
             bail!("inject_field: name must not be empty");
         }
+        if matches!(value, Cell::Null) {
+            bail!("inject_field: NULL values are not supported");
+        }
 
-        let kind = Kind::from_config(kind).context("inject_field: invalid kind")?;
-        let parsed = parse_typed_cell(value, kind).context("inject_field: invalid value")?;
-        let new_value: crate::proto::cell::Cell = parsed.into();
+        let new_value: crate::proto::cell::Cell = value.into();
 
         if let Some(existing) = self.injected_fields.iter_mut().find(|f| f.name == name) {
             if existing.value.as_ref() != Some(&new_value) {
@@ -408,7 +408,6 @@ impl Patch {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cell::Cell;
 
     fn empty_patch() -> Patch {
         Patch {
@@ -428,7 +427,7 @@ mod tests {
     #[test]
     fn test_inject_field_add_text() {
         let mut patch = empty_patch();
-        patch.inject_field("hostkey", "abc", "TEXT").unwrap();
+        patch.inject_field("hostkey", Cell::from("abc")).unwrap();
         assert_eq!(patch.injected_fields.len(), 1);
         assert_eq!(patch.injected_fields[0].name, "hostkey");
         assert_eq!(injected_value(&patch.injected_fields[0]), Cell::from("abc"));
@@ -437,7 +436,7 @@ mod tests {
     #[test]
     fn test_inject_field_add_number() {
         let mut patch = empty_patch();
-        patch.inject_field("count", "42", "NUMBER").unwrap();
+        patch.inject_field("count", Cell::Number(42.0)).unwrap();
         assert_eq!(
             injected_value(&patch.injected_fields[0]),
             Cell::Number(42.0)
@@ -447,7 +446,7 @@ mod tests {
     #[test]
     fn test_inject_field_add_boolean() {
         let mut patch = empty_patch();
-        patch.inject_field("enabled", "true", "BOOLEAN").unwrap();
+        patch.inject_field("enabled", Cell::Boolean(true)).unwrap();
         assert_eq!(
             injected_value(&patch.injected_fields[0]),
             Cell::Boolean(true)
@@ -461,7 +460,7 @@ mod tests {
             name: "host".to_string(),
             value: Some(Cell::Number(1.0).into()),
         });
-        patch.inject_field("host", "new-value", "TEXT").unwrap();
+        patch.inject_field("host", Cell::from("new-value")).unwrap();
         assert_eq!(patch.injected_fields.len(), 1);
         assert_eq!(patch.injected_fields[0].name, "host");
         assert_eq!(
@@ -473,8 +472,8 @@ mod tests {
     #[test]
     fn test_inject_field_multiple_distinct_names_append() {
         let mut patch = empty_patch();
-        patch.inject_field("a", "1", "TEXT").unwrap();
-        patch.inject_field("b", "2", "TEXT").unwrap();
+        patch.inject_field("a", Cell::from("1")).unwrap();
+        patch.inject_field("b", Cell::from("2")).unwrap();
         assert_eq!(patch.injected_fields.len(), 2);
         assert_eq!(patch.injected_fields[0].name, "a");
         assert_eq!(patch.injected_fields[1].name, "b");
@@ -483,30 +482,21 @@ mod tests {
     #[test]
     fn test_inject_field_rejects_empty_name() {
         let mut patch = empty_patch();
-        let err = patch.inject_field("", "value", "TEXT").unwrap_err();
+        let err = patch.inject_field("", Cell::from("value")).unwrap_err();
         assert!(err.to_string().contains("name must not be empty"));
     }
 
     #[test]
-    fn test_inject_field_rejects_invalid_type() {
+    fn test_inject_field_rejects_null() {
         let mut patch = empty_patch();
-        let err = patch.inject_field("foo", "bar", "BOGUS").unwrap_err();
-        assert!(err.to_string().contains("invalid kind"));
+        let err = patch.inject_field("foo", Cell::Null).unwrap_err();
+        assert!(err.to_string().contains("NULL values are not supported"));
     }
 
     #[test]
-    fn test_inject_field_rejects_invalid_value() {
+    fn test_inject_field_null_does_not_mutate() {
         let mut patch = empty_patch();
-        let err = patch
-            .inject_field("count", "not_a_number", "NUMBER")
-            .unwrap_err();
-        assert!(err.to_string().contains("invalid value"));
-    }
-
-    #[test]
-    fn test_inject_field_invalid_type_does_not_mutate() {
-        let mut patch = empty_patch();
-        let _ = patch.inject_field("foo", "bar", "BOGUS");
+        let _ = patch.inject_field("foo", Cell::Null);
         assert!(patch.injected_fields.is_empty());
     }
 }

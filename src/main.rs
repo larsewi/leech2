@@ -5,6 +5,7 @@ use std::process::{Command as ProcessCommand, ExitCode, Stdio};
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
 use leech2::block::Block;
+use leech2::cell::{Kind, parse_typed_cell};
 use leech2::config::Config;
 use leech2::utils::{GENESIS_HASH, format_timestamp};
 
@@ -267,8 +268,11 @@ fn cmd_patch_sql(config: &Config) -> Result<String> {
 }
 
 fn cmd_patch_inject(config: &Config, name: &str, value: &str, kind: &str) -> Result<()> {
+    let kind = Kind::from_config(kind).context("invalid kind")?;
+    let cell = parse_typed_cell(value, kind).context("invalid value")?;
+
     let mut patch = load_patch(config)?;
-    patch.inject_field(name, value, kind)?;
+    patch.inject_field(name, cell)?;
 
     let encoded = leech2::wire::encode_patch(config, &patch)?;
     leech2::storage::store(&config.work_dir, PATCH_FILE, &encoded)?;

@@ -1,6 +1,7 @@
 mod common;
 
 use leech2::block::Block;
+use leech2::cell::Cell;
 use leech2::config::Config;
 use leech2::patch::Patch;
 use leech2::sql;
@@ -275,7 +276,7 @@ fields = [
     Block::create(&config).unwrap();
 
     let mut patch = Patch::create(&config, GENESIS_HASH).unwrap();
-    patch.inject_field("hostkey", "abc123", "TEXT").unwrap();
+    patch.inject_field("hostkey", Cell::from("abc123")).unwrap();
 
     let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
 
@@ -323,7 +324,7 @@ fields = [
     Block::create(&config).unwrap();
 
     let mut patch = Patch::create(&config, GENESIS_HASH).unwrap();
-    patch.inject_field("hub_id", "hub-1", "TEXT").unwrap();
+    patch.inject_field("hub_id", Cell::from("hub-1")).unwrap();
 
     let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
 
@@ -370,7 +371,9 @@ fields = [
     Block::create(&config).unwrap();
 
     let mut patch = Patch::create(&config, GENESIS_HASH).unwrap();
-    patch.inject_field("host", "hub-verified", "TEXT").unwrap();
+    patch
+        .inject_field("host", Cell::from("hub-verified"))
+        .unwrap();
 
     let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
 

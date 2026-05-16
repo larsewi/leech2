@@ -1,5 +1,7 @@
-use std::ffi::{CStr, CString, c_char, c_void};
+use std::ffi::{CStr, CString, c_char, c_int, c_void};
 use std::path::PathBuf;
+
+use crate::cell::Cell;
 
 pub mod block;
 pub mod cell;
@@ -291,10 +293,69 @@ pub unsafe extern "C" fn lch_patch_to_sql(
     })
 }
 
+const LCH_VALUE_NULL: c_int = 0;
+const LCH_VALUE_TEXT: c_int = 1;
+const LCH_VALUE_NUMBER: c_int = 2;
+const LCH_VALUE_BOOLEAN: c_int = 3;
+
+/// ABI-compatible mirror of `lch_cell_t` from `leech2.h`. Only used to type
+/// FFI parameters; the Rust side reads it via [`cell_from_ffi`].
+#[repr(C)]
+pub union LchCellPayload {
+    text: *const c_char,
+    number: f64,
+    boolean: bool,
+}
+
+#[repr(C)]
+pub struct LchCell {
+    kind: c_int,
+    payload: LchCellPayload,
+}
+
+/// Convert an FFI `lch_cell_t` into a domain [`Cell`]. Validates the kind
+/// tag, rejects non-finite numbers, and (for TEXT) verifies the pointer is
+/// non-null and UTF-8. Logs an error and returns `None` on failure; callers
+/// translate `None` into the function's failure sentinel.
+///
+/// # Safety
+/// When `cell.kind == LCH_VALUE_TEXT`, `cell.payload.text` must point to a
+/// valid, null-terminated C string. A null pointer is rejected with an
+/// error; use `LCH_VALUE_NULL` to represent a null value.
+unsafe fn cell_from_ffi(fn_name: &str, cell: &LchCell) -> Option<Cell> {
+    match cell.kind {
+        LCH_VALUE_NULL => Some(Cell::Null),
+        LCH_VALUE_TEXT => {
+            let ptr = unsafe { cell.payload.text };
+            let s = unsafe { cstr_arg(fn_name, "cell.text", ptr) }?;
+            Some(Cell::Text(s.to_string()))
+        }
+        LCH_VALUE_NUMBER => match Cell::number(unsafe { cell.payload.number }) {
+            Ok(cell) => Some(cell),
+            Err(e) => {
+                log::error!("{}(): Bad argument: cell.number: {:#}", fn_name, e);
+                None
+            }
+        },
+        LCH_VALUE_BOOLEAN => Some(Cell::Boolean(unsafe { cell.payload.boolean })),
+        other => {
+            log::error!(
+                "{}(): Bad argument: cell.kind: unknown kind tag {}",
+                fn_name,
+                other
+            );
+            None
+        }
+    }
+}
+
 /// # Safety
 /// `config` must be a valid, non-null pointer returned by `lch_init`.
 /// `in_buf` must be a valid, non-null pointer to `in_len` bytes.
-/// `name`, `value`, and `kind` must be valid, non-null, null-terminated C strings.
+/// `name` must be a valid, non-null, null-terminated C string.
+/// `cell` must be a valid, non-null pointer to an `lch_cell_t`; if its
+/// kind is TEXT, the embedded text pointer must be a valid, null-terminated
+/// C string.
 /// `out_buf` and `out_len` must be valid, non-null pointers.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn lch_patch_inject(
@@ -302,8 +363,7 @@ pub unsafe extern "C" fn lch_patch_inject(
     in_buf: *const u8,
     in_len: usize,
     name: *const c_char,
-    value: *const c_char,
-    kind: *const c_char,
+    cell: *const LchCell,
     out_buf: *mut *mut u8,
     out_len: *mut usize,
 ) -> i32 {
@@ -312,6 +372,9 @@ pub unsafe extern "C" fn lch_patch_inject(
             return FAILURE;
         }
         if null_arg("lch_patch_inject", "in_buf", in_buf) {
+            return FAILURE;
+        }
+        if null_arg("lch_patch_inject", "cell", cell) {
             return FAILURE;
         }
         if null_arg("lch_patch_inject", "out_buf", out_buf) {
@@ -324,10 +387,8 @@ pub unsafe extern "C" fn lch_patch_inject(
         let Some(name) = (unsafe { cstr_arg("lch_patch_inject", "name", name) }) else {
             return FAILURE;
         };
-        let Some(value) = (unsafe { cstr_arg("lch_patch_inject", "value", value) }) else {
-            return FAILURE;
-        };
-        let Some(kind) = (unsafe { cstr_arg("lch_patch_inject", "kind", kind) }) else {
+
+        let Some(cell) = (unsafe { cell_from_ffi("lch_patch_inject", &*cell) }) else {
             return FAILURE;
         };
 
@@ -342,7 +403,7 @@ pub unsafe extern "C" fn lch_patch_inject(
             }
         };
 
-        if let Err(e) = patch.inject_field(name, value, kind) {
+        if let Err(e) = patch.inject_field(name, cell) {
             log::error!("lch_patch_inject(): {:#}", e);
             return FAILURE;
         }

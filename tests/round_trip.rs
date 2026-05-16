@@ -23,6 +23,7 @@ use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result, bail};
 use leech2::block::Block;
+use leech2::cell::Cell;
 use leech2::config::Config;
 use leech2::patch::Patch;
 use leech2::sql::{self, quote_identifier};
@@ -581,7 +582,9 @@ fn run_round_for_agent(
         },
     );
 
-    patch.inject_field("host", &run.name, "TEXT").unwrap();
+    patch
+        .inject_field("host", Cell::from(run.name.as_str()))
+        .unwrap();
     let hub_sql = sql::patch_to_sql(&config, &patch).unwrap();
     ship_and_verify(hub, hub_sql.as_deref(), &run.agent, Some(&run.name)).unwrap_or_else(|e| {
         panic!(

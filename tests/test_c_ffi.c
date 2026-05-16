@@ -70,8 +70,9 @@ int main(int argc, char *argv[]) {
 
   uint8_t *injected_buf = NULL;
   size_t injected_len = 0;
-  ret = lch_patch_inject(cfg, buf, len, "hostkey", "abc123", "TEXT",
-                         &injected_buf, &injected_len);
+  lch_cell_t hostkey_cell = {.kind = LCH_VALUE_TEXT, .text = "abc123"};
+  ret = lch_patch_inject(cfg, buf, len, "hostkey", &hostkey_cell, &injected_buf,
+                         &injected_len);
   if (ret == LCH_FAILURE) {
     fprintf(stderr, "lch_patch_inject failed\n");
     lch_patch_free(buf, len);
