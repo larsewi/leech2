@@ -74,13 +74,16 @@ impl fmt::Display for ProtoTable {
 
 impl Table {
     /// Loads a table from a CSV file.
-    pub fn load(
+    pub fn load_from_csv(
         work_dir: &Path,
         name: &str,
         config: &TableConfig,
         filters: &FilterConfig,
     ) -> Result<Self> {
-        let path = work_dir.join(&config.source);
+        let Some(source) = &config.source else {
+            anyhow::bail!("table '{}' has no configured CSV source", name);
+        };
+        let path = work_dir.join(source);
         let file =
             File::open(&path).with_context(|| format!("failed to open '{}'", path.display()))?;
         // Shared advisory lock: defense-in-depth against a cooperating producer
@@ -284,7 +287,7 @@ mod tests {
 
     fn make_config(fields: Vec<FieldConfig>, header: bool) -> TableConfig {
         TableConfig {
-            source: "test.csv".to_string(),
+            source: Some("test.csv".to_string()),
             header,
             fields,
         }

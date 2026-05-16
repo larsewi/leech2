@@ -353,14 +353,18 @@ impl Default for FieldConfig {
     }
 }
 
-/// Configure where the table CSV lives and how its columns map to SQL.
+/// Configure where the table data comes from and how its columns map to SQL.
 #[derive(Debug, Deserialize)]
 pub struct TableConfig {
     /// CSV file path. Absolute paths are used as-is; relative paths are
-    /// resolved against the work directory.
-    pub source: String,
+    /// resolved against the work directory. When omitted, the table is
+    /// callback-backed and its rows are pulled from the FFI cell callback at
+    /// block creation time.
+    #[serde(default)]
+    pub source: Option<String>,
     /// When true, the first CSV row is a header used to match columns by name;
-    /// when false, columns are matched by position.
+    /// when false, columns are matched by position. Ignored for callback-backed
+    /// tables.
     #[serde(default)]
     pub header: bool,
     /// Column definitions.
@@ -422,8 +426,10 @@ impl Validate for FieldConfig {
 
 impl Validate for TableConfig {
     fn validate(&self) -> Result<()> {
-        if self.source.is_empty() {
-            bail!("source must not be empty");
+        if let Some(source) = &self.source
+            && source.is_empty()
+        {
+            bail!("source must not be empty (omit the field entirely for callback-backed tables)");
         }
         let num_primary_keys = self.fields.iter().filter(|field| field.primary_key).count();
         if num_primary_keys == 0 {

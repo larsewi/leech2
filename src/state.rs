@@ -84,7 +84,8 @@ impl State {
         let mut tables: HashMap<String, Table> = HashMap::new();
 
         for (name, table_config) in &config.tables {
-            let table = Table::load(&config.work_dir, name, table_config, &config.filters)?;
+            let table =
+                Table::load_from_csv(&config.work_dir, name, table_config, &config.filters)?;
             tables.insert(name.clone(), table);
         }
 

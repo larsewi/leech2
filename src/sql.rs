@@ -499,7 +499,7 @@ mod tests {
     /// all fields are TEXT with no NULL sentinel.
     fn dummy_table(fields: &[(&str, bool)]) -> crate::config::TableConfig {
         crate::config::TableConfig {
-            source: "test.csv".to_string(),
+            source: Some("test.csv".to_string()),
             header: false,
             fields: fields
                 .iter()
