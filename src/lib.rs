@@ -96,15 +96,24 @@ pub unsafe extern "C" fn lch_deinit(config: *mut config::Config) {
 
 /// # Safety
 /// `config` must be a valid, non-null pointer returned by `lch_init`.
+/// `callbacks` may be NULL, or a valid pointer to an `lch_callbacks_t`
+/// whose function pointers (if non-NULL) are valid `extern "C"` functions
+/// and whose `usr_data` pointer remains valid for the duration of the call.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn lch_block_create(config: *const config::Config) -> i32 {
+pub unsafe extern "C" fn lch_block_create(
+    config: *const config::Config,
+    callbacks: *const callbacks::LchCallbacks,
+) -> i32 {
     ffi_guard("lch_block_create", FAILURE, || {
         if null_arg("lch_block_create", "config", config) {
             return FAILURE;
         }
 
+        let rust_callbacks =
+            (!callbacks.is_null()).then(|| callbacks::Callbacks::from_ffi(unsafe { &*callbacks }));
+
         let config = unsafe { &*config };
-        match block::Block::create(config) {
+        match block::Block::create_with_callbacks(config, rust_callbacks.as_ref()) {
             Ok(_) => SUCCESS,
             Err(e) => {
                 log::error!("lch_block_create(): {:#}", e);
