@@ -36,6 +36,73 @@ static void log_callback(lch_log_level_t level, const char *msg,
   state->count++;
 }
 
+/* Per-row data for the callback-backed `events` table. */
+typedef struct {
+  double id;
+  const char *event;
+} event_row_t;
+
+static const event_row_t events_rows[] = {
+    {10.0, "login"},
+    {11.0, "logout"},
+};
+static const size_t events_count = sizeof(events_rows) / sizeof(events_rows[0]);
+
+typedef struct {
+  int events_begin_count;
+  int events_end_count;
+  int events_end_status;
+  int other_table_calls;
+} cb_state_t;
+
+static int test_table_begin(const char *table, void *usr_data) {
+  cb_state_t *s = (cb_state_t *)usr_data;
+  if (strcmp(table, "events") == 0) {
+    s->events_begin_count++;
+  } else {
+    s->other_table_calls++;
+  }
+  return LCH_SUCCESS;
+}
+
+static int test_table_end(const char *table, int status, void *usr_data) {
+  cb_state_t *s = (cb_state_t *)usr_data;
+  if (strcmp(table, "events") == 0) {
+    s->events_end_count++;
+    s->events_end_status = status;
+  } else {
+    s->other_table_calls++;
+  }
+  return LCH_SUCCESS;
+}
+
+static int test_read_cell(const char *table, size_t row, size_t col,
+                          const char *field_name, lch_cell_t *out_cell,
+                          void *usr_data) {
+  cb_state_t *s = (cb_state_t *)usr_data;
+  (void)col;
+  if (strcmp(table, "events") != 0) {
+    s->other_table_calls++;
+    return LCH_FAILURE;
+  }
+  if (row >= events_count) {
+    return LCH_END_OF_TABLE;
+  }
+  const event_row_t *r = &events_rows[row];
+  if (strcmp(field_name, "id") == 0) {
+    out_cell->kind = LCH_VALUE_NUMBER;
+    out_cell->number = r->id;
+    return LCH_SUCCESS;
+  }
+  if (strcmp(field_name, "event") == 0) {
+    out_cell->kind = LCH_VALUE_TEXT;
+    out_cell->text = r->event;
+    return LCH_SUCCESS;
+  }
+  fprintf(stderr, "unexpected field '%s' for table '%s'\n", field_name, table);
+  return LCH_FAILURE;
+}
+
 int main(int argc, char *argv[]) {
   if (argc < 2) {
     fprintf(stderr, "Usage: %s <work_dir>\n", argv[0]);
@@ -52,9 +119,45 @@ int main(int argc, char *argv[]) {
     return EXIT_FAILURE;
   }
 
-  int ret = lch_block_create(cfg);
+  cb_state_t cb_state = {0};
+  lch_callbacks_t callbacks = {
+      .table_begin = test_table_begin,
+      .read_cell = test_read_cell,
+      .table_end = test_table_end,
+      .usr_data = &cb_state,
+  };
+
+  int ret = lch_block_create(cfg, &callbacks);
   if (ret == LCH_FAILURE) {
     fprintf(stderr, "lch_block_create failed\n");
+    lch_deinit(cfg);
+    return EXIT_FAILURE;
+  }
+
+  /* Callback-backed table fired begin once and end once with success.
+   * CSV-backed table never reached the callback hooks. */
+  if (cb_state.events_begin_count != 1) {
+    fprintf(stderr, "expected 1 events begin, got %d\n",
+            cb_state.events_begin_count);
+    lch_deinit(cfg);
+    return EXIT_FAILURE;
+  }
+  if (cb_state.events_end_count != 1) {
+    fprintf(stderr, "expected 1 events end, got %d\n",
+            cb_state.events_end_count);
+    lch_deinit(cfg);
+    return EXIT_FAILURE;
+  }
+  if (cb_state.events_end_status != LCH_SUCCESS) {
+    fprintf(stderr, "expected events_end status SUCCESS, got %d\n",
+            cb_state.events_end_status);
+    lch_deinit(cfg);
+    return EXIT_FAILURE;
+  }
+  if (cb_state.other_table_calls != 0) {
+    fprintf(stderr,
+            "callback hooks fired for a non-callback-backed table (%d calls)\n",
+            cb_state.other_table_calls);
     lch_deinit(cfg);
     return EXIT_FAILURE;
   }

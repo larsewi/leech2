@@ -147,6 +147,16 @@ fields = [
     { name = \"id\", type = \"NUMBER\", primary-key = true },
     { name = \"val\", type = \"TEXT\" },
 ]
+
+# Callback-backed table: no `source` key. The C test supplies a callback
+# bundle that synthesizes two rows for this table; the resulting block must
+# contain both the CSV-backed rows from `t` and the callback-backed rows
+# from `events`.
+[tables.events]
+fields = [
+    { name = \"id\", type = \"NUMBER\", primary-key = true },
+    { name = \"event\", type = \"TEXT\" },
+]
 ",
     )
     .unwrap();
