@@ -1,12 +1,16 @@
-use std::ffi::{CStr, CString, c_char, c_int, c_void};
+use std::ffi::{CStr, CString, c_char, c_void};
 use std::path::PathBuf;
 
-use crate::cell::Cell;
+use crate::ffi::{
+    FAILURE, LchBuffer, LchCell, SUCCESS, buffer_from_vec, cell_from_ffi, cstr_arg, ffi_guard,
+    null_arg,
+};
 
 pub mod block;
 pub mod cell;
 pub mod config;
 pub mod delta;
+mod ffi;
 pub mod head;
 mod logger;
 pub mod patch;
@@ -21,56 +25,6 @@ pub mod truncate;
 pub mod update;
 pub mod utils;
 pub mod wire;
-
-const SUCCESS: i32 = 0;
-const FAILURE: i32 = -1;
-
-/// Run an FFI body inside `catch_unwind`, returning `default` if a panic is caught.
-/// Panicking across an `extern "C"` boundary is undefined behavior, so every FFI
-/// entry point routes its body through this guard as a last line of defense.
-fn ffi_guard<T>(name: &str, default: T, body: impl FnOnce() -> T) -> T {
-    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(body)) {
-        Ok(value) => value,
-        Err(_) => {
-            log::error!("{}: internal panic, returning failure", name);
-            default
-        }
-    }
-}
-
-/// Logs and reports a null pointer FFI argument. Returns `true` if `ptr` is
-/// null. Callers translate `true` into the function's failure sentinel.
-///
-/// `*mut T` coerces to `*const T` automatically, so this works for both
-/// pointer kinds without casts at the call site.
-fn null_arg<T>(fn_name: &str, arg_name: &str, ptr: *const T) -> bool {
-    if ptr.is_null() {
-        log::error!("{}(): Bad argument: {} cannot be NULL", fn_name, arg_name);
-        return true;
-    }
-    false
-}
-
-/// Validate a required C string FFI argument and convert it to `&str`.
-///
-/// Logs an error and returns `None` if `ptr` is null or the bytes are not UTF-8.
-/// Callers translate `None` into the function's failure sentinel.
-///
-/// # Safety
-/// If `ptr` is non-null, it must point to a valid, null-terminated C string.
-unsafe fn cstr_arg<'a>(fn_name: &str, arg_name: &str, ptr: *const c_char) -> Option<&'a str> {
-    if ptr.is_null() {
-        log::error!("{}(): Bad argument: {} cannot be NULL", fn_name, arg_name);
-        return None;
-    }
-    match unsafe { CStr::from_ptr(ptr) }.to_str() {
-        Ok(s) => Some(s),
-        Err(e) => {
-            log::error!("{}(): Bad argument: {}: {}", fn_name, arg_name, e);
-            None
-        }
-    }
-}
 
 /// Install or replace the log callback.
 ///
@@ -157,23 +111,6 @@ pub unsafe extern "C" fn lch_block_create(config: *const config::Config) -> i32 
             }
         }
     })
-}
-
-/// ABI-compatible mirror of `lch_buffer_t` from `leech2.h`. An owned byte
-/// buffer handed across the FFI boundary; freed with `lch_buffer_free`.
-#[repr(C)]
-pub struct LchBuffer {
-    data: *mut u8,
-    len: usize,
-}
-
-/// Encode a Rust byte vector into an `LchBuffer` whose `data` pointer is
-/// owned by the caller and must be released with `lch_buffer_free`.
-fn buffer_from_vec(buf: Vec<u8>) -> LchBuffer {
-    let boxed = buf.into_boxed_slice();
-    let len = boxed.len();
-    let data = Box::into_raw(boxed) as *mut u8;
-    LchBuffer { data, len }
 }
 
 /// # Safety
@@ -302,62 +239,6 @@ pub unsafe extern "C" fn lch_patch_to_sql(
 
         SUCCESS
     })
-}
-
-const LCH_VALUE_NULL: c_int = 0;
-const LCH_VALUE_TEXT: c_int = 1;
-const LCH_VALUE_NUMBER: c_int = 2;
-const LCH_VALUE_BOOLEAN: c_int = 3;
-
-/// ABI-compatible mirror of `lch_cell_t` from `leech2.h`. Only used to type
-/// FFI parameters; the Rust side reads it via [`cell_from_ffi`].
-#[repr(C)]
-pub union LchCellPayload {
-    text: *const c_char,
-    number: f64,
-    boolean: bool,
-}
-
-#[repr(C)]
-pub struct LchCell {
-    kind: c_int,
-    payload: LchCellPayload,
-}
-
-/// Convert an FFI `lch_cell_t` into a domain [`Cell`]. Validates the kind
-/// tag, rejects non-finite numbers, and (for TEXT) verifies the pointer is
-/// non-null and UTF-8. Logs an error and returns `None` on failure; callers
-/// translate `None` into the function's failure sentinel.
-///
-/// # Safety
-/// When `cell.kind == LCH_VALUE_TEXT`, `cell.payload.text` must point to a
-/// valid, null-terminated C string. A null pointer is rejected with an
-/// error; use `LCH_VALUE_NULL` to represent a null value.
-unsafe fn cell_from_ffi(fn_name: &str, cell: &LchCell) -> Option<Cell> {
-    match cell.kind {
-        LCH_VALUE_NULL => Some(Cell::Null),
-        LCH_VALUE_TEXT => {
-            let ptr = unsafe { cell.payload.text };
-            let s = unsafe { cstr_arg(fn_name, "cell.text", ptr) }?;
-            Some(Cell::Text(s.to_string()))
-        }
-        LCH_VALUE_NUMBER => match Cell::number(unsafe { cell.payload.number }) {
-            Ok(cell) => Some(cell),
-            Err(e) => {
-                log::error!("{}(): Bad argument: cell.number: {:#}", fn_name, e);
-                None
-            }
-        },
-        LCH_VALUE_BOOLEAN => Some(Cell::Boolean(unsafe { cell.payload.boolean })),
-        other => {
-            log::error!(
-                "{}(): Bad argument: cell.kind: unknown kind tag {}",
-                fn_name,
-                other
-            );
-            None
-        }
-    }
 }
 
 /// # Safety
