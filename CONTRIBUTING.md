@@ -239,7 +239,7 @@ ship is applied to two targets:
    etc.), holding raw rows. The agent's patch is applied as-is.
 2. **Shared hub schema** — `rt_<seed>_hub`, with a composite primary key
    `(host, id)`. The same patch is taken, `inject_field("host", agent_name,
-   "TEXT")` is called on it, and the resulting SQL is applied. leech2 rewrites
+"TEXT")` is called on it, and the resulting SQL is applied. leech2 rewrites
    `INSERT` / `UPDATE` / `DELETE` / `TRUNCATE` to scope by `host`, so multiple
    agents writing through the same target schema do not trample each other.
 
