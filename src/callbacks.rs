@@ -13,8 +13,7 @@ use anyhow::{Context, Result, bail};
 
 use crate::cell::Cell;
 use crate::ffi::{
-    LCH_END_OF_TABLE, LCH_FILTER_RECORD, LCH_VALUE_NULL, LchCell, LchCellPayload, SUCCESS,
-    cell_from_ffi,
+    END_OF_TABLE, FILTER_RECORD, LchCell, LchCellPayload, SUCCESS, VALUE_NULL, cell_from_ffi,
 };
 
 type TableBeginFn = unsafe extern "C" fn(*const c_char, *mut c_void) -> i32;
@@ -147,7 +146,7 @@ impl TableCallbacks<'_> {
         };
         let field = &self.field_cstrings[col];
         let mut out = LchCell {
-            kind: LCH_VALUE_NULL,
+            kind: VALUE_NULL,
             payload: LchCellPayload { number: 0.0 },
         };
         let rc = unsafe {
@@ -172,8 +171,8 @@ impl TableCallbacks<'_> {
                 };
                 Ok(CellResult::Cell(cell))
             }
-            LCH_END_OF_TABLE => Ok(CellResult::EndOfTable),
-            LCH_FILTER_RECORD => Ok(CellResult::FilterRecord),
+            END_OF_TABLE => Ok(CellResult::EndOfTable),
+            FILTER_RECORD => Ok(CellResult::FilterRecord),
             _ => bail!(
                 "read_cell callback returned failure for table '{}' row {} field '{}'",
                 self.table_c.to_string_lossy(),

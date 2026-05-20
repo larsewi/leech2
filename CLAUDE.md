@@ -32,6 +32,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Place `#[cfg(test)] mod tests` at the bottom of each file, after all production code.
 - Prefer `From`/`Into` (or `TryFrom`/`TryInto` for fallible conversions) over manual construction when converting between types, especially domain-to-proto conversions.
 - Keep FFI plumbing inside the FFI-adjacent modules (`src/ffi.rs`, `src/callbacks.rs`). Consumers should call into those modules with plain Rust types (`&str`, indices, `Vec<u8>`, etc.) and never see `CString`, `CStr`, `*const c_char`, or other C-interop types in their signatures.
+- The `LCH_` / `lch_` prefix is a C-only pseudo-namespace; drop it when mirroring identifiers in Rust. `LCH_FOO` in `leech2.h` becomes `pub const FOO` in `src/ffi.rs`, with a doc comment cross-referencing the C name. Doc/log strings that quote the C identifier verbatim (e.g. "return `LCH_FILTER_RECORD`") keep the prefix.
 - After implementing new features, look for opportunities to refactor the code to improve readability and reduce duplication.
 - Never include a "Test plan" section in pull request descriptions unless specificly asked.
 - Apply exactly one label to every pull request: `breaking` (incompatible API change → major bump), `feature` (new feature → minor bump), `bug` (bug fix → patch bump), or `chore` (internal change, excluded from release notes → patch bump). See [RELEASING.md](RELEASING.md) for details. Changes that the system self-heals from at runtime are not considered breaking.

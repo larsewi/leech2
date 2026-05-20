@@ -13,17 +13,22 @@ use crate::cell::Cell;
 pub const SUCCESS: i32 = 0;
 /// `LCH_FAILURE` from `leech2.h`.
 pub const FAILURE: i32 = -1;
-/// `lch_read_cell_cb_t` return code: the row at this index does not exist;
-/// iteration for this table stops.
-pub const LCH_END_OF_TABLE: i32 = 1;
-/// `lch_read_cell_cb_t` return code: drop the current row; advance to the
-/// next row without consulting any further fields.
-pub const LCH_FILTER_RECORD: i32 = 2;
+/// `LCH_END_OF_TABLE` from `leech2.h`. `lch_read_cell_cb_t` return code: the
+/// row at this index does not exist; iteration for this table stops.
+pub const END_OF_TABLE: i32 = 1;
+/// `LCH_FILTER_RECORD` from `leech2.h`. `lch_read_cell_cb_t` return code:
+/// drop the current row; advance to the next row without consulting any
+/// further fields.
+pub const FILTER_RECORD: i32 = 2;
 
-pub const LCH_VALUE_NULL: c_int = 0;
-const LCH_VALUE_TEXT: c_int = 1;
-const LCH_VALUE_NUMBER: c_int = 2;
-const LCH_VALUE_BOOLEAN: c_int = 3;
+/// `LCH_VALUE_NULL` from `leech2.h`. Cell kind tag.
+pub const VALUE_NULL: c_int = 0;
+/// `LCH_VALUE_TEXT` from `leech2.h`. Cell kind tag.
+const VALUE_TEXT: c_int = 1;
+/// `LCH_VALUE_NUMBER` from `leech2.h`. Cell kind tag.
+const VALUE_NUMBER: c_int = 2;
+/// `LCH_VALUE_BOOLEAN` from `leech2.h`. Cell kind tag.
+const VALUE_BOOLEAN: c_int = 3;
 
 /// Run an FFI body inside `catch_unwind`, returning `default` if a panic is caught.
 /// Panicking across an `extern "C"` boundary is undefined behavior, so every FFI
@@ -113,20 +118,20 @@ pub struct LchCell {
 /// error; use `LCH_VALUE_NULL` to represent a null value.
 pub unsafe fn cell_from_ffi(fn_name: &str, cell: &LchCell) -> Option<Cell> {
     match cell.kind {
-        LCH_VALUE_NULL => Some(Cell::Null),
-        LCH_VALUE_TEXT => {
+        VALUE_NULL => Some(Cell::Null),
+        VALUE_TEXT => {
             let ptr = unsafe { cell.payload.text };
             let s = unsafe { cstr_arg(fn_name, "cell.text", ptr) }?;
             Some(Cell::Text(s.to_string()))
         }
-        LCH_VALUE_NUMBER => match Cell::number(unsafe { cell.payload.number }) {
+        VALUE_NUMBER => match Cell::number(unsafe { cell.payload.number }) {
             Ok(cell) => Some(cell),
             Err(e) => {
                 log::error!("{}(): Bad argument: cell.number: {:#}", fn_name, e);
                 None
             }
         },
-        LCH_VALUE_BOOLEAN => Some(Cell::Boolean(unsafe { cell.payload.boolean })),
+        VALUE_BOOLEAN => Some(Cell::Boolean(unsafe { cell.payload.boolean })),
         other => {
             log::error!(
                 "{}(): Bad argument: cell.kind: unknown kind tag {}",

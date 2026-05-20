@@ -845,8 +845,7 @@ mod tests {
 
     use crate::callbacks::{Callbacks, LchCallbacks};
     use crate::ffi::{
-        LCH_END_OF_TABLE, LCH_FILTER_RECORD, LCH_VALUE_NULL, LchCell, LchCellPayload,
-        SUCCESS as FFI_SUCCESS,
+        END_OF_TABLE, FILTER_RECORD, LchCell, LchCellPayload, SUCCESS as FFI_SUCCESS, VALUE_NULL,
     };
     use std::cell::RefCell;
     use std::collections::HashMap;
@@ -899,17 +898,17 @@ mod tests {
             let s = s.borrow();
             let script = s.as_ref().expect("SCRIPT not installed");
             if row >= script.rows.len() {
-                return LCH_END_OF_TABLE;
+                return END_OF_TABLE;
             }
             let Some(action) = script.rows[row].get(field_name) else {
-                return LCH_END_OF_TABLE;
+                return END_OF_TABLE;
             };
             match action {
-                CellAction::Filter => LCH_FILTER_RECORD,
+                CellAction::Filter => FILTER_RECORD,
                 CellAction::Cell(value) => {
                     let cell = match value {
                         CellValue::Null => LchCell {
-                            kind: LCH_VALUE_NULL,
+                            kind: VALUE_NULL,
                             payload: LchCellPayload { number: 0.0 },
                         },
                         CellValue::Text(s) => LchCell {
