@@ -38,7 +38,7 @@ fields = [
         "1,Alice\n2,Bob\n3,Charlie\n4,Dave\n5,Eve\n6,Frank\n7,Grace\n8,Heidi\n",
     );
     let config = Config::load(work_dir).unwrap();
-    let hash1 = Block::create(&config).unwrap();
+    let hash1 = Block::create(&config, None).unwrap();
 
     // Block 2: update Alice->Alicia, delete Bob, insert Ivan
     common::write_csv(
@@ -46,7 +46,7 @@ fields = [
         "users.csv",
         "1,Alicia\n3,Charlie\n4,Dave\n5,Eve\n6,Frank\n7,Grace\n8,Heidi\n9,Ivan\n",
     );
-    Block::create(&config).unwrap();
+    Block::create(&config, None).unwrap();
 
     // Patch from hash1: 1 insert, 1 delete, 1 update — all with injected field
     let patch = Patch::create(&config, &hash1).unwrap();
@@ -92,7 +92,7 @@ fields = [
     // Create a single row so the state is small enough to be used as payload
     common::write_csv(work_dir, "users.csv", "1,Alice\n");
     let config = Config::load(work_dir).unwrap();
-    Block::create(&config).unwrap();
+    Block::create(&config, None).unwrap();
 
     // With only one row, the state snapshot is smaller than the delta, so the
     // patch will use the state payload path.
@@ -134,7 +134,7 @@ fields = [
 
     common::write_csv(work_dir, "users.csv", "1,Alice\n");
     let config = Config::load(work_dir).unwrap();
-    Block::create(&config).unwrap();
+    Block::create(&config, None).unwrap();
 
     let patch = Patch::create(&config, GENESIS_HASH).unwrap();
     let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
@@ -172,7 +172,7 @@ fields = [
 
     common::write_csv(work_dir, "users.csv", "1,Alice\n");
     let config = Config::load(work_dir).unwrap();
-    Block::create(&config).unwrap();
+    Block::create(&config, None).unwrap();
 
     let patch = Patch::create(&config, GENESIS_HASH).unwrap();
     let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
@@ -221,7 +221,7 @@ fields = [
         "1,Alice\n2,Bob\n3,Charlie\n4,Dave\n5,Eve\n6,Frank\n7,Grace\n8,Heidi\n",
     );
     let config = Config::load(work_dir).unwrap();
-    let hash1 = Block::create(&config).unwrap();
+    let hash1 = Block::create(&config, None).unwrap();
 
     // Block 2: update Alice->Alicia, delete Bob, insert Ivan
     common::write_csv(
@@ -229,7 +229,7 @@ fields = [
         "users.csv",
         "1,Alicia\n3,Charlie\n4,Dave\n5,Eve\n6,Frank\n7,Grace\n8,Heidi\n9,Ivan\n",
     );
-    Block::create(&config).unwrap();
+    Block::create(&config, None).unwrap();
 
     let patch = Patch::create(&config, &hash1).unwrap();
     let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
@@ -273,7 +273,7 @@ fields = [
 
     common::write_csv(work_dir, "users.csv", "1,Alice\n");
     let config = Config::load(work_dir).unwrap();
-    Block::create(&config).unwrap();
+    Block::create(&config, None).unwrap();
 
     let mut patch = Patch::create(&config, GENESIS_HASH).unwrap();
     patch.inject_field("hostkey", Cell::from("abc123")).unwrap();
@@ -321,7 +321,7 @@ fields = [
 
     common::write_csv(work_dir, "users.csv", "1,Alice\n");
     let config = Config::load(work_dir).unwrap();
-    Block::create(&config).unwrap();
+    Block::create(&config, None).unwrap();
 
     let mut patch = Patch::create(&config, GENESIS_HASH).unwrap();
     patch.inject_field("hub_id", Cell::from("hub-1")).unwrap();
@@ -368,7 +368,7 @@ fields = [
 
     common::write_csv(work_dir, "users.csv", "1,Alice\n");
     let config = Config::load(work_dir).unwrap();
-    Block::create(&config).unwrap();
+    Block::create(&config, None).unwrap();
 
     let mut patch = Patch::create(&config, GENESIS_HASH).unwrap();
     patch
@@ -420,7 +420,7 @@ fields = [
 
     common::write_csv(work_dir, "users.csv", "1,Alice\n");
     let config = Config::load(work_dir).unwrap();
-    Block::create(&config).unwrap();
+    Block::create(&config, None).unwrap();
 
     let patch = Patch::create(&config, GENESIS_HASH).unwrap();
     let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();

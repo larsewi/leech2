@@ -29,7 +29,7 @@ fields = [
     // CSV with header row — the header should be skipped
     common::write_csv(work_dir, "users.csv", "id,name\n1,Alice\n2,Bob\n");
     let config = Config::load(work_dir).unwrap();
-    Block::create(&config).unwrap();
+    Block::create(&config, None).unwrap();
 
     let patch = Patch::create(&config, GENESIS_HASH).unwrap();
     let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
@@ -75,7 +75,7 @@ fields = [
         "name,email,id\nAlice,alice@example.com,1\nBob,bob@example.com,2\n",
     );
     let config = Config::load(work_dir).unwrap();
-    Block::create(&config).unwrap();
+    Block::create(&config, None).unwrap();
 
     let patch = Patch::create(&config, GENESIS_HASH).unwrap();
     let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
@@ -118,7 +118,7 @@ fields = [
     // Block 1: empty CSV (0 rows)
     common::write_csv(work_dir, "users.csv", "");
     let config = Config::load(work_dir).unwrap();
-    let hash1 = Block::create(&config).unwrap();
+    let hash1 = Block::create(&config, None).unwrap();
 
     // Patch from genesis with empty table: no data to insert
     let patch = Patch::create(&config, GENESIS_HASH).unwrap();
@@ -131,7 +131,7 @@ fields = [
 
     // Block 2: add rows to previously empty table
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
-    let _hash2 = Block::create(&config).unwrap();
+    let _hash2 = Block::create(&config, None).unwrap();
 
     // Patch from hash1: should show 2 inserts
     let patch2 = Patch::create(&config, &hash1).unwrap();
@@ -167,7 +167,7 @@ fields = [
     // Block 1: initial data with all field types
     common::write_csv(work_dir, "records.csv", "1,hello,42,true,36.6,first note\n");
     let config = Config::load(work_dir).unwrap();
-    let hash1 = Block::create(&config).unwrap();
+    let hash1 = Block::create(&config, None).unwrap();
 
     // Block 2: update all subsidiary fields
     common::write_csv(
@@ -175,7 +175,7 @@ fields = [
         "records.csv",
         "1,it's a test,99,false,-3.14,second note\n",
     );
-    let _hash2 = Block::create(&config).unwrap();
+    let _hash2 = Block::create(&config, None).unwrap();
 
     // Patch from genesis: consolidated insert with v2 values (rule 7)
     let patch_genesis = Patch::create(&config, GENESIS_HASH).unwrap();
@@ -232,11 +232,11 @@ fields = [
     // Block 1: row with non-null values
     common::write_csv(work_dir, "items.csv", "1,Alice,some notes,42\n");
     let config = Config::load(work_dir).unwrap();
-    let hash1 = Block::create(&config).unwrap();
+    let hash1 = Block::create(&config, None).unwrap();
 
     // Block 2: update to null sentinels
     common::write_csv(work_dir, "items.csv", "1,Alice,,N/A\n");
-    let _hash2 = Block::create(&config).unwrap();
+    let _hash2 = Block::create(&config, None).unwrap();
 
     // Patch from genesis: consolidated insert should have NULLs
     let patch = Patch::create(&config, GENESIS_HASH).unwrap();
@@ -278,7 +278,7 @@ fields = [
 
     common::write_csv(work_dir, "flags.csv", "1,Y\n2,N\n");
     let config = Config::load(work_dir).unwrap();
-    Block::create(&config).unwrap();
+    Block::create(&config, None).unwrap();
 
     let patch = Patch::create(&config, GENESIS_HASH).unwrap();
     let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
@@ -311,7 +311,7 @@ fields = [
     // "1" was accepted before the strict-default change; now it should fail.
     common::write_csv(work_dir, "flags.csv", "1,1\n");
     let config = Config::load(work_dir).unwrap();
-    let err = Block::create(&config).unwrap_err();
+    let err = Block::create(&config, None).unwrap_err();
     let msg = format!("{:#}", err);
     assert!(msg.contains("invalid boolean value"), "got: {msg}");
 }

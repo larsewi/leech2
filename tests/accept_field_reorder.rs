@@ -35,7 +35,7 @@ fields = [
 ]
 "#,
     );
-    let hash1 = Block::create(&Config::load(work_dir).unwrap()).unwrap();
+    let hash1 = Block::create(&Config::load(work_dir).unwrap(), None).unwrap();
 
     // Reorder fields (id is still the only primary key, but its position in
     // the declared field list moves; subsidiaries are also reordered).
@@ -54,7 +54,7 @@ fields = [
 "#,
     );
     let config = Config::load(work_dir).unwrap();
-    let _hash2 = Block::create(&config).unwrap();
+    let _hash2 = Block::create(&config, None).unwrap();
 
     // Patch from hash1 should be empty: same data, just a different
     // declaration order.

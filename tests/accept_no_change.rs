@@ -27,10 +27,10 @@ fields = [
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
     let config = Config::load(work_dir).unwrap();
 
-    let hash1 = Block::create(&config).unwrap();
+    let hash1 = Block::create(&config, None).unwrap();
 
     // Create second block without modifying CSV
-    let hash2 = Block::create(&config).unwrap();
+    let hash2 = Block::create(&config, None).unwrap();
     assert_ne!(hash1, hash2, "blocks should differ (different timestamps)");
 
     // Patch from hash1: no changes

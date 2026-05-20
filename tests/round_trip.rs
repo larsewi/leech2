@@ -549,7 +549,7 @@ fn run_round_for_agent(
         run.agent.model.len(),
     );
     run.agent.write_csv().unwrap();
-    let head = Block::create(&config).unwrap();
+    let head = Block::create(&config, None).unwrap();
 
     let force_ship = round + 1 == ROUNDS;
     if !force_ship && !rng.random_bool(SHIP_PROBABILITY) {

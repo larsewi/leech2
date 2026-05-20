@@ -31,7 +31,7 @@ fields = [
     // "Roberto" (7 chars) exceeds max-field-length of 5
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Roberto\n3,Bob\n");
     let config = Config::load(work_dir).unwrap();
-    Block::create(&config).unwrap();
+    Block::create(&config, None).unwrap();
 
     let patch = Patch::create(&config, GENESIS_HASH).unwrap();
     let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
@@ -76,7 +76,7 @@ fields = [
         "1,Alice,active\n2,Bob,inactive\n3,Charlie,active\n",
     );
     let config = Config::load(work_dir).unwrap();
-    Block::create(&config).unwrap();
+    Block::create(&config, None).unwrap();
 
     let patch = Patch::create(&config, GENESIS_HASH).unwrap();
     let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
@@ -120,7 +120,7 @@ fields = [
         "1,Active item\n2,DEPRECATED old item\n3,Another item\n",
     );
     let config = Config::load(work_dir).unwrap();
-    Block::create(&config).unwrap();
+    Block::create(&config, None).unwrap();
 
     let patch = Patch::create(&config, GENESIS_HASH).unwrap();
     let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
@@ -169,7 +169,7 @@ fields = [
     common::write_csv(work_dir, "users.csv", "1,inactive\n2,active\n");
     common::write_csv(work_dir, "orders.csv", "10,inactive\n20,active\n");
     let config = Config::load(work_dir).unwrap();
-    Block::create(&config).unwrap();
+    Block::create(&config, None).unwrap();
 
     let patch = Patch::create(&config, GENESIS_HASH).unwrap();
     let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
@@ -207,11 +207,11 @@ fields = [
     // Block 1: both records pass the filter
     common::write_csv(work_dir, "users.csv", "1,active\n2,active\n");
     let config = Config::load(work_dir).unwrap();
-    let hash1 = Block::create(&config).unwrap();
+    let hash1 = Block::create(&config, None).unwrap();
 
     // Block 2: user 2 becomes inactive (now filtered out)
     common::write_csv(work_dir, "users.csv", "1,active\n2,inactive\n");
-    Block::create(&config).unwrap();
+    Block::create(&config, None).unwrap();
 
     let patch = Patch::create(&config, &hash1).unwrap();
     let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
@@ -246,11 +246,11 @@ fields = [
     // Block 1: user 2 is inactive (filtered out)
     common::write_csv(work_dir, "users.csv", "1,active\n2,inactive\n");
     let config = Config::load(work_dir).unwrap();
-    let hash1 = Block::create(&config).unwrap();
+    let hash1 = Block::create(&config, None).unwrap();
 
     // Block 2: user 2 becomes active (passes filter)
     common::write_csv(work_dir, "users.csv", "1,active\n2,active\n");
-    Block::create(&config).unwrap();
+    Block::create(&config, None).unwrap();
 
     let patch = Patch::create(&config, &hash1).unwrap();
     let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
@@ -289,7 +289,7 @@ fields = [
         "1,Alice,active\n2,Bob,inactive\n3,Charlie,pending\n4,Dave,archived\n",
     );
     let config = Config::load(work_dir).unwrap();
-    Block::create(&config).unwrap();
+    Block::create(&config, None).unwrap();
 
     let patch = Patch::create(&config, GENESIS_HASH).unwrap();
     let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
@@ -333,7 +333,7 @@ fields = [
         "1,PRODUCTION ready\n2,draft item\n3,PRODUCTION-grade hardware\n",
     );
     let config = Config::load(work_dir).unwrap();
-    Block::create(&config).unwrap();
+    Block::create(&config, None).unwrap();
 
     let patch = Patch::create(&config, GENESIS_HASH).unwrap();
     let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
@@ -382,7 +382,7 @@ fields = [
     common::write_csv(work_dir, "users.csv", "1,active\n2,inactive\n");
     common::write_csv(work_dir, "orders.csv", "10,inactive\n20,active\n");
     let config = Config::load(work_dir).unwrap();
-    Block::create(&config).unwrap();
+    Block::create(&config, None).unwrap();
 
     let patch = Patch::create(&config, GENESIS_HASH).unwrap();
     let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
@@ -424,7 +424,7 @@ fields = [
 
     common::write_csv(work_dir, "users.csv", "1,active\n2,pending\n3,inactive\n");
     let config = Config::load(work_dir).unwrap();
-    Block::create(&config).unwrap();
+    Block::create(&config, None).unwrap();
 
     let patch = Patch::create(&config, GENESIS_HASH).unwrap();
     let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
@@ -465,11 +465,11 @@ fields = [
     // Block 1: both records match the include rule
     common::write_csv(work_dir, "users.csv", "1,active\n2,active\n");
     let config = Config::load(work_dir).unwrap();
-    let hash1 = Block::create(&config).unwrap();
+    let hash1 = Block::create(&config, None).unwrap();
 
     // Block 2: user 2 stops matching the include rule (now filtered out)
     common::write_csv(work_dir, "users.csv", "1,active\n2,inactive\n");
-    Block::create(&config).unwrap();
+    Block::create(&config, None).unwrap();
 
     let patch = Patch::create(&config, &hash1).unwrap();
     let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
@@ -504,11 +504,11 @@ fields = [
     // Block 1: user 2 doesn't match the include rule (filtered out)
     common::write_csv(work_dir, "users.csv", "1,active\n2,inactive\n");
     let config = Config::load(work_dir).unwrap();
-    let hash1 = Block::create(&config).unwrap();
+    let hash1 = Block::create(&config, None).unwrap();
 
     // Block 2: user 2 starts matching the include rule (now passes)
     common::write_csv(work_dir, "users.csv", "1,active\n2,active\n");
-    Block::create(&config).unwrap();
+    Block::create(&config, None).unwrap();
 
     let patch = Patch::create(&config, &hash1).unwrap();
     let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();

@@ -28,11 +28,11 @@ fields = [
     // Block 1: initial data
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n3,Charlie\n");
     let config = Config::load(work_dir).unwrap();
-    let hash1 = Block::create(&config).unwrap();
+    let hash1 = Block::create(&config, None).unwrap();
 
     // Block 2: update Alice->Alicia, delete Bob, insert Dave
     common::write_csv(work_dir, "users.csv", "1,Alicia\n3,Charlie\n4,Dave\n");
-    let hash2 = Block::create(&config).unwrap();
+    let hash2 = Block::create(&config, None).unwrap();
     assert_ne!(hash1, hash2);
 
     // Patch from genesis: full state (TRUNCATE + INSERT), always safe
@@ -91,7 +91,7 @@ fields = [
     // Block 1: initial data
     common::write_csv(work_dir, "users.csv", "1,Alice,a@ex.com\n2,Bob,b@ex.com\n");
     let config = Config::load(work_dir).unwrap();
-    let hash1 = Block::create(&config).unwrap();
+    let hash1 = Block::create(&config, None).unwrap();
 
     // Block 2: update Alice's email, insert Charlie
     common::write_csv(
@@ -99,7 +99,7 @@ fields = [
         "users.csv",
         "1,Alice,a@new.com\n2,Bob,b@ex.com\n3,Charlie,c@ex.com\n",
     );
-    let hash2 = Block::create(&config).unwrap();
+    let hash2 = Block::create(&config, None).unwrap();
 
     // Block 3: delete Bob, update Charlie -> Charles with new email
     common::write_csv(
@@ -107,7 +107,7 @@ fields = [
         "users.csv",
         "1,Alice,a@new.com\n3,Charles,ch@ex.com\n",
     );
-    let hash3 = Block::create(&config).unwrap();
+    let hash3 = Block::create(&config, None).unwrap();
 
     // -- Patch from genesis: full state (TRUNCATE + INSERT), always safe --
     // Final state: 2 rows (Alice, Charles).
@@ -199,15 +199,15 @@ fields = [
     // Block 1: initial data
     common::write_csv(work_dir, "products.csv", "3,Widget,249.95\n");
     let config = Config::load(work_dir).unwrap();
-    let hash1 = Block::create(&config).unwrap();
+    let hash1 = Block::create(&config, None).unwrap();
 
     // Block 2: bump price 249.95 -> 249.96
     common::write_csv(work_dir, "products.csv", "3,Widget,249.96\n");
-    let _hash2 = Block::create(&config).unwrap();
+    let _hash2 = Block::create(&config, None).unwrap();
 
     // Block 3: bump price 249.96 -> 249.97
     common::write_csv(work_dir, "products.csv", "3,Widget,249.97\n");
-    let hash3 = Block::create(&config).unwrap();
+    let hash3 = Block::create(&config, None).unwrap();
 
     // Patch from hash1 should consolidate the two consecutive price updates
     // into a single update from 249.95 to 249.97. The merge must not collapse

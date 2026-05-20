@@ -83,19 +83,14 @@ impl Block {
         Ok(Self::load_header(work_dir, hash)?.parent)
     }
 
-    /// Equivalent to [`Block::create_with_callbacks`] with no callbacks
-    /// supplied. Fails if any table in `config` is callback-backed.
-    pub fn create(config: &Config) -> Result<String> {
-        Self::create_with_callbacks(config, None)
-    }
-
     /// Build a new block from `config`. Callback-backed tables are pulled
-    /// through `callbacks`; CSV-backed tables are unaffected by it.
+    /// through `callbacks`. Pass `None` when every table in `config` is
+    /// CSV-backed.
     ///
     /// If `config` has filters configured and any table is callback-backed,
     /// a one-time warning is emitted naming the affected tables: filters are
     /// CSV-only, and the callback owns row inclusion via `LCH_FILTER_RECORD`.
-    pub fn create_with_callbacks(config: &Config, callbacks: Option<&Callbacks>) -> Result<String> {
+    pub fn create(config: &Config, callbacks: Option<&Callbacks>) -> Result<String> {
         if callbacks.is_some() && !config.filters.is_default() {
             let callback_tables: Vec<&str> = config
                 .tables

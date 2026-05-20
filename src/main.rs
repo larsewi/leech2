@@ -166,7 +166,7 @@ type = "NUMBER"
 }
 
 fn cmd_block_create(config: &Config) -> Result<()> {
-    let hash = Block::create(config)?;
+    let hash = Block::create(config, None)?;
     println!("{}", hash);
     Ok(())
 }

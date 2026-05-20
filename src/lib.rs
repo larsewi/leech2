@@ -113,7 +113,7 @@ pub unsafe extern "C" fn lch_block_create(
             (!callbacks.is_null()).then(|| callbacks::Callbacks::from_ffi(unsafe { &*callbacks }));
 
         let config = unsafe { &*config };
-        match block::Block::create_with_callbacks(config, rust_callbacks.as_ref()) {
+        match block::Block::create(config, rust_callbacks.as_ref()) {
             Ok(_) => SUCCESS,
             Err(e) => {
                 log::error!("lch_block_create(): {:#}", e);

@@ -26,10 +26,10 @@ fields = [
 
     common::write_csv(work_dir, "users.csv", "1,Alice\n");
     let config = Config::load(work_dir).unwrap();
-    let hash1 = Block::create(&config).unwrap();
+    let hash1 = Block::create(&config, None).unwrap();
 
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
-    let hash2 = Block::create(&config).unwrap();
+    let hash2 = Block::create(&config, None).unwrap();
 
     // Use a short prefix of hash1 (first 8 chars)
     let prefix = &hash1[..8];

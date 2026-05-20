@@ -206,7 +206,7 @@ fn test_json_config_file() {
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
     let config = Config::load(work_dir).unwrap();
 
-    let hash = Block::create(&config).unwrap();
+    let hash = Block::create(&config, None).unwrap();
 
     let patch = Patch::create(&config, GENESIS_HASH).unwrap();
     assert_eq!(patch.num_blocks, 0);

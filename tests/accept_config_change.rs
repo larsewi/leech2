@@ -37,7 +37,7 @@ fields = [
     common::write_csv(work_dir, "items.csv", "1,apple\n2,banana\n");
     common::write_csv(work_dir, "logs.csv", "1,hello\n2,world\n");
     let config = Config::load(work_dir).unwrap();
-    let hash1 = Block::create(&config).unwrap();
+    let hash1 = Block::create(&config, None).unwrap();
 
     // Change items config: add a "price" field.
     // logs stays the same but gets a new row.
@@ -69,7 +69,7 @@ fields = [
     );
     common::write_csv(work_dir, "logs.csv", "1,hello\n2,world\n3,new entry\n");
     let config = Config::load(work_dir).unwrap();
-    let _hash2 = Block::create(&config).unwrap();
+    let _hash2 = Block::create(&config, None).unwrap();
 
     // Patch from hash1: items had a layout change, logs did not.
     let patch = Patch::create(&config, &hash1).unwrap();

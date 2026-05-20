@@ -37,10 +37,10 @@ fn test_reported_block_truncated() {
     let config = setup_users(work_dir);
 
     common::write_csv(work_dir, "users.csv", "1,Alice\n");
-    let hash1 = Block::create(&config).unwrap();
+    let hash1 = Block::create(&config, None).unwrap();
 
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
-    let hash2 = Block::create(&config).unwrap();
+    let hash2 = Block::create(&config, None).unwrap();
 
     // Mark block 1 as reported (simulates: database has data up to hash1)
     reported::save(work_dir, &hash1).unwrap();
@@ -74,7 +74,7 @@ fn test_reported_file_deleted() {
     let config = setup_users(work_dir);
 
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
-    let hash1 = Block::create(&config).unwrap();
+    let hash1 = Block::create(&config, None).unwrap();
 
     // Mark as reported, then delete the REPORTED file
     reported::save(work_dir, &hash1).unwrap();
@@ -104,7 +104,7 @@ fn test_head_file_deleted() {
     let config = setup_users(work_dir);
 
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
-    Block::create(&config).unwrap();
+    Block::create(&config, None).unwrap();
 
     // Delete HEAD — load should return GENESIS
     storage::remove(work_dir, "HEAD").unwrap();
@@ -116,7 +116,7 @@ fn test_head_file_deleted() {
     assert_eq!(patch.num_blocks, 0);
 
     // Block::create should ignore stale STATE and capture full CSV as inserts
-    let new_hash = Block::create(&config).unwrap();
+    let new_hash = Block::create(&config, None).unwrap();
     let patch = Patch::create(&config, GENESIS_HASH).unwrap();
     assert_eq!(patch.head, new_hash);
 
@@ -137,13 +137,13 @@ fn test_block_chain_broken() {
     let config = setup_users(work_dir);
 
     common::write_csv(work_dir, "users.csv", "1,Alice\n");
-    let hash1 = Block::create(&config).unwrap();
+    let hash1 = Block::create(&config, None).unwrap();
 
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
-    let hash2 = Block::create(&config).unwrap();
+    let hash2 = Block::create(&config, None).unwrap();
 
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n3,Charlie\n");
-    let hash3 = Block::create(&config).unwrap();
+    let hash3 = Block::create(&config, None).unwrap();
 
     // Delete the middle block — chain is: hash3 -> hash2 (missing) -> hash1
     storage::remove(work_dir, &hash2).unwrap();
@@ -174,12 +174,12 @@ fn test_patch_failed_forces_full_state() {
 
     // Create initial data and mark as reported
     common::write_csv(work_dir, "users.csv", "1,Alice\n");
-    let hash1 = Block::create(&config).unwrap();
+    let hash1 = Block::create(&config, None).unwrap();
     reported::save(work_dir, &hash1).unwrap();
 
     // Add more data
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
-    let hash2 = Block::create(&config).unwrap();
+    let hash2 = Block::create(&config, None).unwrap();
 
     // Simulate patch failure: remove REPORTED
     reported::remove(work_dir).unwrap();
@@ -210,10 +210,10 @@ fn test_state_file_deleted_with_valid_chain() {
     let config = setup_users(work_dir);
 
     common::write_csv(work_dir, "users.csv", "1,Alice\n");
-    let hash1 = Block::create(&config).unwrap();
+    let hash1 = Block::create(&config, None).unwrap();
 
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
-    let hash2 = Block::create(&config).unwrap();
+    let hash2 = Block::create(&config, None).unwrap();
 
     // Delete STATE — consolidation should still work via block chain
     storage::remove(work_dir, "STATE").unwrap();

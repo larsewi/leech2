@@ -32,11 +32,11 @@ fields = [
     }
     common::write_csv(work_dir, "items.csv", &csv);
     let config = Config::load(work_dir).unwrap();
-    let hash1 = Block::create(&config).unwrap();
+    let hash1 = Block::create(&config, None).unwrap();
 
     // Block 2: keep only 2 rows (delete 18)
     common::write_csv(work_dir, "items.csv", "1,item1\n2,item2\n");
-    let _hash2 = Block::create(&config).unwrap();
+    let _hash2 = Block::create(&config, None).unwrap();
 
     // Patch from hash1: delta has 18 deletes, state has 2 rows.
     // State should be smaller -> SQL uses TRUNCATE + INSERT pattern.
@@ -101,14 +101,14 @@ fields = [
     common::write_csv(work_dir, "items.csv", &items_csv);
     common::write_csv(work_dir, "logs.csv", &logs_csv);
     let config = Config::load(work_dir).unwrap();
-    let hash1 = Block::create(&config).unwrap();
+    let hash1 = Block::create(&config, None).unwrap();
 
     // Block 2: items drops to 2 rows (18 deletes → state wins),
     //          logs adds 1 row (1 insert → delta wins).
     common::write_csv(work_dir, "items.csv", "1,item1\n2,item2\n");
     logs_csv.push_str("21,log message number 21\n");
     common::write_csv(work_dir, "logs.csv", &logs_csv);
-    let _hash2 = Block::create(&config).unwrap();
+    let _hash2 = Block::create(&config, None).unwrap();
 
     let patch = Patch::create(&config, &hash1).unwrap();
     assert_eq!(patch.num_blocks, 1);

@@ -36,12 +36,12 @@ fields = [
     common::write_csv(work_dir, "users.csv", "1,Alice\n");
     common::write_csv(work_dir, "products.csv", "ABC,100\n");
     let config = Config::load(work_dir).unwrap();
-    let hash1 = Block::create(&config).unwrap();
+    let hash1 = Block::create(&config, None).unwrap();
 
     // Block 2: insert user, update product price
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
     common::write_csv(work_dir, "products.csv", "ABC,150\n");
-    let _hash2 = Block::create(&config).unwrap();
+    let _hash2 = Block::create(&config, None).unwrap();
 
     // Patch from hash1: should have changes for both tables
     let patch = Patch::create(&config, &hash1).unwrap();

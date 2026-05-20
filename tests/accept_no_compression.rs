@@ -34,7 +34,7 @@ fields = [
 
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
     let config = Config::load(work_dir).unwrap();
-    Block::create(&config).unwrap();
+    Block::create(&config, None).unwrap();
 
     let patch = Patch::create(&config, GENESIS_HASH).unwrap();
     let encoded = wire::encode_patch(&config, &patch).unwrap();

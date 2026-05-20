@@ -31,10 +31,10 @@ fields = [
 
     common::write_csv(work_dir, "users.csv", "1,Alice\n");
     let config = Config::load(work_dir).unwrap();
-    let hash1 = Block::create(&config).unwrap();
+    let hash1 = Block::create(&config, None).unwrap();
 
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
-    let hash2 = Block::create(&config).unwrap();
+    let hash2 = Block::create(&config, None).unwrap();
 
     // After 2 blocks, both should still exist (within limit)
     assert!(work_dir.join(&hash1).exists(), "within limit, should exist");
@@ -42,7 +42,7 @@ fields = [
 
     // Block 3 pushes hash1 past the limit
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n3,Charlie\n");
-    let hash3 = Block::create(&config).unwrap();
+    let hash3 = Block::create(&config, None).unwrap();
 
     // hash1 should be removed (oldest, beyond max-blocks=2)
     assert!(
@@ -59,7 +59,7 @@ fields = [
     // --- Under limit: create with max-blocks=2, only 2 blocks exist → both preserved ---
     // (We already have hash2 and hash3 remaining, which is exactly max-blocks=2)
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n3,Charlie\n4,Dave\n");
-    let hash4 = Block::create(&config).unwrap();
+    let hash4 = Block::create(&config, None).unwrap();
 
     // hash2 should now be truncated (3 blocks, limit is 2)
     assert!(!work_dir.join(&hash2).exists());
@@ -93,14 +93,14 @@ fields = [
 
     common::write_csv(work_dir, "users.csv", "1,Alice\n");
     let config = Config::load(work_dir).unwrap();
-    let hash1 = Block::create(&config).unwrap();
+    let hash1 = Block::create(&config, None).unwrap();
 
     // Wait for the first block to become older than 1s
     std::thread::sleep(std::time::Duration::from_secs(2));
 
     // Create second block — truncation should remove hash1 (older than 1s)
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
-    let hash2 = Block::create(&config).unwrap();
+    let hash2 = Block::create(&config, None).unwrap();
 
     assert!(
         !work_dir.join(&hash1).exists(),
@@ -110,7 +110,7 @@ fields = [
 
     // Create two more blocks quickly — both should be preserved (within 1s window)
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n3,Charlie\n");
-    let hash3 = Block::create(&config).unwrap();
+    let hash3 = Block::create(&config, None).unwrap();
 
     assert!(
         work_dir.join(&hash2).exists(),
@@ -140,7 +140,7 @@ fields = [
 
     common::write_csv(work_dir, "users.csv", "1,Alice\n");
     let config = Config::load(work_dir).unwrap();
-    let hash1 = Block::create(&config).unwrap();
+    let hash1 = Block::create(&config, None).unwrap();
 
     // Add a fake orphaned 40-hex file and a stale lock file
     let orphan_hash = "aa00000000000000000000000000000000000000";
@@ -152,7 +152,7 @@ fields = [
 
     // Create another block — truncation runs and should remove the orphan
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
-    let hash2 = Block::create(&config).unwrap();
+    let hash2 = Block::create(&config, None).unwrap();
 
     // Orphan and its stale lock file should be gone
     assert!(
@@ -174,7 +174,7 @@ fields = [
 
     // Create a new block — truncation should remove the now-orphaned blocks
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n3,Charlie\n");
-    let hash3 = Block::create(&config).unwrap();
+    let hash3 = Block::create(&config, None).unwrap();
 
     // Old blocks should be removed (orphaned)
     assert!(
@@ -211,13 +211,13 @@ fields = [
 
     common::write_csv(work_dir, "users.csv", "1,Alice\n");
     let config = Config::load(work_dir).unwrap();
-    let hash1 = Block::create(&config).unwrap();
+    let hash1 = Block::create(&config, None).unwrap();
 
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
-    let hash2 = Block::create(&config).unwrap();
+    let hash2 = Block::create(&config, None).unwrap();
 
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n3,Charlie\n");
-    let hash3 = Block::create(&config).unwrap();
+    let hash3 = Block::create(&config, None).unwrap();
 
     // No REPORTED file yet — all blocks should be preserved
     assert!(work_dir.join(&hash1).exists());
@@ -228,7 +228,7 @@ fields = [
     reported::save(work_dir, &hash2).unwrap();
 
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n3,Charlie\n4,Dave\n");
-    let hash4 = Block::create(&config).unwrap();
+    let hash4 = Block::create(&config, None).unwrap();
 
     // B1 should be removed (older than REPORTED=B2)
     assert!(
@@ -266,7 +266,7 @@ fields = [
 
     common::write_csv(work_dir, "users.csv", "1,Alice\n");
     let config = Config::load(work_dir).unwrap();
-    let _hash1 = Block::create(&config).unwrap();
+    let _hash1 = Block::create(&config, None).unwrap();
 
     // Add a fake orphaned block file
     let orphan_hash = "aa00000000000000000000000000000000000000";
@@ -274,7 +274,7 @@ fields = [
 
     // Create another block — orphan should survive because remove-orphans is false
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
-    let _hash2 = Block::create(&config).unwrap();
+    let _hash2 = Block::create(&config, None).unwrap();
 
     assert!(
         work_dir.join(orphan_hash).exists(),
@@ -306,20 +306,20 @@ fields = [
 
     common::write_csv(work_dir, "users.csv", "1,Alice\n");
     let config = Config::load(work_dir).unwrap();
-    let hash1 = Block::create(&config).unwrap();
+    let hash1 = Block::create(&config, None).unwrap();
 
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
-    let hash2 = Block::create(&config).unwrap();
+    let hash2 = Block::create(&config, None).unwrap();
 
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n3,Charlie\n");
-    let hash3 = Block::create(&config).unwrap();
+    let hash3 = Block::create(&config, None).unwrap();
 
     // Mark B2 as reported
     reported::save(work_dir, &hash2).unwrap();
 
     // Create another block — B1 should survive because truncate-reported is false
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n3,Charlie\n4,Dave\n");
-    let hash4 = Block::create(&config).unwrap();
+    let hash4 = Block::create(&config, None).unwrap();
 
     assert!(
         work_dir.join(&hash1).exists(),
