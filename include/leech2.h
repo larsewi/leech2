@@ -237,16 +237,17 @@ typedef int (*lch_read_cell_cb_t)(const char *table, size_t row, size_t col,
 
 /**
  * Callback bundle passed to lch_block_create() for callback-backed tables.
- *
- * @c table_begin and @c table_end may be NULL if the caller does not need
- * those hooks. @c read_cell is required when any table is callback-backed.
- * @c usr_data is forwarded verbatim to every invoked callback.
  */
 typedef struct {
-  lch_table_begin_cb_t table_begin; /* may be NULL */
-  lch_read_cell_cb_t read_cell; /* required if any table is callback-backed */
-  lch_table_end_cb_t table_end; /* may be NULL */
-  void *usr_data;               /* opaque pointer passed verbatim */
+  /** May be NULL if no per-table setup is needed. */
+  lch_table_begin_cb_t table_begin;
+  /** Required when any table in the config is callback-backed. */
+  lch_read_cell_cb_t read_cell;
+  /** May be NULL if no per-table teardown is needed. */
+  lch_table_end_cb_t table_end;
+  /** Opaque pointer forwarded verbatim to every invoked callback. May be
+   *  NULL if the callbacks do not need per-bundle state. */
+  void *usr_data;
 } lch_callbacks_t;
 
 /**
