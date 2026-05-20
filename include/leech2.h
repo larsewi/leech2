@@ -192,11 +192,11 @@ typedef int (*lch_table_end_cb_t)(const char *table, int status,
  *     callback is invoked exclusively on the thread that called
  *     lch_block_create().
  *
- * For a given row, the caller must return consistent answers across all the
- * cells leech2 asks for: either every cell returns LCH_SUCCESS (the row
- * exists), or every cell returns LCH_END_OF_TABLE / LCH_FILTER_RECORD. The
- * natural caller implementation -- "if (row >= my_data.len()) return
- * LCH_END_OF_TABLE" -- makes this automatic.
+ * LCH_END_OF_TABLE / LCH_FILTER_RECORD on any cell short-circuits the rest
+ * of the row: leech2 won't ask for the remaining cells, and any cells
+ * already accepted for the row are discarded. The natural caller
+ * implementation -- "if (row >= my_data.len()) return LCH_END_OF_TABLE" --
+ * makes this automatic.
  *
  * The kind of @p out_cell must match the field's declared kind:
  *   TEXT field    -> TEXT or NULL
