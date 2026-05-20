@@ -13,6 +13,12 @@ use crate::cell::Cell;
 pub const SUCCESS: i32 = 0;
 /// `LCH_FAILURE` from `leech2.h`.
 pub const FAILURE: i32 = -1;
+/// `lch_read_cell_cb_t` return code: the row at this index does not exist;
+/// iteration for this table stops.
+pub const LCH_END_OF_TABLE: i32 = 1;
+/// `lch_read_cell_cb_t` return code: drop the current row; advance to the
+/// next row without consulting any further fields.
+pub const LCH_FILTER_RECORD: i32 = 2;
 
 pub const LCH_VALUE_NULL: c_int = 0;
 const LCH_VALUE_TEXT: c_int = 1;

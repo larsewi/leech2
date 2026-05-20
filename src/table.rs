@@ -868,8 +868,11 @@ mod tests {
     // through an `LchCell`. The script owns the CStrings backing TEXT cells so
     // their pointers stay valid for the duration of the call.
 
-    use crate::callbacks::{LCH_END_OF_TABLE, LCH_FILTER_RECORD, LchCallbacks};
-    use crate::ffi::{LCH_VALUE_NULL, LchCell, LchCellPayload, SUCCESS as FFI_SUCCESS};
+    use crate::callbacks::LchCallbacks;
+    use crate::ffi::{
+        LCH_END_OF_TABLE, LCH_FILTER_RECORD, LCH_VALUE_NULL, LchCell, LchCellPayload,
+        SUCCESS as FFI_SUCCESS,
+    };
     use std::cell::RefCell;
     use std::collections::HashMap;
     use std::ffi::{CStr, CString, c_char, c_void};

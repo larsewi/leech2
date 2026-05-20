@@ -12,15 +12,10 @@ use std::ffi::{CStr, c_char, c_void};
 use anyhow::{Result, bail};
 
 use crate::cell::Cell;
-use crate::ffi::{LCH_VALUE_NULL, LchCell, LchCellPayload, SUCCESS, cell_from_ffi};
-
-/// `lch_read_cell_cb_t` return code: the row at this index does not exist;
-/// iteration for this table stops.
-pub const LCH_END_OF_TABLE: i32 = 1;
-
-/// `lch_read_cell_cb_t` return code: drop the current row; advance to the
-/// next row without consulting any further fields.
-pub const LCH_FILTER_RECORD: i32 = 2;
+use crate::ffi::{
+    LCH_END_OF_TABLE, LCH_FILTER_RECORD, LCH_VALUE_NULL, LchCell, LchCellPayload, SUCCESS,
+    cell_from_ffi,
+};
 
 type TableBeginFn = unsafe extern "C" fn(*const c_char, *mut c_void) -> i32;
 type TableEndFn = unsafe extern "C" fn(*const c_char, i32, *mut c_void) -> i32;
