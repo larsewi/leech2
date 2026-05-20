@@ -39,7 +39,7 @@ pub fn ffi_guard<T>(name: &str, default: T, body: impl FnOnce() -> T) -> T {
 }
 
 /// Logs and reports a null pointer FFI argument. Returns `true` if `ptr` is
-/// null. Callers translate `true` into the function's failure sentinel.
+/// null.
 ///
 /// `*mut T` coerces to `*const T` automatically, so this works for both
 /// pointer kinds without casts at the call site.
@@ -54,7 +54,6 @@ pub fn null_arg<T>(fn_name: &str, arg_name: &str, ptr: *const T) -> bool {
 /// Validate a required C string FFI argument and convert it to `&str`.
 ///
 /// Logs an error and returns `None` if `ptr` is null or the bytes are not UTF-8.
-/// Callers translate `None` into the function's failure sentinel.
 ///
 /// # Safety
 /// If `ptr` is non-null, it must point to a valid, null-terminated C string.
@@ -106,8 +105,7 @@ pub struct LchCell {
 
 /// Convert an FFI `lch_cell_t` into a domain [`Cell`]. Validates the kind
 /// tag, rejects non-finite numbers, and (for TEXT) verifies the pointer is
-/// non-null and UTF-8. Logs an error and returns `None` on failure; callers
-/// translate `None` into the function's failure sentinel.
+/// non-null and UTF-8. Logs an error and returns `None` on failure.
 ///
 /// # Safety
 /// When `cell.kind == LCH_VALUE_TEXT`, `cell.payload.text` must point to a
