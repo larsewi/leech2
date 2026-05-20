@@ -163,13 +163,15 @@ typedef int (*lch_table_begin_cb_t)(const char *table, void *usr_data);
  *
  * @param table     Null-terminated table name. Borrowed; valid only for the
  *                  duration of the call.
- * @param status    LCH_SUCCESS if the table drained cleanly (the cell
- *                  callback returned LCH_SUCCESS for some row, or the table
- *                  had zero rows). LCH_FAILURE if iteration was aborted
- *                  (the cell callback returned LCH_FAILURE, a duplicate
- *                  primary key was detected, an invalid cell kind was
- *                  produced, etc.); any partial data the caller has staged
- *                  for this table should be discarded.
+ * @param status    LCH_SUCCESS if iteration completed normally: the cell
+ *                  callback eventually returned LCH_END_OF_TABLE (possibly on
+ *                  row 0, i.e. the table had zero rows) and every cell the
+ *                  callback produced was accepted. LCH_FAILURE if iteration
+ *                  was aborted, either because the cell callback returned
+ *                  LCH_FAILURE or because leech2 rejected a produced cell
+ *                  (duplicate primary key, cell kind mismatch, NULL on a
+ *                  primary-key field, etc.); any partial data the caller has
+ *                  staged for this table should be discarded.
  * @param usr_data  Opaque pointer from lch_callbacks_t::usr_data.
  * @return LCH_SUCCESS to indicate teardown completed.
  *         LCH_FAILURE makes lch_block_create return LCH_FAILURE even if
