@@ -928,7 +928,7 @@ mod tests {
     }
 
     fn make_callbacks() -> Callbacks {
-        Callbacks::from_ffi(&LchCallbacks {
+        Callbacks::from(&LchCallbacks {
             table_begin: None,
             read_cell: Some(test_read_cell),
             table_end: None,

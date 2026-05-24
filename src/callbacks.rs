@@ -59,8 +59,8 @@ pub struct Callbacks {
     usr_data: *mut c_void,
 }
 
-impl Callbacks {
-    pub fn from_ffi(raw: &LchCallbacks) -> Self {
+impl From<&LchCallbacks> for Callbacks {
+    fn from(raw: &LchCallbacks) -> Self {
         Callbacks {
             table_begin: raw.table_begin,
             read_cell: raw.read_cell,
@@ -68,7 +68,9 @@ impl Callbacks {
             usr_data: raw.usr_data,
         }
     }
+}
 
+impl Callbacks {
     /// Bind this callback bundle to one table. The returned handle owns the
     /// pre-encoded C strings for the table name and every field, so the inner
     /// row/cell loop never has to touch a `CString` itself.
@@ -198,7 +200,7 @@ mod tests {
     }
 
     fn callbacks_with_failing_begin() -> Callbacks {
-        Callbacks::from_ffi(&LchCallbacks {
+        Callbacks::from(&LchCallbacks {
             table_begin: Some(fail_table_begin),
             read_cell: None,
             table_end: None,
@@ -207,7 +209,7 @@ mod tests {
     }
 
     fn callbacks_with_failing_end() -> Callbacks {
-        Callbacks::from_ffi(&LchCallbacks {
+        Callbacks::from(&LchCallbacks {
             table_begin: None,
             read_cell: None,
             table_end: Some(fail_table_end),
@@ -242,7 +244,7 @@ mod tests {
     }
 
     fn empty_callbacks() -> Callbacks {
-        Callbacks::from_ffi(&LchCallbacks {
+        Callbacks::from(&LchCallbacks {
             table_begin: None,
             read_cell: None,
             table_end: None,
@@ -280,7 +282,7 @@ mod tests {
     fn test_read_cell_missing_is_an_error() {
         // A callback-backed table with no read_cell hook is a configuration
         // error: the cell-pull contract is unsatisfiable.
-        let callbacks = Callbacks::from_ffi(&LchCallbacks {
+        let callbacks = Callbacks::from(&LchCallbacks {
             table_begin: None,
             read_cell: None,
             table_end: None,
