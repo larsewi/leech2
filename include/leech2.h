@@ -186,21 +186,13 @@ typedef int (*lch_table_end_cb_t)(const char *table, void *usr_data);
  *
  * LCH_END_OF_TABLE / LCH_SKIP_RECORD on any cell short-circuits the rest
  * of the row: leech2 won't ask for the remaining cells, and any cells
- * already accepted for the row are discarded. The natural caller
- * implementation -- "if (row >= my_data.len()) return LCH_END_OF_TABLE" --
- * makes this automatic.
- *
- * CSV-specific config attributes -- per-field null/true/false sentinels and
- * the filters block (max-field-length, include, exclude) -- do not apply to
- * callback-backed tables. The callback is the sole authority for which rows
- * are included, via LCH_SKIP_RECORD.
+ * already accepted for the row are discarded.
  *
  * @param table       Null-terminated table name. Borrowed.
- * @param row         0-based row index, monotonically non-decreasing.
+ * @param row         0-based row index
  * @param col         0-based index of the field in config.toml declaration
- *                    order (i.e. the position of its [[table.fields]] block).
- * @param field_name  Null-terminated name of the field at @p col, looked up
- *                    for convenience. Borrowed.
+ *                    order.
+ * @param field_name  Null-terminated name of the field at @p col. Borrowed.
  * @param out_cell    On entry, zero-initialised. On LCH_SUCCESS return,
  *                    populate with the typed cell value. The kind tag must
  *                    match the field's declared kind. On LCH_END_OF_TABLE,
@@ -208,12 +200,12 @@ typedef int (*lch_table_end_cb_t)(const char *table, void *usr_data);
  *                    ignored.
  * @param usr_data    Opaque pointer from lch_callbacks_t::usr_data.
  * @return LCH_SUCCESS         out_cell populated; leech2 will ask for the
- *                             remaining fields of this row (in some order)
+ *                             remaining fields of this row.
  *                             and then advance to row + 1.
  *         LCH_END_OF_TABLE    No row exists at this index; iteration for
  *                             this table stops. May be returned from any
  *                             column.
- *         LCH_SKIP_RECORD   Drop the current row; leech2 does not ask for
+ *         LCH_SKIP_RECORD     Drop the current row; leech2 does not ask for
  *                             any remaining fields of this row and advances
  *                             to row + 1. May be returned from any column.
  *         LCH_FAILURE         Unrecoverable error; block creation aborts.
