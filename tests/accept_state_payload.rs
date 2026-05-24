@@ -147,8 +147,6 @@ source = "logs.csv"
 
     // Verify SQL contains both delta and state patterns.
     let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
-    assert!(sql.starts_with("BEGIN;\n"));
-    assert!(sql.ends_with("COMMIT;\n"));
 
     // logs: delta path → 1 INSERT, no TRUNCATE for logs
     assert!(sql.contains(r#"INSERT INTO "logs""#));

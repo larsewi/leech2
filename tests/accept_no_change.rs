@@ -39,14 +39,7 @@ source = "users.csv"
     let patch = Patch::create(&config, &hash1).unwrap();
     assert_eq!(patch.num_blocks, 1);
 
+    // A no-change patch produces no SQL statements.
     let sql = sql::patch_to_sql(&config, &patch).unwrap();
-    match sql {
-        Some(s) => {
-            // Empty transaction (no operations)
-            assert_eq!(s.trim(), "BEGIN;\nCOMMIT;");
-        }
-        None => {
-            // Also acceptable if the patch has no payload
-        }
-    }
+    assert!(sql.is_none(), "expected no SQL, got: {:?}", sql);
 }

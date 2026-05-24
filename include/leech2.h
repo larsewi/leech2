@@ -277,7 +277,10 @@ extern int lch_patch_create(const lch_config_t *cfg, const char *hash,
  * the patch to a downstream database:
  * - Delta payloads generate DELETE, INSERT, and UPDATE statements.
  * - State payloads generate TRUNCATE followed by INSERT statements.
- * - All statements are wrapped in BEGIN / COMMIT.
+ *
+ * The returned SQL is not wrapped in a transaction. Callers that need
+ * atomicity should issue their own BEGIN / COMMIT and may interleave
+ * additional statements (e.g. recording the last applied block hash).
  *
  * If the patch contains no actionable changes, @p sql is set to NULL and the
  * function returns LCH_SUCCESS.
