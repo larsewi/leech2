@@ -106,19 +106,6 @@ boolean true/false (only meaningful for BOOLEAN fields; ignored elsewhere).
 Patterns are unanchored — use `^...$` for exact matches. A primary-key cell
 matching the `null` pattern is rejected at load time.
 
-```toml
-[tables.items]
-fields = [
-    { name = "id",    type = "NUMBER",  primary-key = true },
-    { name = "notes", type = "TEXT" },
-    { name = "score", type = "NUMBER" },
-]
-
-[tables.items.csv]
-source = "items.csv"
-null = "^(N/A)?$"   # empty string OR "N/A" -> NULL
-```
-
 When a `true` or `false` regex is set, the strict defaults (`"true"` /
 `"false"`) are no longer accepted unless the regex matches them. Setting just
 one of the two leaves the other on its default literal.
@@ -127,11 +114,13 @@ one of the two leaves the other on its default literal.
 [tables.flags]
 fields = [
     { name = "id",     type = "NUMBER",  primary-key = true },
+    { name = "notes",  type = "TEXT" },
     { name = "active", type = "BOOLEAN" },
 ]
 
 [tables.flags.csv]
 source = "flags.csv"
+null  = "^(N/A)?$"   # empty string OR "N/A" -> NULL
 true  = "^Y$"
 false = "^N$"
 ```
