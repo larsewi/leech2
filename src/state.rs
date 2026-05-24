@@ -143,6 +143,15 @@ fn load_from_callback(
     let load_result = Table::load_from_callbacks(name, table_config, &bound);
     let end_result = bound.table_end();
 
+    if load_result.is_err()
+        && let Err(end_err) = &end_result
+    {
+        log::warn!(
+            "table_end for '{}' also failed after load error: {:#}",
+            name,
+            end_err
+        );
+    }
     let table = load_result?;
     end_result?;
     Ok(table)
