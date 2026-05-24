@@ -97,8 +97,9 @@ file. Requires a prior
 Convert the
 .B .leech2/PATCH
 file to SQL statements. Delta payloads generate DELETE, INSERT, and UPDATE
-statements. State payloads generate TRUNCATE followed by INSERT statements. All
-statements are wrapped in BEGIN / COMMIT. Requires a prior
+statements. State payloads generate TRUNCATE followed by INSERT statements.
+The output is not wrapped in a transaction; callers that need atomicity
+should issue their own BEGIN / COMMIT. Requires a prior
 .BR "lch patch create" .
 .SS lch patch inject \fINAME\fR \fIVALUE\fR [\fITYPE\fR]
 Add or overwrite an injected field on the
@@ -418,9 +419,7 @@ f7e8d9c0b1a2...
 
 $ lch patch create
 $ lch patch sql
-BEGIN;
 INSERT INTO products (id, name, price) VALUES (4, 'Headphones', 59.99);
-COMMIT;
 
 $ lch patch applied
 f7e8d9c0b1a2...

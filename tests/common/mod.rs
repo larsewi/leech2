@@ -26,13 +26,12 @@ pub fn write_csv(work_dir: &Path, filename: &str, content: &str) {
     std::fs::write(work_dir.join(filename), content).unwrap();
 }
 
-/// Parse SQL output into a set of individual statements, stripping the
-/// BEGIN/COMMIT wrapper. Handles non-deterministic ordering from HashMap
-/// iteration.
+/// Parse SQL output into a set of individual statements. Handles
+/// non-deterministic ordering from HashMap iteration.
 fn parse_sql_statements(sql: &str) -> HashSet<String> {
     sql.lines()
         .map(|l| l.trim().to_string())
-        .filter(|l| !l.is_empty() && l != "BEGIN;" && l != "COMMIT;")
+        .filter(|l| !l.is_empty())
         .collect()
 }
 

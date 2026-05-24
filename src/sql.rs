@@ -446,7 +446,9 @@ fn state_table_to_sql(
 
 /// Convert a decoded patch to SQL statements.
 ///
-/// Returns a SQL string wrapped in BEGIN/COMMIT.
+/// The returned SQL is not wrapped in a transaction. Callers that need
+/// atomicity should issue their own `BEGIN` / `COMMIT` (and may interleave
+/// additional statements, e.g. recording the last applied block hash).
 pub fn patch_to_sql(config: &Config, patch: &ProtoPatch) -> Result<Option<String>> {
     if patch.deltas.is_empty() && patch.states.is_empty() {
         log::info!("Patch has no payload, nothing to convert");
@@ -458,7 +460,7 @@ pub fn patch_to_sql(config: &Config, patch: &ProtoPatch) -> Result<Option<String
         injected_fields.push(InjectedField::try_from(proto_field)?);
     }
 
-    let mut sql = String::from("BEGIN;\n");
+    let mut sql = String::new();
 
     for (table_name, delta) in &patch.deltas {
         delta_to_sql(config, table_name, delta, &injected_fields, &mut sql)?;
@@ -468,7 +470,11 @@ pub fn patch_to_sql(config: &Config, patch: &ProtoPatch) -> Result<Option<String
         state_table_to_sql(config, table_name, table, &injected_fields, &mut sql)?;
     }
 
-    sql.push_str("COMMIT;\n");
+    if sql.is_empty() {
+        log::info!("Patch produced no SQL statements");
+        return Ok(None);
+    }
+
     log::info!("Converted patch to SQL:\n{}", sql);
     Ok(Some(sql))
 }

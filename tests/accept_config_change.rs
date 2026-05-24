@@ -101,8 +101,6 @@ source = "logs.csv"
 
     // Verify SQL generation.
     let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
-    assert!(sql.starts_with("BEGIN;\n"));
-    assert!(sql.ends_with("COMMIT;\n"));
 
     // items: state path → TRUNCATE + 3 INSERTs
     assert!(sql.contains(r#"TRUNCATE "items";"#));

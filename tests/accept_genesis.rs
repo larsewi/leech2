@@ -99,8 +99,6 @@ source = "users.csv"
     assert!(patch.created.is_some());
 
     let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
-    assert!(sql.starts_with("BEGIN;\n"));
-    assert!(sql.ends_with("COMMIT;\n"));
 
     // Full state patch: TRUNCATE + INSERT for all rows
     assert_eq!(common::count_sql(&sql, "INSERT INTO"), 2);
