@@ -23,7 +23,7 @@ jobs:
 
       - name: Check tag does not already exist
         run: |
-          if git rev-parse "v${{ steps.version.outputs.version }}" >/dev/null 2>&1; then
+          if git ls-remote --exit-code --tags origin "v${{ steps.version.outputs.version }}" >/dev/null 2>&1; then
             echo "::error::Tag v${{ steps.version.outputs.version }} already exists"
             exit 1
           fi
