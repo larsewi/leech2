@@ -1,3 +1,18 @@
+//! Locked file I/O for the work directory.
+//!
+//! Each named resource (`HEAD`, `STATE`, `REPORTED`, individual block hashes)
+//! has its own `.<name>.lock` file used for per-file flock-based
+//! synchronization. The `chain` lock additionally serializes multi-step
+//! chain-mutation sequences in `Block::create` and `truncate::run`.
+//!
+//! # Lock ordering
+//!
+//! When more than one lock is held at the same time, acquire the `chain`
+//! lock first; per-file locks (`HEAD`, `STATE`, `REPORTED`, individual block
+//! hashes) must be taken only inside the chain-locked region, never the
+//! other way around. Violating this ordering risks ABBA deadlock between
+//! `Block::create` and `truncate::run`.
+
 use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::Path;
@@ -11,6 +26,9 @@ use crate::utils::GENESIS_HASH;
 /// the handle is dropped. Use `exclusive = true` to serialize multi-step
 /// operations that span several individual file accesses (e.g. chain
 /// mutation, which writes a block file and then advances HEAD).
+///
+/// See the module-level lock-ordering note before holding multiple locks at
+/// once: the `chain` lock must always be acquired first.
 pub fn acquire_lock(dir: &Path, name: &str, exclusive: bool) -> Result<File> {
     let lock_path = dir.join(format!(".{}.lock", name));
     let lock_file = File::create(&lock_path)
