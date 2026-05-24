@@ -2,6 +2,7 @@ use std::fmt;
 use std::hash::{Hash, Hasher};
 
 use anyhow::{Context, Result, bail};
+use regex::Regex;
 
 use crate::proto::cell::Cell as ProtoCell;
 use crate::proto::cell::cell::Kind as ProtoKind;
@@ -228,33 +229,52 @@ impl Kind {
     }
 }
 
-/// Default sentinel matched as boolean true when no per-field override is set.
+/// Default literal matched as boolean true when no per-table override is set.
 pub const DEFAULT_TRUE_SENTINEL: &str = "true";
-/// Default sentinel matched as boolean false when no per-field override is set.
+/// Default literal matched as boolean false when no per-table override is set.
 pub const DEFAULT_FALSE_SENTINEL: &str = "false";
 
-/// Parse a boolean string with strict, case-sensitive equality against the
-/// supplied sentinels. Use [`DEFAULT_TRUE_SENTINEL`] / [`DEFAULT_FALSE_SENTINEL`]
-/// when no per-field override is configured.
-pub fn parse_boolean(value: &str, true_sentinel: &str, false_sentinel: &str) -> Result<bool> {
-    if value == true_sentinel {
-        Ok(true)
-    } else if value == false_sentinel {
-        Ok(false)
-    } else {
-        bail!(
-            "invalid boolean value '{}' (expected '{}' or '{}')",
-            value,
-            true_sentinel,
-            false_sentinel
-        );
+/// Parse a boolean string. When `true_pattern` is `Some`, the value matches
+/// `true` if the regex matches; otherwise the value must equal
+/// [`DEFAULT_TRUE_SENTINEL`] exactly. The same applies to `false_pattern` and
+/// [`DEFAULT_FALSE_SENTINEL`]. If both patterns match a value, true wins.
+pub fn parse_boolean(
+    value: &str,
+    true_pattern: Option<&Regex>,
+    false_pattern: Option<&Regex>,
+) -> Result<bool> {
+    if matches_or_default(value, true_pattern, DEFAULT_TRUE_SENTINEL) {
+        return Ok(true);
+    }
+    if matches_or_default(value, false_pattern, DEFAULT_FALSE_SENTINEL) {
+        return Ok(false);
+    }
+    bail!(
+        "invalid boolean value '{}' (expected {} or {})",
+        value,
+        describe_sentinel(true_pattern, DEFAULT_TRUE_SENTINEL),
+        describe_sentinel(false_pattern, DEFAULT_FALSE_SENTINEL),
+    );
+}
+
+fn matches_or_default(value: &str, pattern: Option<&Regex>, default: &str) -> bool {
+    match pattern {
+        Some(regex) => regex.is_match(value),
+        None => value == default,
+    }
+}
+
+fn describe_sentinel(pattern: Option<&Regex>, default: &str) -> String {
+    match pattern {
+        Some(regex) => format!("/{}/", regex.as_str()),
+        None => format!("'{}'", default),
     }
 }
 
 /// Parse a string into a typed `Cell` according to the kind tag. Boolean
-/// parsing uses the default sentinels; CSV-parsing callers that honor
-/// per-field overrides should call [`parse_boolean`] directly. Passing
-/// [`Kind::Null`] is rejected — Null is set via the field's
+/// parsing uses the default literals; CSV-parsing callers that honor
+/// per-table regex overrides should call [`parse_boolean`] directly.
+/// Passing [`Kind::Null`] is rejected — Null is set via the table's
 /// null-sentinel mechanism, not by parsing.
 pub fn parse_typed_cell(value: &str, kind: Kind) -> Result<Cell> {
     match kind {
@@ -266,11 +286,7 @@ pub fn parse_typed_cell(value: &str, kind: Kind) -> Result<Cell> {
                 .with_context(|| format!("invalid number: '{}'", value))?;
             Cell::number(parsed)
         }
-        Kind::Boolean => Ok(Cell::Boolean(parse_boolean(
-            value,
-            DEFAULT_TRUE_SENTINEL,
-            DEFAULT_FALSE_SENTINEL,
-        )?)),
+        Kind::Boolean => Ok(Cell::Boolean(parse_boolean(value, None, None)?)),
     }
 }
 
@@ -427,15 +443,15 @@ mod tests {
 
     #[test]
     fn test_parse_boolean_default_sentinels() {
-        assert!(parse_boolean("true", DEFAULT_TRUE_SENTINEL, DEFAULT_FALSE_SENTINEL).unwrap());
-        assert!(!parse_boolean("false", DEFAULT_TRUE_SENTINEL, DEFAULT_FALSE_SENTINEL).unwrap());
+        assert!(parse_boolean("true", None, None).unwrap());
+        assert!(!parse_boolean("false", None, None).unwrap());
     }
 
     #[test]
     fn test_parse_boolean_default_sentinels_are_case_sensitive() {
         for input in ["True", "TRUE", "False", "FALSE"] {
             assert!(
-                parse_boolean(input, DEFAULT_TRUE_SENTINEL, DEFAULT_FALSE_SENTINEL).is_err(),
+                parse_boolean(input, None, None).is_err(),
                 "input '{input}' should be rejected under strict default sentinels"
             );
         }
@@ -445,24 +461,36 @@ mod tests {
     fn test_parse_boolean_legacy_synonyms_no_longer_accepted() {
         for input in ["1", "0", "t", "f", "yes", "no"] {
             assert!(
-                parse_boolean(input, DEFAULT_TRUE_SENTINEL, DEFAULT_FALSE_SENTINEL).is_err(),
+                parse_boolean(input, None, None).is_err(),
                 "input '{input}' should no longer be accepted"
             );
         }
     }
 
     #[test]
-    fn test_parse_boolean_custom_sentinels() {
-        assert!(parse_boolean("Y", "Y", "N").unwrap());
-        assert!(!parse_boolean("N", "Y", "N").unwrap());
-        // The defaults are not honoured when custom sentinels are in use.
-        assert!(parse_boolean("true", "Y", "N").is_err());
-        assert!(parse_boolean("false", "Y", "N").is_err());
+    fn test_parse_boolean_custom_patterns() {
+        let yes = Regex::new("^Y$").unwrap();
+        let no = Regex::new("^N$").unwrap();
+        assert!(parse_boolean("Y", Some(&yes), Some(&no)).unwrap());
+        assert!(!parse_boolean("N", Some(&yes), Some(&no)).unwrap());
+        // The defaults are not honoured when custom patterns are in use.
+        assert!(parse_boolean("true", Some(&yes), Some(&no)).is_err());
+        assert!(parse_boolean("false", Some(&yes), Some(&no)).is_err());
+    }
+
+    /// A custom pattern on only one side leaves the other side using its
+    /// default literal.
+    #[test]
+    fn test_parse_boolean_one_sided_pattern_falls_back_to_default() {
+        let yes = Regex::new("^Y$").unwrap();
+        assert!(parse_boolean("Y", Some(&yes), None).unwrap());
+        assert!(!parse_boolean("false", Some(&yes), None).unwrap());
+        assert!(parse_boolean("true", Some(&yes), None).is_err());
     }
 
     #[test]
     fn test_parse_boolean_rejects_invalid() {
-        assert!(parse_boolean("maybe", DEFAULT_TRUE_SENTINEL, DEFAULT_FALSE_SENTINEL).is_err());
-        assert!(parse_boolean("", DEFAULT_TRUE_SENTINEL, DEFAULT_FALSE_SENTINEL).is_err());
+        assert!(parse_boolean("maybe", None, None).is_err());
+        assert!(parse_boolean("", None, None).is_err());
     }
 }

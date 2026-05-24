@@ -17,12 +17,14 @@ fn test_csv_with_header_row() {
         "config.toml",
         r#"
 [tables.users]
-source = "users.csv"
-header = true
 fields = [
     { name = "id", type = "NUMBER", primary-key = true },
     { name = "name", type = "TEXT" },
 ]
+
+[tables.users.csv]
+source = "users.csv"
+header = true
 "#,
     );
 
@@ -58,13 +60,15 @@ fn test_csv_header_reordered_columns() {
         "config.toml",
         r#"
 [tables.users]
-source = "users.csv"
-header = true
 fields = [
     { name = "id", type = "NUMBER", primary-key = true },
     { name = "name", type = "TEXT" },
     { name = "email", type = "TEXT" },
 ]
+
+[tables.users.csv]
+source = "users.csv"
+header = true
 "#,
     );
 
@@ -107,11 +111,13 @@ fn test_empty_csv_table() {
         "config.toml",
         r#"
 [tables.users]
-source = "users.csv"
 fields = [
     { name = "id", type = "NUMBER", primary-key = true },
     { name = "name", type = "TEXT" },
 ]
+
+[tables.users.csv]
+source = "users.csv"
 "#,
     );
 
@@ -152,7 +158,6 @@ fn test_field_type_sql_quoting() {
         "config.toml",
         r#"
 [tables.records]
-source = "records.csv"
 fields = [
     { name = "id", type = "NUMBER", primary-key = true },
     { name = "label", type = "TEXT" },
@@ -161,6 +166,9 @@ fields = [
     { name = "temperature", type = "NUMBER" },
     { name = "notes", type = "TEXT" },
 ]
+
+[tables.records.csv]
+source = "records.csv"
 "#,
     );
 
@@ -219,36 +227,40 @@ fn test_null_sentinel() {
         "config.toml",
         r#"
 [tables.items]
-source = "items.csv"
 fields = [
     { name = "id", type = "NUMBER", primary-key = true },
     { name = "name", type = "TEXT" },
-    { name = "notes", type = "TEXT", null = "" },
-    { name = "score", type = "NUMBER", null = "N/A" },
+    { name = "notes", type = "TEXT" },
+    { name = "score", type = "NUMBER" },
 ]
+
+[tables.items.csv]
+source = "items.csv"
+# Single per-table regex matches both the empty string and "N/A".
+null = "^(N/A)?$"
 "#,
     );
 
-    // Block 1: row with non-null values
+    // Block 1: row with non-null values. "Alice" doesn't match the null regex.
     common::write_csv(work_dir, "items.csv", "1,Alice,some notes,42\n");
     let config = Config::load(work_dir).unwrap();
     let hash1 = Block::create(&config, None).unwrap();
 
-    // Block 2: update to null sentinels
+    // Block 2: notes -> empty (matches null), score -> "N/A" (matches null).
     common::write_csv(work_dir, "items.csv", "1,Alice,,N/A\n");
     let _hash2 = Block::create(&config, None).unwrap();
 
-    // Patch from genesis: consolidated insert should have NULLs
+    // Patch from genesis: consolidated insert should have NULLs.
     let patch = Patch::create(&config, GENESIS_HASH).unwrap();
     let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
     assert!(
         sql.contains("NULL"),
         "should contain NULL for sentinel values"
     );
-    // name should not be NULL (no sentinel configured)
+    // "Alice" does not match the null regex.
     assert!(sql.contains("'Alice'"));
 
-    // Patch from hash1: delta should also have NULLs
+    // Patch from hash1: delta should also have NULLs.
     let patch2 = Patch::create(&config, &hash1).unwrap();
     let sql2 = sql::patch_to_sql(&config, &patch2).unwrap().unwrap();
     assert!(sql2.contains("NULL"), "delta should contain NULL");
@@ -268,11 +280,15 @@ fn test_custom_boolean_sentinels() {
         "config.toml",
         r#"
 [tables.flags]
-source = "flags.csv"
 fields = [
     { name = "id", type = "NUMBER", primary-key = true },
-    { name = "active", type = "BOOLEAN", true = "Y", false = "N" },
+    { name = "active", type = "BOOLEAN" },
 ]
+
+[tables.flags.csv]
+source = "flags.csv"
+true = "^Y$"
+false = "^N$"
 "#,
     );
 
@@ -300,11 +316,13 @@ fn test_default_boolean_sentinels_reject_legacy_synonyms() {
         "config.toml",
         r#"
 [tables.flags]
-source = "flags.csv"
 fields = [
     { name = "id", type = "NUMBER", primary-key = true },
     { name = "active", type = "BOOLEAN" },
 ]
+
+[tables.flags.csv]
+source = "flags.csv"
 "#,
     );
 
@@ -317,51 +335,36 @@ fields = [
 }
 
 #[test]
-fn test_boolean_sentinel_on_non_boolean_rejected() {
+fn test_null_pattern_matching_primary_key_value_rejected() {
+    // The null pattern is per-table, so a poorly-chosen pattern can match a
+    // primary-key cell's value. Loading that row must be rejected -- NULL
+    // primary keys would produce broken SQL.
     common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
+    let work_dir = tmp.path();
 
     common::write_config(
-        tmp.path(),
+        work_dir,
         "config.toml",
         r#"
 [tables.items]
-source = "items.csv"
 fields = [
-    { name = "id", type = "NUMBER", primary-key = true },
-    { name = "name", type = "TEXT", true = "Y" },
-]
-"#,
-    );
-
-    let err = Config::load(tmp.path()).unwrap_err();
-    let msg = format!("{:#}", err);
-    assert!(msg.contains("only valid on BOOLEAN"), "got: {msg}");
-}
-
-#[test]
-fn test_null_on_primary_key_rejected() {
-    common::init_logging();
-    let tmp = tempfile::tempdir().unwrap();
-
-    common::write_config(
-        tmp.path(),
-        "config.toml",
-        r#"
-[tables.items]
-source = "items.csv"
-fields = [
-    { name = "id", type = "NUMBER", primary-key = true, null = "" },
+    { name = "id", type = "TEXT", primary-key = true },
     { name = "name", type = "TEXT" },
 ]
+
+[tables.items.csv]
+source = "items.csv"
+null = "^N/A$"
 "#,
     );
 
-    let result = Config::load(tmp.path());
-    assert!(result.is_err());
-    let error = format!("{:#}", result.unwrap_err());
+    common::write_csv(work_dir, "items.csv", "N/A,Alice\n");
+    let config = Config::load(work_dir).unwrap();
+    let err = Block::create(&config, None).unwrap_err();
+    let msg = format!("{:#}", err);
     assert!(
-        error.contains("null sentinel"),
-        "should reject null on primary key"
+        msg.contains("primary-key field 'id'"),
+        "should reject NULL on primary key, got: {msg}"
     );
 }

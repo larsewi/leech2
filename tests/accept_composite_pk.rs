@@ -16,12 +16,14 @@ fn test_composite_primary_keys() {
         "config.toml",
         r#"
 [tables.enrollments]
-source = "enrollments.csv"
 fields = [
     { name = "student_id", type = "NUMBER", primary-key = true },
     { name = "course_id", type = "NUMBER", primary-key = true },
     { name = "grade", type = "TEXT" },
 ]
+
+[tables.enrollments.csv]
+source = "enrollments.csv"
 "#,
     );
 

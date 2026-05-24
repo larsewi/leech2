@@ -76,19 +76,19 @@ CREATE TABLE "users" (
 fn config_toml(email_active: bool) -> String {
     let mut s = String::from(
         r#"[tables.users]
-source = "users.csv"
 fields = [
     { name = "id", type = "NUMBER", primary-key = true },
     { name = "name", type = "TEXT" },
 "#,
     );
     if email_active {
-        s.push_str(&format!(
-            "    {{ name = \"email\", type = \"TEXT\", null = \"{EMAIL_NULL_SENTINEL}\" }},\n"
-        ));
+        s.push_str("    { name = \"email\", type = \"TEXT\" },\n");
     }
     s.push_str("    { name = \"active\", type = \"BOOLEAN\" },\n");
-    s.push_str("]\n");
+    s.push_str("]\n\n");
+    s.push_str("[tables.users.csv]\n");
+    s.push_str("source = \"users.csv\"\n");
+    s.push_str(&format!("null = \"^{EMAIL_NULL_SENTINEL}$\"\n"));
     s
 }
 

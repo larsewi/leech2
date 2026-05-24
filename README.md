@@ -65,8 +65,12 @@ Config can be `config.toml` or `config.json`.
 
 - Each table must have at least one field marked `primary-key = true`
 - Field names within a table must be unique
-- When `header = false` (the default), CSV columns are mapped to config fields by
-  position — the first column maps to the first field, etc.
+- A table is **CSV-backed** when it has a `[tables.X.csv]` block declaring a
+  `source`; otherwise it is **callback-backed** and its rows are pulled from
+  the FFI cell callback at block creation time.
+- Inside a `[csv]` block, when `header = false` (the default), CSV columns are
+  mapped to config fields by position — the first column maps to the first
+  field, etc.
 - When `header = true`, the first row of the CSV is treated as a header. Each
   config field is matched to a CSV column by name, so columns may appear in any
   order. Every config field name must be present in the header; extra CSV columns
@@ -79,21 +83,15 @@ Config can be `config.toml` or `config.json`.
 
 ```toml
 [tables.products]
+fields = [
+    { name = "id",    type = "NUMBER", primary-key = true },
+    { name = "name",  type = "TEXT" },
+    { name = "price", type = "NUMBER" },
+]
+
+[tables.products.csv]
 source = "products.csv"  # where to find the CSV (relative to work dir, or absolute)
 header = true            # CSV has a header row (defaults to false)
-
-[[tables.products.fields]]
-name = "id"
-type = "NUMBER"
-primary-key = true
-
-[[tables.products.fields]]
-name = "name"
-type = "TEXT"
-
-[[tables.products.fields]]
-name = "price"
-type = "NUMBER"
 ```
 
 | Type      | SQL literal    | Notes                                                                  |
@@ -102,32 +100,40 @@ type = "NUMBER"
 | `NUMBER`  | `42` / `3.14`  | Stored as `f64`; integers above 2^53 lose precision                    |
 | `BOOLEAN` | `TRUE`/`FALSE` | Accepts the exact strings `true` / `false` (case-sensitive); see below |
 
-Fields can have an optional `null` sentinel that specifies which CSV value
-should be emitted as SQL `NULL` instead of a typed literal. This is not allowed
-on primary-key fields.
+The `[csv]` block can declare per-table regex sentinels. `null` maps matching
+cell values to SQL `NULL`. `true` / `false` override the strings recognized as
+boolean true/false (only meaningful for BOOLEAN fields; ignored elsewhere).
+Patterns are unanchored — use `^...$` for exact matches. A primary-key cell
+matching the `null` pattern is rejected at load time.
 
 ```toml
-[tables.example]
-source = "example.csv"
+[tables.items]
 fields = [
-    { name = "id", type = "NUMBER", primary-key = true },
-    { name = "notes", type = "TEXT", null = "" },       # empty string -> NULL
-    { name = "score", type = "NUMBER", null = "N/A" },  # "N/A" -> NULL
+    { name = "id",    type = "NUMBER",  primary-key = true },
+    { name = "notes", type = "TEXT" },
+    { name = "score", type = "NUMBER" },
 ]
+
+[tables.items.csv]
+source = "items.csv"
+null = "^(N/A)?$"   # empty string OR "N/A" -> NULL
 ```
 
-`BOOLEAN` fields can override the strings recognized as true and false. When
-either override is set, only the configured strings are accepted — the
-defaults are not honored alongside them. The `true`, `false`, and `null`
-sentinels on a single field must all differ.
+When a `true` or `false` regex is set, the strict defaults (`"true"` /
+`"false"`) are no longer accepted unless the regex matches them. Setting just
+one of the two leaves the other on its default literal.
 
 ```toml
 [tables.flags]
-source = "flags.csv"
 fields = [
-    { name = "id", type = "NUMBER", primary-key = true },
-    { name = "active", type = "BOOLEAN", true = "Y", false = "N" },
+    { name = "id",     type = "NUMBER",  primary-key = true },
+    { name = "active", type = "BOOLEAN" },
 ]
+
+[tables.flags.csv]
+source = "flags.csv"
+true  = "^Y$"
+false = "^N$"
 ```
 
 ### Injected fields
@@ -166,55 +172,45 @@ lch patch inject count 42 NUMBER
 
 ### Filters
 
-An optional `[filters]` section drops records at CSV load time. Filtered
-records never enter state, deltas, or SQL output.
+The `[csv]` block can declare per-table filtering that drops records at CSV
+load time. Filtered records never enter state, deltas, or SQL output.
 
 ```toml
-[filters]
+[tables.users.csv]
+source = "users.csv"
 max-field-length = 1024      # drop records with any field longer than this
 
-[[filters.include]]
-field = "status"             # whitelist: keep only matching records
-regex = "^(active|pending)$"
-
-[[filters.exclude]]
-tables = ["staging_orders"]  # restrict rule to specific tables (default: all)
-field = "region"
-regex = "^test$"
-
-[[filters.exclude]]
-field = "serial"
-regex = '^\d{6}$'            # TOML literal string — no escaping needed
+[tables.users.csv.filter]
+fields  = ["status", "label"]   # which fields the patterns are matched against
+include = "^(active|pending)$"  # keep only records whose listed fields match
+exclude = '^DROP$'              # then drop records whose listed fields match
 ```
 
 - `max-field-length`: Optional. Any record where any field value exceeds this
   character length is dropped.
-- `[[filters.include]]` (whitelist): Optional list of inclusion rules. Each
-  rule specifies a `field` and a `regex`. When one or more include rules
-  apply to a table, a record is kept only if its field value matches at
-  least one applicable rule (rules combine with OR). When a table has no
-  applicable include rules, every record passes the include check.
-- `[[filters.exclude]]` (blacklist): Optional list of exclusion rules. Each
-  rule specifies a `field` and a `regex`. Records whose field value matches
-  the regex are dropped. Exclude is evaluated after include, so on overlap
-  exclude wins.
-- `tables`: Optional list of table names a rule applies to. When omitted, the
-  rule applies to all tables. If the named field doesn't exist in a table, the
-  rule is silently skipped.
+- `csv.filter` is an optional single-block-per-table section with three keys:
+  - `fields`: list of field names this filter examines. Every name must appear
+    in the table's `fields` (validated at config-load time).
+  - `include`: optional regex (whitelist). The record is kept only if at least
+    one listed field matches the pattern. Use `|` for alternation when several
+    values should pass.
+  - `exclude`: optional regex (blacklist). The record is dropped if any listed
+    field matches the pattern. Exclude is evaluated after include, so on
+    overlap exclude wins.
+- Filters are per-table by structure — there's no cross-table filter scope.
+  Callback-backed tables (no `[csv]` block) own their own row inclusion via
+  `LCH_SKIP_RECORD`.
 
-Include and exclude regexes share the same syntax: patterns are unanchored
-by default — use `^` and `$` for exact matches — and follow the Rust
-[`regex`](https://docs.rs/regex/) crate.
+Both regexes follow the Rust [`regex`](https://docs.rs/regex/) crate and are
+unanchored by default — use `^...$` for exact matches.
 
 **Escaping regex patterns:** In JSON, backslashes in a regex must be
 doubled: `"\\d+"` means `\d+`. In TOML, use single-quoted literal strings
 to write regexes verbatim: `'\d+'`.
 
 Filtering happens before state computation. When a record that previously
-passed the filters stops passing — by matching an exclude rule, or by no
-longer matching the include rules — it appears as a DELETE in the next
-delta. When a previously-filtered record starts passing, it appears as an
-INSERT.
+passed the filters stops passing, it appears as a DELETE in the next delta.
+When a previously-filtered record starts passing, it appears as an INSERT.
 
 ### Compression
 

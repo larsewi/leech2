@@ -19,18 +19,22 @@ fn test_config_change_produces_mixed_patch() {
         "config.toml",
         r#"
 [tables.items]
-source = "items.csv"
 fields = [
     { name = "id", type = "NUMBER", primary-key = true },
     { name = "name", type = "TEXT" },
 ]
 
+[tables.items.csv]
+source = "items.csv"
+
 [tables.logs]
-source = "logs.csv"
 fields = [
     { name = "seq", type = "NUMBER", primary-key = true },
     { name = "message", type = "TEXT" },
 ]
+
+[tables.logs.csv]
+source = "logs.csv"
 "#,
     );
 
@@ -46,19 +50,23 @@ fields = [
         "config.toml",
         r#"
 [tables.items]
-source = "items.csv"
 fields = [
     { name = "id", type = "NUMBER", primary-key = true },
     { name = "name", type = "TEXT" },
     { name = "price", type = "NUMBER" },
 ]
 
+[tables.items.csv]
+source = "items.csv"
+
 [tables.logs]
-source = "logs.csv"
 fields = [
     { name = "seq", type = "NUMBER", primary-key = true },
     { name = "message", type = "TEXT" },
 ]
+
+[tables.logs.csv]
+source = "logs.csv"
 "#,
     );
 

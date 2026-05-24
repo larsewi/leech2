@@ -119,15 +119,10 @@ impl<'a> TableSchema<'a> {
 }
 
 /// Validate that a wire cell's variant agrees with the field's declared
-/// type, and that `Null` only appears in nullable fields.
+/// type. `Null` is accepted on any non-primary-key field; primary-key fields
+/// reject `Null` upstream during state computation.
 fn check_value_matches_field(value: &Cell, field: &FieldConfig) -> Result<()> {
     if value.kind() == Kind::Null {
-        if field.null_sentinel.is_none() {
-            bail!(
-                "field '{}' is not nullable but wire value is NULL",
-                field.name
-            );
-        }
         return Ok(());
     }
 
@@ -491,16 +486,13 @@ mod tests {
             compression: crate::config::CompressionConfig::default(),
             tables,
             truncate: TruncateConfig::default(),
-            filters: crate::config::FilterConfig::default(),
         }
     }
 
     /// Build a TableConfig for tests. Each entry is `(field_name, is_primary_key)`;
-    /// all fields are TEXT with no NULL sentinel.
+    /// all fields are TEXT.
     fn dummy_table(fields: &[(&str, bool)]) -> crate::config::TableConfig {
         crate::config::TableConfig {
-            source: Some("test.csv".to_string()),
-            header: false,
             fields: fields
                 .iter()
                 .map(|(name, primary_key)| FieldConfig {
@@ -509,6 +501,7 @@ mod tests {
                     ..Default::default()
                 })
                 .collect(),
+            csv: None,
         }
     }
 
@@ -695,55 +688,37 @@ mod tests {
         assert!(msg.contains("primary-key set"), "got: {msg}");
     }
 
-    fn make_field(name: &str, kind: Kind, nullable: bool) -> FieldConfig {
+    fn make_field(name: &str, kind: Kind) -> FieldConfig {
         FieldConfig {
             name: name.to_string(),
             kind,
-            null_sentinel: if nullable { Some("".to_string()) } else { None },
             ..Default::default()
         }
     }
 
     #[test]
     fn test_check_value_matches_field_accepts_correct_types() {
-        check_value_matches_field(
-            &Cell::Text("hello".into()),
-            &make_field("name", Kind::Text, false),
-        )
-        .unwrap();
-        check_value_matches_field(
-            &Cell::Number(2.5),
-            &make_field("price", Kind::Number, false),
-        )
-        .unwrap();
-        check_value_matches_field(
-            &Cell::Boolean(true),
-            &make_field("flag", Kind::Boolean, false),
-        )
-        .unwrap();
+        check_value_matches_field(&Cell::Text("hello".into()), &make_field("name", Kind::Text))
+            .unwrap();
+        check_value_matches_field(&Cell::Number(2.5), &make_field("price", Kind::Number)).unwrap();
+        check_value_matches_field(&Cell::Boolean(true), &make_field("flag", Kind::Boolean))
+            .unwrap();
     }
 
     #[test]
     fn test_check_value_matches_field_rejects_type_drift() {
         // Wire sends a Number into a column the hub config declared TEXT.
-        let err =
-            check_value_matches_field(&Cell::Number(42.0), &make_field("note", Kind::Text, false))
-                .unwrap_err();
+        let err = check_value_matches_field(&Cell::Number(42.0), &make_field("note", Kind::Text))
+            .unwrap_err();
         let msg = format!("{:#}", err);
         assert!(msg.contains("does not match declared type"), "got: {msg}");
     }
 
     #[test]
-    fn test_check_value_matches_field_rejects_null_in_non_nullable() {
-        let err = check_value_matches_field(&Cell::Null, &make_field("name", Kind::Text, false))
-            .unwrap_err();
-        let msg = format!("{:#}", err);
-        assert!(msg.contains("not nullable"), "got: {msg}");
-    }
-
-    #[test]
-    fn test_check_value_matches_field_accepts_null_in_nullable() {
-        check_value_matches_field(&Cell::Null, &make_field("name", Kind::Text, true)).unwrap();
+    fn test_check_value_matches_field_accepts_null() {
+        // NULL is allowed on any non-primary-key field. Primary-key NULLs are
+        // rejected upstream during state computation.
+        check_value_matches_field(&Cell::Null, &make_field("name", Kind::Text)).unwrap();
     }
 
     #[test]

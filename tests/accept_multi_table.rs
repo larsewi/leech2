@@ -17,18 +17,22 @@ fn test_multiple_tables() {
         "config.toml",
         r#"
 [tables.users]
-source = "users.csv"
 fields = [
     { name = "id", type = "NUMBER", primary-key = true },
     { name = "name", type = "TEXT" },
 ]
 
+[tables.users.csv]
+source = "users.csv"
+
 [tables.products]
-source = "products.csv"
 fields = [
     { name = "sku", type = "TEXT", primary-key = true },
     { name = "price", type = "NUMBER" },
 ]
+
+[tables.products.csv]
+source = "products.csv"
 "#,
     );
 

@@ -18,11 +18,13 @@ fn test_empty_patch_before_any_blocks() {
         "config.toml",
         r#"
 [tables.users]
-source = "users.csv"
 fields = [
     { name = "id", type = "NUMBER", primary-key = true },
     { name = "name", type = "TEXT" },
 ]
+
+[tables.users.csv]
+source = "users.csv"
 "#,
     );
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
@@ -48,11 +50,13 @@ fn test_genesis_block_creation() {
         "config.toml",
         r#"
 [tables.users]
-source = "users.csv"
 fields = [
     { name = "id", type = "NUMBER", primary-key = true },
     { name = "name", type = "TEXT" },
 ]
+
+[tables.users.csv]
+source = "users.csv"
 "#,
     );
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
@@ -75,11 +79,13 @@ fn test_genesis_patch_all_inserts() {
         "config.toml",
         r#"
 [tables.users]
-source = "users.csv"
 fields = [
     { name = "id", type = "NUMBER", primary-key = true },
     { name = "name", type = "TEXT" },
 ]
+
+[tables.users.csv]
+source = "users.csv"
 "#,
     );
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
@@ -121,11 +127,13 @@ fn test_noop_patch_when_at_head() {
         "config.toml",
         r#"
 [tables.users]
-source = "users.csv"
 fields = [
     { name = "id", type = "NUMBER", primary-key = true },
     { name = "name", type = "TEXT" },
 ]
+
+[tables.users.csv]
+source = "users.csv"
 "#,
     );
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");

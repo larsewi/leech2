@@ -36,14 +36,15 @@ keyed by composite primary key, then computes a delta against the previous
 snapshot. Each delta records three operation types: inserts (new keys), deletes
 (removed keys), and updates (changed values).
 
-Tables can be sourced two ways: from a CSV file declared via `source` in the
-config (the original path; values are parsed from text), or from a caller-
-supplied callback bundle when `source` is omitted (the C application produces
-typed cells directly via `lch_callbacks_t`). Both paths produce the same in-
-memory table representation; everything downstream — delta computation, layout
-change detection, block storage, truncation — is identical. Filters apply to
-CSV-backed tables only; callback-backed tables skip rows by returning
-`LCH_SKIP_RECORD`.
+Tables can be sourced two ways: from a CSV file declared via a `[tables.X.csv]`
+block in the config (the original path; values are parsed from text), or from
+a caller-supplied callback bundle when no `[csv]` block is present (the C
+application produces typed cells directly via `lch_callbacks_t`). Both paths
+produce the same in-memory table representation; everything downstream — delta
+computation, layout change detection, block storage, truncation — is identical.
+Sentinels (`null` / `true` / `false`) and `filter` rules live under the table's
+`[csv]` block and apply only on the CSV path; callback-backed tables skip rows
+by returning `LCH_SKIP_RECORD`.
 
 When starting a fresh chain (HEAD is genesis), the block is stored with an empty
 payload — delta computation and STATE file loading are skipped entirely. The
@@ -122,12 +123,13 @@ The hub validates each patch against its own config at SQL-generation
 time. The wire's `primary_key_names` and `subsidiary_value_names` lists
 (carried per-table on the `Delta`/`Table` message) must together match
 the hub's field set in count and names, and the wire's primary-key set
-must equal the hub's primary-key set. Each cell's `Cell` variant
-is then checked against the hub's declared `kind`, and `NULL` is only
-accepted on fields with a configured null sentinel. Together these
-defend against agents that misrepresent the schema or emit values of the
-wrong type. Sentinel strings themselves are agent-local CSV parsing rules
-and never need to agree between agent and hub.
+must equal the hub's primary-key set. Each cell's `Cell` variant is then
+checked against the hub's declared `kind`. `NULL` is accepted on any
+non-primary-key field (primary-key cells with the value `NULL` are
+rejected upstream at load time). Together these defend against agents
+that misrepresent the schema or emit values of the wrong type. Sentinels
+(`null` / `true` / `false`) are agent-local CSV parsing rules and never
+need to agree between agent and hub.
 
 Printing the patch shows any combination of deltas and states:
 

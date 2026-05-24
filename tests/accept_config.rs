@@ -30,11 +30,13 @@ fn test_config_no_primary_key() {
         "config.toml",
         r#"
 [tables.users]
-source = "users.csv"
 fields = [
     { name = "id", type = "NUMBER" },
     { name = "name", type = "TEXT" },
 ]
+
+[tables.users.csv]
+source = "users.csv"
 "#,
     );
     let result = Config::load(tmp.path());
@@ -55,11 +57,13 @@ fn test_config_duplicate_field_names() {
         "config.toml",
         r#"
 [tables.users]
-source = "users.csv"
 fields = [
     { name = "id", type = "NUMBER", primary-key = true },
     { name = "id", type = "TEXT" },
 ]
+
+[tables.users.csv]
+source = "users.csv"
 "#,
     );
     let result = Config::load(tmp.path());
@@ -115,11 +119,13 @@ fn test_truncate_config_max_blocks_invalid() {
 max-blocks = 0
 
 [tables.users]
-source = "users.csv"
 fields = [
     { name = "id", type = "NUMBER", primary-key = true },
     { name = "name", type = "TEXT" },
 ]
+
+[tables.users.csv]
+source = "users.csv"
 "#,
     );
 
@@ -143,11 +149,13 @@ fn test_truncate_config_max_age_invalid() {
 max-age = "abc"
 
 [tables.users]
-source = "users.csv"
 fields = [
     { name = "id", type = "NUMBER", primary-key = true },
     { name = "name", type = "TEXT" },
 ]
+
+[tables.users.csv]
+source = "users.csv"
 "#,
     );
 
@@ -168,11 +176,13 @@ fn test_truncate_config_no_truncate_section() {
         "config.toml",
         r#"
 [tables.users]
-source = "users.csv"
 fields = [
     { name = "id", type = "NUMBER", primary-key = true },
     { name = "name", type = "TEXT" },
 ]
+
+[tables.users.csv]
+source = "users.csv"
 "#,
     );
 
@@ -193,11 +203,11 @@ fn test_json_config_file() {
         r#"{
   "tables": {
     "users": {
-      "source": "users.csv",
       "fields": [
         { "name": "id", "type": "NUMBER", "primary-key": true },
         { "name": "name", "type": "TEXT" }
-      ]
+      ],
+      "csv": { "source": "users.csv" }
     }
   }
 }"#,
@@ -245,11 +255,13 @@ type = "TEXT"
 value = "agent-1"
 
 [tables.users]
-source = "users.csv"
 fields = [
     { name = "id", type = "NUMBER", primary-key = true },
     { name = "host", type = "TEXT" },
 ]
+
+[tables.users.csv]
+source = "users.csv"
 "#,
     );
 
@@ -261,36 +273,37 @@ fields = [
 }
 
 #[test]
-fn test_filter_rule_references_unknown_table() {
+fn test_filter_references_unknown_field() {
     common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     common::write_config(
         tmp.path(),
         "config.toml",
         r#"
-[[filters.exclude]]
-tables = ["nonexistent"]
-field = "name"
-regex = "^x$"
-
 [tables.users]
-source = "users.csv"
 fields = [
     { name = "id", type = "NUMBER", primary-key = true },
     { name = "name", type = "TEXT" },
 ]
+
+[tables.users.csv]
+source = "users.csv"
+
+[tables.users.csv.filter]
+fields = ["nonexistent"]
+exclude = "^x$"
 "#,
     );
 
     let err = format!("{:#}", Config::load(tmp.path()).unwrap_err());
     assert!(
-        err.contains("unknown table 'nonexistent'"),
-        "should report unknown table: {err}"
+        err.contains("unknown field 'nonexistent'"),
+        "should report unknown field: {err}"
     );
 }
 
 #[test]
-fn test_empty_table_source_rejected() {
+fn test_empty_csv_source_rejected() {
     common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     common::write_config(
@@ -298,18 +311,20 @@ fn test_empty_table_source_rejected() {
         "config.toml",
         r#"
 [tables.users]
-source = ""
 fields = [
     { name = "id", type = "NUMBER", primary-key = true },
     { name = "name", type = "TEXT" },
 ]
+
+[tables.users.csv]
+source = ""
 "#,
     );
 
     let err = format!("{:#}", Config::load(tmp.path()).unwrap_err());
     assert!(
-        err.contains("source must not be empty"),
-        "should report empty source: {err}"
+        err.contains("csv.source must not be empty"),
+        "should report empty csv.source: {err}"
     );
 }
 
@@ -326,11 +341,13 @@ name = ""
 value = "x"
 
 [tables.users]
-source = "users.csv"
 fields = [
     { name = "id", type = "NUMBER", primary-key = true },
     { name = "name", type = "TEXT" },
 ]
+
+[tables.users.csv]
+source = "users.csv"
 "#,
     );
 
@@ -354,11 +371,13 @@ name = "host"
 value = ""
 
 [tables.users]
-source = "users.csv"
 fields = [
     { name = "id", type = "NUMBER", primary-key = true },
     { name = "name", type = "TEXT" },
 ]
+
+[tables.users.csv]
+source = "users.csv"
 "#,
     );
 
@@ -383,11 +402,13 @@ type = "NUMBER"
 value = "abc"
 
 [tables.users]
-source = "users.csv"
 fields = [
     { name = "id", type = "NUMBER", primary-key = true },
     { name = "name", type = "TEXT" },
 ]
+
+[tables.users.csv]
+source = "users.csv"
 "#,
     );
 
@@ -407,11 +428,13 @@ fn test_field_empty_name_rejected() {
         "config.toml",
         r#"
 [tables.users]
-source = "users.csv"
 fields = [
     { name = "id", type = "NUMBER", primary-key = true },
     { type = "TEXT" },
 ]
+
+[tables.users.csv]
+source = "users.csv"
 "#,
     );
 
@@ -431,11 +454,13 @@ fn test_field_unknown_type_rejected() {
         "config.toml",
         r#"
 [tables.users]
-source = "users.csv"
 fields = [
     { name = "id", type = "NUMBER", primary-key = true },
     { name = "name", type = "FLOAT" },
 ]
+
+[tables.users.csv]
+source = "users.csv"
 "#,
     );
 
@@ -458,11 +483,13 @@ fn test_compression_level_out_of_range() {
 level = 999
 
 [tables.users]
-source = "users.csv"
 fields = [
     { name = "id", type = "NUMBER", primary-key = true },
     { name = "name", type = "TEXT" },
 ]
+
+[tables.users.csv]
+source = "users.csv"
 "#,
     );
 
