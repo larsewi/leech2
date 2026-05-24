@@ -59,7 +59,7 @@ impl<'a> TableSchema<'a> {
             .iter()
             .map(|field| (field.name.as_str(), field))
             .collect();
-        let hub_pk_set: HashSet<&str> = table_config
+        let hub_primary_key_set: HashSet<&str> = table_config
             .fields
             .iter()
             .filter(|field| field.primary_key)
@@ -89,13 +89,13 @@ impl<'a> TableSchema<'a> {
             }
         }
 
-        let wire_pk_set: HashSet<&str> =
+        let wire_primary_key_set: HashSet<&str> =
             wire_primary_key_names.iter().map(String::as_str).collect();
-        if wire_pk_set != hub_pk_set {
+        if wire_primary_key_set != hub_primary_key_set {
             bail!(
                 "wire primary-key set {:?} disagrees with hub primary-key set {:?} for table '{}'",
-                wire_pk_set,
-                hub_pk_set,
+                wire_primary_key_set,
+                hub_primary_key_set,
                 table_name
             );
         }
@@ -698,7 +698,7 @@ mod tests {
     }
 
     #[test]
-    fn test_resolve_rejects_wire_pk_disagreement() {
+    fn test_resolve_rejects_wire_primary_key_disagreement() {
         // Hub: id is the sole PK. A malicious agent claims `email` is the
         // PK so its UPDATE/DELETE WHERE clauses scope on email instead.
         let hub_config_table = dummy_table(&[("id", true), ("email", false)]);
