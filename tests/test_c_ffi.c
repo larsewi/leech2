@@ -169,6 +169,25 @@ int main(int argc, char *argv[]) {
     return EXIT_FAILURE;
   }
 
+  char *hash = NULL;
+  ret = lch_patch_hash(&patch, &hash);
+  if (ret == LCH_FAILURE) {
+    fprintf(stderr, "lch_patch_hash failed\n");
+    lch_buffer_free(&patch);
+    lch_deinit(cfg);
+    return EXIT_FAILURE;
+  }
+  if (hash == NULL || strlen(hash) != 40) {
+    fprintf(stderr, "lch_patch_hash: expected 40-char hash, got '%s'\n",
+            hash ? hash : "(null)");
+    lch_string_free(hash);
+    lch_buffer_free(&patch);
+    lch_deinit(cfg);
+    return EXIT_FAILURE;
+  }
+  printf("patch head: %s\n", hash);
+  lch_string_free(hash);
+
   lch_buffer_t injected = {0};
   lch_cell_t hostkey_cell = {.kind = LCH_VALUE_TEXT, .text = "abc123"};
   ret = lch_patch_inject(cfg, &patch, "hostkey", &hostkey_cell, &injected);
@@ -192,7 +211,7 @@ int main(int argc, char *argv[]) {
   if (sql == NULL || strstr(sql, "\"hostkey\"") == NULL ||
       strstr(sql, "'abc123'") == NULL) {
     fprintf(stderr, "lch_patch_inject: injected field not present in SQL\n");
-    lch_sql_free(sql);
+    lch_string_free(sql);
     lch_buffer_free(&injected);
     lch_buffer_free(&patch);
     lch_deinit(cfg);
@@ -218,7 +237,7 @@ int main(int argc, char *argv[]) {
   }
 
   lch_buffer_free(&patch);
-  lch_sql_free(sql);
+  lch_string_free(sql);
   lch_deinit(cfg);
 
   if (log_state.count == 0) {

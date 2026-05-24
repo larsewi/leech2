@@ -333,15 +333,63 @@ pub unsafe extern "C" fn lch_patch_inject(
 }
 
 /// # Safety
-/// `ptr` must be null or a pointer previously returned by `lch_patch_to_sql`.
+/// `ptr` must be null or a pointer to a null-terminated C string previously
+/// returned by the library (e.g. from `lch_patch_to_sql` or `lch_patch_hash`).
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn lch_sql_free(ptr: *mut c_char) {
-    ffi_guard("lch_sql_free", (), || {
+pub unsafe extern "C" fn lch_string_free(ptr: *mut c_char) {
+    ffi_guard("lch_string_free", (), || {
         if !ptr.is_null() {
             unsafe {
                 drop(CString::from_raw(ptr));
             }
         }
+    })
+}
+
+/// # Safety
+/// `patch` must be a valid, non-null pointer to an `lch_buffer_t` whose `data`
+/// field points to `len` bytes previously returned by `lch_patch_create` or
+/// `lch_patch_inject`.
+/// `out` must be a valid, non-null pointer to a `*mut c_char`. On success it
+/// receives a newly allocated, null-terminated string that the caller must
+/// release with `lch_string_free`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn lch_patch_hash(patch: *const LchBuffer, out: *mut *mut c_char) -> i32 {
+    ffi_guard("lch_patch_hash", FAILURE, || {
+        if null_arg("lch_patch_hash", "patch", patch) {
+            return FAILURE;
+        }
+        if null_arg("lch_patch_hash", "out", out) {
+            return FAILURE;
+        }
+
+        let patch_buf = unsafe { &*patch };
+        if null_arg("lch_patch_hash", "patch->data", patch_buf.data) {
+            return FAILURE;
+        }
+        let data = unsafe { std::slice::from_raw_parts(patch_buf.data, patch_buf.len) };
+
+        let patch = match wire::decode_patch(data) {
+            Ok(patch) => patch,
+            Err(e) => {
+                log::error!("lch_patch_hash(): Failed to decode patch: {:#}", e);
+                return FAILURE;
+            }
+        };
+
+        let cstr = match CString::new(patch.head) {
+            Ok(cstr) => cstr,
+            Err(e) => {
+                log::error!("lch_patch_hash(): Failed to create CString: {:#}", e);
+                return FAILURE;
+            }
+        };
+
+        unsafe {
+            *out = cstr.into_raw();
+        }
+
+        SUCCESS
     })
 }
 

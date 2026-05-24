@@ -267,7 +267,7 @@ lch_patch_create(cfg, NULL, &patch);
 char *sql;
 lch_patch_to_sql(cfg, &patch, &sql);
 printf("%s", sql);
-lch_sql_free(sql);
+lch_string_free(sql);
 
 if (hub_send(patch.data, patch.len)) {
   lch_patch_applied(cfg, &patch);
