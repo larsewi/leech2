@@ -143,9 +143,7 @@ extern void lch_deinit(lch_config_t *cfg);
 /**
  * Per-table setup hook for callback-backed tables.
  *
- * Invoked once, before the first cell callback for @p table. Typical uses:
- * open a database cursor, execute a query, allocate per-table buffers, and
- * stash any handle through @p usr_data.
+ * Invoked once, before the first cell callback for @p table.
  *
  * @param table     Null-terminated table name. Borrowed; valid only for the
  *                  duration of the call.
@@ -160,9 +158,7 @@ typedef int (*lch_table_begin_cb_t)(const char *table, void *usr_data);
  * Per-table teardown hook for callback-backed tables.
  *
  * Invoked once for every table whose lch_table_begin_cb_t returned
- * LCH_SUCCESS, including on the failure path. Typical uses: close a cursor,
- * free per-table buffers, commit or roll back against the backing store
- * based on @p status.
+ * LCH_SUCCESS, including on the failure path.
  *
  * @param table     Null-terminated table name. Borrowed; valid only for the
  *                  duration of the call.
