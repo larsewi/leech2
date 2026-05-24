@@ -1,4 +1,4 @@
-use std::ffi::{CStr, CString, c_char, c_void};
+use std::ffi::{CString, c_char, c_void};
 use std::path::PathBuf;
 
 use crate::ffi::{
@@ -164,13 +164,11 @@ pub unsafe extern "C" fn lch_patch_create(
                 }
             }
         } else {
-            match unsafe { CStr::from_ptr(last_known) }.to_str() {
-                Ok(hash) => hash.to_string(),
-                Err(e) => {
-                    log::error!("lch_patch_create(): Bad argument: {e}");
-                    return FAILURE;
-                }
-            }
+            let Some(hash) = (unsafe { cstr_arg("lch_patch_create", "last_known", last_known) })
+            else {
+                return FAILURE;
+            };
+            hash.to_string()
         };
 
         let patch = match patch::Patch::create(config, &hash) {
