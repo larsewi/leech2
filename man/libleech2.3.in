@@ -156,6 +156,22 @@ must match the field's declared kind (TEXT / NUMBER / BOOLEAN), with
 .B LCH_VALUE_NULL
 accepted on any non-primary-key field.
 .IP
+.B read_cell
+returns
+.B LCH_SUCCESS
+after writing the requested cell into
+.IR out_cell ,
+.B LCH_END_OF_TABLE
+when no row exists at the requested index (ends the table iteration),
+.B LCH_SKIP_RECORD
+to drop the current row from this block, or
+.B LCH_FAILURE
+to abort block creation. See the
+.B lch_callbacks_t
+description under
+.B TYPES
+below for the full callback signatures.
+.IP
 CSV-specific
 .B config.toml
 attributes live under
