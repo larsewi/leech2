@@ -163,7 +163,7 @@ impl Delta {
             || self.subsidiary_value_names != child.subsidiary_value_names
         {
             bail!(
-                "field mismatch (parent pk={:?} sub={:?} vs child pk={:?} sub={:?})",
+                "field mismatch (parent primary_key={:?} subsidiary={:?} vs child primary_key={:?} subsidiary={:?})",
                 self.primary_key_names,
                 self.subsidiary_value_names,
                 child.primary_key_names,
