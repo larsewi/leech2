@@ -64,7 +64,7 @@ enum ConfigFormat {
 
 /// Controls block cleanup / truncation of the block chain.
 #[derive(Clone, Debug, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct TruncateConfig {
     /// Keep at most this many blocks; older ones are removed. `None` disables the limit.
     #[serde(rename = "max-blocks")]
@@ -104,7 +104,7 @@ impl Validate for TruncateConfig {
 
 /// Controls zstd compression of patch payloads.
 #[derive(Debug, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct CompressionConfig {
     /// When true, patch payloads are zstd-compressed before being written.
     pub enable: bool,
@@ -139,7 +139,7 @@ impl Validate for CompressionConfig {
 /// A static field added to every generated SQL row (e.g. a `host` column
 /// identifying which agent produced the data).
 #[derive(Debug, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct InjectedFieldConfig {
     /// Column name in the target database.
     pub name: String,
@@ -176,6 +176,7 @@ impl Validate for InjectedFieldConfig {
 /// Per-table CSV-load filter. One optional block per table that decides
 /// whether each loaded record is kept.
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct FilterConfig {
     /// Fields whose values the include/exclude regexes are matched against.
     /// Must be non-empty; every name must appear in the parent table's `fields`.
@@ -212,7 +213,7 @@ impl FilterConfig {
 /// `TableConfig` marks the table as CSV-backed; its absence means the table
 /// is callback-backed and rows come from the FFI cell callback.
 #[derive(Debug, Default, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct CsvConfig {
     /// CSV file path. Absolute paths are used as-is; relative paths are
     /// resolved against the work directory.
@@ -309,6 +310,7 @@ fn find_field_value<'a>(
 /// Top-level configuration loaded from `config.toml` or `config.json` in the
 /// work directory.
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Config {
     /// Directory the config was loaded from; populated by `Config::load`, not
     /// deserialized.
@@ -350,7 +352,7 @@ impl Drop for Config {
 
 /// One column in a table record.
 #[derive(Debug, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct FieldConfig {
     /// Column name. Matches a CSV header when `csv.header = true`; otherwise
     /// only used as the SQL column name.
@@ -375,6 +377,7 @@ impl Default for FieldConfig {
 
 /// Configure where the table data comes from and how its columns map to SQL.
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TableConfig {
     /// Column definitions.
     pub fields: Vec<FieldConfig>,
@@ -851,6 +854,71 @@ source = "users.csv"
         assert!(
             err.to_string().contains("both config.toml and config.json"),
             "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn test_load_rejects_typo_in_field_key() {
+        // `primery-key` is a misspelling of `primary-key`. Without
+        // deny_unknown_fields it would deserialize silently, leaving
+        // primary_key = false on every field.
+        let dir = tempfile::tempdir().unwrap();
+        let toml_input = r#"
+[tables.users]
+fields = [
+    { name = "id", type = "NUMBER", primery-key = true },
+]
+"#;
+        fs::write(dir.path().join("config.toml"), toml_input).unwrap();
+        let err = Config::load(dir.path()).expect_err("expected unknown-key error");
+        let msg = format!("{:#}", err);
+        assert!(
+            msg.contains("primery-key"),
+            "expected error to mention the typo, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_load_rejects_underscore_variant_of_kebab_key() {
+        // `max_blocks` is the snake_case form; the real key is `max-blocks`.
+        // Without deny_unknown_fields the wrong spelling would be silently
+        // dropped and the documented limit ignored.
+        let dir = tempfile::tempdir().unwrap();
+        let toml_input = r#"
+[tables.users]
+fields = [
+    { name = "id", type = "NUMBER", primary-key = true },
+]
+
+[truncate]
+max_blocks = 5
+"#;
+        fs::write(dir.path().join("config.toml"), toml_input).unwrap();
+        let err = Config::load(dir.path()).expect_err("expected unknown-key error");
+        let msg = format!("{:#}", err);
+        assert!(
+            msg.contains("max_blocks"),
+            "expected error to mention the wrong key, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_load_rejects_stale_top_level_key() {
+        let dir = tempfile::tempdir().unwrap();
+        let toml_input = r#"
+some-removed-feature = true
+
+[tables.users]
+fields = [
+    { name = "id", type = "NUMBER", primary-key = true },
+]
+"#;
+        fs::write(dir.path().join("config.toml"), toml_input).unwrap();
+        let err = Config::load(dir.path()).expect_err("expected unknown-key error");
+        let msg = format!("{:#}", err);
+        assert!(
+            msg.contains("some-removed-feature"),
+            "expected error to mention the unknown top-level key, got: {msg}"
         );
     }
 }
