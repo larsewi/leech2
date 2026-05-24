@@ -18,6 +18,15 @@ type ProtoTable = crate::proto::table::Table;
 /// config field reorderings.
 type CanonicalColumns<'a> = Vec<(usize, &'a FieldConfig)>;
 
+/// The canonical column layout of a table, split into primary-key and
+/// subsidiary halves. Each half is independently sorted lexicographically
+/// by field name so tuple identity stays stable across config field
+/// reorderings.
+struct CanonicalLayout<'a> {
+    primary: CanonicalColumns<'a>,
+    subsidiary: CanonicalColumns<'a>,
+}
+
 /// A table with records stored in a hash map for efficient lookup.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Table {
@@ -122,8 +131,10 @@ impl Table {
         // the index leech promises to pass to the callback as `col`, so we
         // can synthesize it as the identity mapping.
         let positions: Vec<usize> = (0..config.fields.len()).collect();
-        let (primary_columns, subsidiary_columns) =
-            Self::compute_canonical_columns(config, &positions);
+        let CanonicalLayout {
+            primary: primary_columns,
+            subsidiary: subsidiary_columns,
+        } = Self::compute_canonical_columns(config, &positions);
 
         let primary_key_names: Vec<String> = primary_columns
             .iter()
@@ -203,7 +214,7 @@ impl Table {
     fn compute_canonical_columns<'a>(
         config: &'a TableConfig,
         field_indices: &[usize],
-    ) -> (CanonicalColumns<'a>, CanonicalColumns<'a>) {
+    ) -> CanonicalLayout<'a> {
         let mut entries: Vec<(&str, usize, &FieldConfig)> = config
             .fields
             .iter()
@@ -212,16 +223,19 @@ impl Table {
             .collect();
         entries.sort_by_key(|(name, _, _)| *name);
 
-        let mut primary_columns: CanonicalColumns = Vec::new();
-        let mut subsidiary_columns: CanonicalColumns = Vec::new();
+        let mut primary: CanonicalColumns = Vec::new();
+        let mut subsidiary: CanonicalColumns = Vec::new();
         for (_, idx, field) in entries {
             if field.primary_key {
-                primary_columns.push((idx, field));
+                primary.push((idx, field));
             } else {
-                subsidiary_columns.push((idx, field));
+                subsidiary.push((idx, field));
             }
         }
-        (primary_columns, subsidiary_columns)
+        CanonicalLayout {
+            primary,
+            subsidiary,
+        }
     }
 
     #[cfg(test)]
@@ -241,8 +255,10 @@ impl Table {
         };
         let field_names = config.field_names();
         let field_indices = Self::resolve_field_indices(config, &mut reader)?;
-        let (primary_columns, subsidiary_columns) =
-            Self::compute_canonical_columns(config, &field_indices);
+        let CanonicalLayout {
+            primary: primary_columns,
+            subsidiary: subsidiary_columns,
+        } = Self::compute_canonical_columns(config, &field_indices);
 
         let primary_key_names: Vec<String> = primary_columns
             .iter()
@@ -469,7 +485,10 @@ mod tests {
         );
         let field_indices = vec![0, 1, 2];
 
-        let (primary, subsidiary) = Table::compute_canonical_columns(&config, &field_indices);
+        let CanonicalLayout {
+            primary,
+            subsidiary,
+        } = Table::compute_canonical_columns(&config, &field_indices);
 
         assert_eq!(extract(&primary), vec![(0, "id")]);
         // Subsidiaries sorted lexicographically: email before name.
@@ -488,7 +507,10 @@ mod tests {
         );
         let field_indices = vec![0, 1, 2];
 
-        let (primary, subsidiary) = Table::compute_canonical_columns(&config, &field_indices);
+        let CanonicalLayout {
+            primary,
+            subsidiary,
+        } = Table::compute_canonical_columns(&config, &field_indices);
 
         // Primary keys sorted lexicographically: id before region.
         assert_eq!(extract(&primary), vec![(1, "id"), (0, "region")]);
@@ -508,7 +530,10 @@ mod tests {
         );
         let field_indices = vec![2, 0, 1]; // id->col2, name->col0, email->col1
 
-        let (primary, subsidiary) = Table::compute_canonical_columns(&config, &field_indices);
+        let CanonicalLayout {
+            primary,
+            subsidiary,
+        } = Table::compute_canonical_columns(&config, &field_indices);
 
         assert_eq!(extract(&primary), vec![(2, "id")]);
         assert_eq!(extract(&subsidiary), vec![(1, "email"), (0, "name")]);
@@ -519,7 +544,10 @@ mod tests {
         let config = make_config(vec![make_field("b", true), make_field("a", true)], false);
         let field_indices = vec![0, 1];
 
-        let (primary, subsidiary) = Table::compute_canonical_columns(&config, &field_indices);
+        let CanonicalLayout {
+            primary,
+            subsidiary,
+        } = Table::compute_canonical_columns(&config, &field_indices);
 
         // Both PKs, sorted lexicographically: a before b. The column index
         // at each tuple position follows the field's source position.
