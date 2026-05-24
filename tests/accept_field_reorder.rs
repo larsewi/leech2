@@ -26,13 +26,15 @@ fn test_field_reorder_in_config_produces_no_delta() {
         "config.toml",
         r#"
 [tables.users]
-source = "users.csv"
-header = true
 fields = [
     { name = "id", type = "NUMBER", primary-key = true },
     { name = "name", type = "TEXT" },
     { name = "email", type = "TEXT" },
 ]
+
+[tables.users.csv]
+source = "users.csv"
+header = true
 "#,
     );
     let hash1 = Block::create(&Config::load(work_dir).unwrap(), None).unwrap();
@@ -44,13 +46,15 @@ fields = [
         "config.toml",
         r#"
 [tables.users]
-source = "users.csv"
-header = true
 fields = [
     { name = "email", type = "TEXT" },
     { name = "id", type = "NUMBER", primary-key = true },
     { name = "name", type = "TEXT" },
 ]
+
+[tables.users.csv]
+source = "users.csv"
+header = true
 "#,
     );
     let config = Config::load(work_dir).unwrap();

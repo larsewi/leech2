@@ -142,13 +142,15 @@ fn setup_workdir() -> tempfile::TempDir {
         tmp.path().join("config.toml"),
         "\
 [tables.t]
-source = \"t.csv\"
 fields = [
     { name = \"id\", type = \"NUMBER\", primary-key = true },
     { name = \"val\", type = \"TEXT\" },
 ]
 
-# Callback-backed table: no `source` key. The C test supplies a callback
+[tables.t.csv]
+source = \"t.csv\"
+
+# Callback-backed table: no `[csv]` block. The C test supplies a callback
 # bundle that synthesizes two rows for this table; the resulting block must
 # contain both the CSV-backed rows from `t` and the callback-backed rows
 # from `events`.

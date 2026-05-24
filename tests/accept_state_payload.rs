@@ -17,11 +17,13 @@ fn test_state_payload_when_smaller_than_deltas() {
         "config.toml",
         r#"
 [tables.items]
-source = "items.csv"
 fields = [
     { name = "id", type = "NUMBER", primary-key = true },
     { name = "name", type = "TEXT" },
 ]
+
+[tables.items.csv]
+source = "items.csv"
 "#,
     );
 
@@ -76,18 +78,22 @@ fn test_mixed_payload_deltas_and_states() {
         "config.toml",
         r#"
 [tables.items]
-source = "items.csv"
 fields = [
     { name = "id", type = "NUMBER", primary-key = true },
     { name = "name", type = "TEXT" },
 ]
 
+[tables.items.csv]
+source = "items.csv"
+
 [tables.logs]
-source = "logs.csv"
 fields = [
     { name = "seq", type = "NUMBER", primary-key = true },
     { name = "message", type = "TEXT" },
 ]
+
+[tables.logs.csv]
+source = "logs.csv"
 "#,
     );
 

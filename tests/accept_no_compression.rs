@@ -24,11 +24,13 @@ fn test_compression_disabled() {
 enable = false
 
 [tables.users]
-source = "users.csv"
 fields = [
     { name = "id", type = "NUMBER", primary-key = true },
     { name = "name", type = "TEXT" },
 ]
+
+[tables.users.csv]
+source = "users.csv"
 "#,
     );
 

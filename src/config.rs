@@ -17,15 +17,17 @@ trait Validate {
     fn validate(&self) -> Result<()>;
 }
 
-// Custom deserializer used via `#[serde(deserialize_with = ...)]`: reads the
-// field as a string and compiles it into a `Regex`, surfacing compile errors
-// as deserialization errors so an invalid pattern fails config loading.
-fn deserialize_regex<'de, D>(deserializer: D) -> Result<Regex, D::Error>
+// Custom deserializer for an optional Regex. Used together with
+// `#[serde(default, deserialize_with = ...)]` so absent keys produce `None`
+// and present-but-invalid patterns fail config loading.
+fn deserialize_optional_regex<'de, D>(deserializer: D) -> Result<Option<Regex>, D::Error>
 where
     D: Deserializer<'de>,
 {
     let pattern = String::deserialize(deserializer)?;
-    Regex::new(&pattern).map_err(serde::de::Error::custom)
+    Regex::new(&pattern)
+        .map(Some)
+        .map_err(serde::de::Error::custom)
 }
 
 // Custom deserializer for Kind: reads the field as a string and parses it
@@ -169,79 +171,90 @@ impl Validate for InjectedFieldConfig {
     }
 }
 
-/// Rules to include/exclude records in tables.
+/// Per-table CSV-load filter. One optional block per table that decides
+/// whether each loaded record is kept.
 #[derive(Debug, Deserialize)]
-pub struct FilterRule {
-    /// Tables this rule applies to. Empty means all tables.
-    #[serde(default)]
-    pub tables: Vec<String>,
-    /// Name of the field whose value the regex is matched against.
-    pub field: String,
-    /// Pattern matched against the field value. Unanchored by default.
-    #[serde(deserialize_with = "deserialize_regex")]
-    pub regex: Regex,
-}
-
-impl FilterRule {
-    /// Returns true if this rule applies to the given table.
-    /// An empty `table` list means the rule applies to all tables.
-    fn applies_to(&self, table_name: &str) -> bool {
-        self.tables.is_empty() || self.tables.iter().any(|name| name == table_name)
-    }
-}
-
-/// Drops records at CSV load time so they never enter state, deltas, or SQL
-/// output.
-#[derive(Debug, Default, Deserialize)]
 pub struct FilterConfig {
-    /// Drop records where any field value exceeds this character length.
-    /// `None` disables the limit.
-    #[serde(rename = "max-field-length")]
-    pub max_field_length: Option<usize>,
-    /// Whitelist rules. When any include rule applies to a table, a record is
-    /// kept only if at least one rule matches.
-    #[serde(default)]
-    pub include: Vec<FilterRule>,
-    /// Blacklist rules. Records matching any applicable exclude rule are
-    /// dropped. Exclude wins on overlap.
-    #[serde(default)]
-    pub exclude: Vec<FilterRule>,
+    /// Fields whose values the include/exclude regexes are matched against.
+    /// Must be non-empty; every name must appear in the parent table's `fields`.
+    pub fields: Vec<String>,
+    /// Whitelist regex. The record is kept only if at least one of the
+    /// listed fields' values matches the pattern. Unanchored by default.
+    #[serde(default, deserialize_with = "deserialize_optional_regex")]
+    pub include: Option<Regex>,
+    /// Blacklist regex. The record is dropped if any of the listed fields'
+    /// values matches the pattern. Unanchored by default. Exclude wins on
+    /// overlap with include.
+    #[serde(default, deserialize_with = "deserialize_optional_regex")]
+    pub exclude: Option<Regex>,
 }
 
-impl Validate for FilterConfig {
-    fn validate(&self) -> Result<()> {
-        if self.max_field_length == Some(0) {
-            bail!("filters.max-field-length must be >= 1");
+impl FilterConfig {
+    fn validate(&self, table_field_names: &HashSet<&str>) -> Result<()> {
+        if self.fields.is_empty() {
+            bail!("filter.fields must not be empty");
+        }
+        for field in &self.fields {
+            if !table_field_names.contains(field.as_str()) {
+                bail!("filter.fields references unknown field '{}'", field);
+            }
+        }
+        if self.include.is_none() && self.exclude.is_none() {
+            bail!("filter must set 'include', 'exclude', or both");
         }
         Ok(())
     }
 }
 
-/// Look up the value whose field name is `target`. Returns `None` if
-/// `target` isn't in `field_names` or if `values` is shorter than
-/// `field_names`.
-fn find_field_value<'a>(
-    field_names: &[String],
-    values: &'a [&str],
-    target: &str,
-) -> Option<&'a str> {
-    let position = field_names.iter().position(|name| name == target)?;
-    values.get(position).copied()
+/// CSV-specific configuration for a table. The presence of this block on a
+/// `TableConfig` marks the table as CSV-backed; its absence means the table
+/// is callback-backed and rows come from the FFI cell callback.
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct CsvConfig {
+    /// CSV file path. Absolute paths are used as-is; relative paths are
+    /// resolved against the work directory.
+    pub source: String,
+    /// When true, the first CSV row is a header used to match columns by name;
+    /// when false, columns are matched by position.
+    pub header: bool,
+    /// Regex that, when matched against a cell's text, maps the cell to SQL
+    /// `NULL`. Applies to every non-primary-key field in the table.
+    /// Unanchored by default.
+    #[serde(rename = "null", deserialize_with = "deserialize_optional_regex")]
+    pub null_pattern: Option<Regex>,
+    /// Regex matched against BOOLEAN cells to produce `true`. When unset, the
+    /// strict default literal `"true"` is required. Unanchored by default.
+    #[serde(rename = "true", deserialize_with = "deserialize_optional_regex")]
+    pub true_pattern: Option<Regex>,
+    /// Regex matched against BOOLEAN cells to produce `false`. When unset, the
+    /// strict default literal `"false"` is required. Unanchored by default.
+    #[serde(rename = "false", deserialize_with = "deserialize_optional_regex")]
+    pub false_pattern: Option<Regex>,
+    /// Drop records where any field value exceeds this character length.
+    /// `None` disables the limit.
+    #[serde(rename = "max-field-length")]
+    pub max_field_length: Option<usize>,
+    /// Optional include/exclude filter applied at CSV load time.
+    pub filter: Option<FilterConfig>,
 }
 
-impl FilterConfig {
-    /// True if no filtering rules are configured.
-    pub fn is_default(&self) -> bool {
-        self.max_field_length.is_none() && self.include.is_empty() && self.exclude.is_empty()
+impl CsvConfig {
+    fn validate(&self, table_field_names: &HashSet<&str>) -> Result<()> {
+        if self.source.is_empty() {
+            bail!("csv.source must not be empty");
+        }
+        if self.max_field_length == Some(0) {
+            bail!("csv.max-field-length must be >= 1");
+        }
+        if let Some(filter) = &self.filter {
+            filter.validate(table_field_names).context("csv.filter")?;
+        }
+        Ok(())
     }
 
     /// Returns `Some(reason)` if the record should be filtered out, `None` to keep.
-    pub fn should_filter(
-        &self,
-        table_name: &str,
-        field_names: &[String],
-        values: &[&str],
-    ) -> Option<String> {
+    pub fn should_filter(&self, field_names: &[String], values: &[&str]) -> Option<String> {
         if let Some(max_length) = self.max_field_length {
             for (name, value) in field_names.iter().zip(values.iter()) {
                 if value.len() > max_length {
@@ -255,44 +268,40 @@ impl FilterConfig {
             }
         }
 
-        let mut has_applicable_include = false;
-        let mut any_include_matched = false;
-        for include in &self.include {
-            if !include.applies_to(table_name) {
-                // Rule does not apply for this table
-                continue;
+        if let Some(filter) = &self.filter {
+            let candidate_values: Vec<&str> = filter
+                .fields
+                .iter()
+                .filter_map(|name| find_field_value(field_names, values, name))
+                .collect();
+
+            if let Some(include) = &filter.include
+                && !candidate_values.iter().any(|v| include.is_match(v))
+            {
+                return Some("no include rule matched".to_string());
             }
-            let Some(value) = find_field_value(field_names, values, &include.field) else {
-                // Field does not exist in table
-                continue;
-            };
-            has_applicable_include = true;
-            if include.regex.is_match(value) {
-                any_include_matched = true;
-                break;
+
+            if let Some(exclude) = &filter.exclude
+                && let Some(value) = candidate_values.iter().find(|v| exclude.is_match(v))
+            {
+                return Some(format!("value '{}' matches exclude rule", value));
             }
         }
 
-        if has_applicable_include && !any_include_matched {
-            // An include rule applied to this table, but none matched
-            return Some("no include rule matched".to_string());
-        }
-
-        for exclude in &self.exclude {
-            if !exclude.applies_to(table_name) {
-                // Rule does not apply for this table
-                continue;
-            }
-            let Some(value) = find_field_value(field_names, values, &exclude.field) else {
-                // Field does not exist in table
-                continue;
-            };
-            if exclude.regex.is_match(value) {
-                return Some(format!("field '{}' matches exclude rule", exclude.field));
-            }
-        }
         None
     }
+}
+
+/// Look up the value whose field name is `target`. Returns `None` if
+/// `target` isn't in `field_names` or if `values` is shorter than
+/// `field_names`.
+fn find_field_value<'a>(
+    field_names: &[String],
+    values: &'a [&str],
+    target: &str,
+) -> Option<&'a str> {
+    let position = field_names.iter().position(|name| name == target)?;
+    values.get(position).copied()
 }
 
 /// Top-level configuration loaded from `config.toml` or `config.json` in the
@@ -314,16 +323,13 @@ pub struct Config {
     /// Block chain truncation policy.
     #[serde(default)]
     pub truncate: TruncateConfig,
-    /// Include/exclude rules applied at CSV load time.
-    #[serde(default)]
-    pub filters: FilterConfig,
 }
 
 /// One column in a table record.
 #[derive(Debug, Deserialize)]
 #[serde(default)]
 pub struct FieldConfig {
-    /// Column name. Matches a CSV header when `header = true`; otherwise
+    /// Column name. Matches a CSV header when `csv.header = true`; otherwise
     /// only used as the SQL column name.
     pub name: String,
     /// Cell kind; one of `TEXT`, `NUMBER`, or `BOOLEAN`.
@@ -332,17 +338,6 @@ pub struct FieldConfig {
     /// When true, this field is part of the table's composite primary key.
     #[serde(rename = "primary-key")]
     pub primary_key: bool,
-    /// CSV string treated as SQL `NULL`. Not allowed on primary-key fields.
-    #[serde(rename = "null")]
-    pub null_sentinel: Option<String>,
-    /// CSV string treated as boolean true (BOOLEAN fields only). Disables the
-    /// default `"true"`.
-    #[serde(rename = "true")]
-    pub true_sentinel: Option<String>,
-    /// CSV string treated as boolean false (BOOLEAN fields only). Disables the
-    /// default `"false"`.
-    #[serde(rename = "false")]
-    pub false_sentinel: Option<String>,
 }
 
 impl Default for FieldConfig {
@@ -351,9 +346,6 @@ impl Default for FieldConfig {
             name: String::new(),
             kind: Kind::Text,
             primary_key: false,
-            null_sentinel: None,
-            true_sentinel: None,
-            false_sentinel: None,
         }
     }
 }
@@ -361,19 +353,13 @@ impl Default for FieldConfig {
 /// Configure where the table data comes from and how its columns map to SQL.
 #[derive(Debug, Deserialize)]
 pub struct TableConfig {
-    /// CSV file path. Absolute paths are used as-is; relative paths are
-    /// resolved against the work directory. When omitted, the table is
-    /// callback-backed and its rows are pulled from the FFI cell callback at
-    /// block creation time.
-    #[serde(default)]
-    pub source: Option<String>,
-    /// When true, the first CSV row is a header used to match columns by name;
-    /// when false, columns are matched by position. Ignored for callback-backed
-    /// tables.
-    #[serde(default)]
-    pub header: bool,
     /// Column definitions.
     pub fields: Vec<FieldConfig>,
+    /// CSV-specific configuration. When present, the table is CSV-backed and
+    /// rows are loaded from `csv.source` at block creation time. When absent,
+    /// the table is callback-backed and rows are pulled from the FFI cell
+    /// callback.
+    pub csv: Option<CsvConfig>,
 }
 
 impl Validate for FieldConfig {
@@ -381,61 +367,12 @@ impl Validate for FieldConfig {
         if self.name.is_empty() {
             bail!("field name must not be empty");
         }
-
-        if self.primary_key && self.null_sentinel.is_some() {
-            bail!(
-                "primary-key field '{}' must not have a null sentinel",
-                self.name
-            );
-        }
-
-        if (self.true_sentinel.is_some() || self.false_sentinel.is_some())
-            && self.kind != Kind::Boolean
-        {
-            bail!(
-                "field '{}': 'true' and 'false' sentinels are only valid on BOOLEAN fields",
-                self.name
-            );
-        }
-
-        if let (Some(t), Some(f)) = (&self.true_sentinel, &self.false_sentinel)
-            && t == f
-        {
-            bail!(
-                "field '{}': 'true' and 'false' sentinels must differ",
-                self.name
-            );
-        }
-
-        if let (Some(t), Some(n)) = (&self.true_sentinel, &self.null_sentinel)
-            && t == n
-        {
-            bail!(
-                "field '{}': 'true' and 'null' sentinels must differ",
-                self.name
-            );
-        }
-
-        if let (Some(f), Some(n)) = (&self.false_sentinel, &self.null_sentinel)
-            && f == n
-        {
-            bail!(
-                "field '{}': 'false' and 'null' sentinels must differ",
-                self.name
-            );
-        }
-
         Ok(())
     }
 }
 
 impl Validate for TableConfig {
     fn validate(&self) -> Result<()> {
-        if let Some(source) = &self.source
-            && source.is_empty()
-        {
-            bail!("source must not be empty (omit the field entirely for callback-backed tables)");
-        }
         let num_primary_keys = self.fields.iter().filter(|field| field.primary_key).count();
         if num_primary_keys == 0 {
             bail!("at least one field must be marked as primary-key");
@@ -444,9 +381,13 @@ impl Validate for TableConfig {
         let mut seen = HashSet::new();
         for field in &self.fields {
             field.validate()?;
-            if !seen.insert(&field.name) {
+            if !seen.insert(field.name.as_str()) {
                 bail!("found duplicate field name '{}'", field.name);
             }
+        }
+
+        if let Some(csv) = &self.csv {
+            csv.validate(&seen)?;
         }
 
         Ok(())
@@ -504,25 +445,6 @@ impl Validate for Config {
 
         self.truncate.validate()?;
         self.compression.validate()?;
-        self.filters.validate()?;
-
-        for (label, rules) in [
-            ("filters.include", &self.filters.include),
-            ("filters.exclude", &self.filters.exclude),
-        ] {
-            for (index, rule) in rules.iter().enumerate() {
-                for table_name in &rule.tables {
-                    if !self.tables.contains_key(table_name) {
-                        bail!(
-                            "{}[{}]: references unknown table '{}'",
-                            label,
-                            index,
-                            table_name
-                        );
-                    }
-                }
-            }
-        }
 
         Ok(())
     }
@@ -569,260 +491,294 @@ impl Config {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_validate_rejects_true_sentinel_on_non_boolean() {
-        let field = FieldConfig {
-            name: "name".to_string(),
-            kind: Kind::Text,
-            true_sentinel: Some("Y".to_string()),
+    fn make_csv(filter: Option<FilterConfig>) -> CsvConfig {
+        CsvConfig {
+            source: "x.csv".to_string(),
+            filter,
             ..Default::default()
-        };
-        let msg = format!("{:#}", field.validate().unwrap_err());
-        assert!(msg.contains("only valid on BOOLEAN"), "got: {msg}");
+        }
     }
 
-    #[test]
-    fn test_validate_rejects_false_sentinel_on_non_boolean() {
-        let field = FieldConfig {
-            name: "count".to_string(),
-            kind: Kind::Number,
-            false_sentinel: Some("none".to_string()),
-            ..Default::default()
-        };
-        let msg = format!("{:#}", field.validate().unwrap_err());
-        assert!(msg.contains("only valid on BOOLEAN"), "got: {msg}");
-    }
-
-    #[test]
-    fn test_validate_rejects_equal_true_and_false_sentinels() {
-        let field = FieldConfig {
-            name: "flag".to_string(),
-            kind: Kind::Boolean,
-            true_sentinel: Some("X".to_string()),
-            false_sentinel: Some("X".to_string()),
-            ..Default::default()
-        };
-        let msg = format!("{:#}", field.validate().unwrap_err());
-        assert!(msg.contains("'true' and 'false' sentinels"), "got: {msg}");
-    }
-
-    #[test]
-    fn test_validate_rejects_true_sentinel_collision_with_null() {
-        let field = FieldConfig {
-            name: "flag".to_string(),
-            kind: Kind::Boolean,
-            null_sentinel: Some("X".to_string()),
-            true_sentinel: Some("X".to_string()),
-            ..Default::default()
-        };
-        let msg = format!("{:#}", field.validate().unwrap_err());
-        assert!(msg.contains("'true' and 'null' sentinels"), "got: {msg}");
-    }
-
-    #[test]
-    fn test_validate_rejects_false_sentinel_collision_with_null() {
-        let field = FieldConfig {
-            name: "flag".to_string(),
-            kind: Kind::Boolean,
-            null_sentinel: Some("X".to_string()),
-            false_sentinel: Some("X".to_string()),
-            ..Default::default()
-        };
-        let msg = format!("{:#}", field.validate().unwrap_err());
-        assert!(msg.contains("'false' and 'null' sentinels"), "got: {msg}");
-    }
-
-    #[test]
-    fn test_validate_accepts_distinct_sentinels_on_boolean() {
-        let field = FieldConfig {
-            name: "flag".to_string(),
-            kind: Kind::Boolean,
-            null_sentinel: Some("?".to_string()),
-            true_sentinel: Some("Y".to_string()),
-            false_sentinel: Some("N".to_string()),
-            ..Default::default()
-        };
-        field.validate().unwrap();
-    }
-
-    fn make_rule(tables: Vec<&str>, field: &str, regex: &str) -> FilterRule {
-        FilterRule {
-            tables: tables.into_iter().map(|s| s.to_string()).collect(),
-            field: field.to_string(),
-            regex: Regex::new(regex).unwrap(),
+    fn make_filter(
+        fields: Vec<&str>,
+        include: Option<&str>,
+        exclude: Option<&str>,
+    ) -> FilterConfig {
+        FilterConfig {
+            fields: fields.into_iter().map(|s| s.to_string()).collect(),
+            include: include.map(|s| Regex::new(s).unwrap()),
+            exclude: exclude.map(|s| Regex::new(s).unwrap()),
         }
     }
 
     #[test]
     fn test_should_filter_max_field_length() {
-        let filter = FilterConfig {
+        let csv = CsvConfig {
+            source: "x.csv".to_string(),
             max_field_length: Some(5),
             ..Default::default()
         };
         let fields = vec!["id".to_string(), "name".to_string()];
 
-        assert!(
-            filter
-                .should_filter("t", &fields, &["1", "Alice"])
-                .is_none()
-        );
-        assert!(
-            filter
-                .should_filter("t", &fields, &["1", "Roberto"])
-                .is_some()
-        );
+        assert!(csv.should_filter(&fields, &["1", "Alice"]).is_none());
+        assert!(csv.should_filter(&fields, &["1", "Roberto"]).is_some());
     }
 
     #[test]
     fn test_should_filter_exclude_anchored_regex() {
-        let filter = FilterConfig {
-            exclude: vec![make_rule(vec![], "status", "^inactive$")],
-            ..Default::default()
-        };
+        let csv = make_csv(Some(make_filter(vec!["status"], None, Some("^inactive$"))));
         let fields = vec!["id".to_string(), "status".to_string()];
 
+        assert!(csv.should_filter(&fields, &["1", "active"]).is_none());
+        assert!(csv.should_filter(&fields, &["2", "inactive"]).is_some());
+        // Anchored pattern does not match substrings.
         assert!(
-            filter
-                .should_filter("t", &fields, &["1", "active"])
-                .is_none()
-        );
-        assert!(
-            filter
-                .should_filter("t", &fields, &["2", "inactive"])
-                .is_some()
-        );
-        // Anchored pattern does not match substrings
-        assert!(
-            filter
-                .should_filter("t", &fields, &["3", "inactive-user"])
+            csv.should_filter(&fields, &["3", "inactive-user"])
                 .is_none()
         );
     }
 
     #[test]
     fn test_should_filter_exclude_unanchored_regex() {
-        let filter = FilterConfig {
-            exclude: vec![make_rule(vec![], "desc", "DEPRECATED")],
-            ..Default::default()
-        };
+        let csv = make_csv(Some(make_filter(vec!["desc"], None, Some("DEPRECATED"))));
         let fields = vec!["id".to_string(), "desc".to_string()];
 
+        assert!(csv.should_filter(&fields, &["1", "active item"]).is_none());
         assert!(
-            filter
-                .should_filter("t", &fields, &["1", "active item"])
-                .is_none()
-        );
-        assert!(
-            filter
-                .should_filter("t", &fields, &["2", "DEPRECATED old item"])
+            csv.should_filter(&fields, &["2", "DEPRECATED old item"])
                 .is_some()
         );
     }
 
     #[test]
-    fn test_should_filter_exclude_alternation_regex() {
-        let filter = FilterConfig {
-            exclude: vec![make_rule(vec![], "status", "^(inactive|archived)$")],
-            ..Default::default()
-        };
-        let fields = vec!["id".to_string(), "status".to_string()];
-
-        assert!(
-            filter
-                .should_filter("t", &fields, &["1", "inactive"])
-                .is_some()
-        );
-        assert!(
-            filter
-                .should_filter("t", &fields, &["2", "archived"])
-                .is_some()
-        );
-        assert!(
-            filter
-                .should_filter("t", &fields, &["3", "active"])
-                .is_none()
-        );
-    }
-
-    /// An exclude rule referencing a field that does not exist in the table's
-    /// field list is silently skipped — no records are filtered.
-    #[test]
-    fn test_should_filter_exclude_skipped_when_field_not_in_table() {
-        let filter = FilterConfig {
-            exclude: vec![make_rule(vec![], "nonexistent", "^value$")],
-            ..Default::default()
-        };
+    fn test_should_filter_default_csv() {
+        let csv = make_csv(None);
         let fields = vec!["id".to_string(), "name".to_string()];
 
-        assert!(
-            filter
-                .should_filter("t", &fields, &["1", "Alice"])
-                .is_none()
-        );
+        assert!(csv.should_filter(&fields, &["1", "Alice"]).is_none());
     }
 
     #[test]
-    fn test_should_filter_exclude_table_scoped() {
-        let filter = FilterConfig {
-            exclude: vec![make_rule(vec!["users"], "status", "^inactive$")],
-            ..Default::default()
-        };
+    fn test_should_filter_include_match_keeps_record() {
+        let csv = make_csv(Some(make_filter(
+            vec!["status"],
+            Some("^(active|pending)$"),
+            None,
+        )));
         let fields = vec!["id".to_string(), "status".to_string()];
 
-        // Applies to "users" table
-        assert!(
-            filter
-                .should_filter("users", &fields, &["1", "inactive"])
-                .is_some()
-        );
-        // Does not apply to "orders" table
-        assert!(
-            filter
-                .should_filter("orders", &fields, &["1", "inactive"])
-                .is_none()
-        );
+        assert!(csv.should_filter(&fields, &["1", "active"]).is_none());
+        assert!(csv.should_filter(&fields, &["2", "pending"]).is_none());
     }
 
     #[test]
-    fn test_should_filter_exclude_multiple_tables() {
-        let filter = FilterConfig {
-            exclude: vec![make_rule(vec!["users", "admins"], "status", "^inactive$")],
-            ..Default::default()
-        };
+    fn test_should_filter_include_no_match_drops_record() {
+        let csv = make_csv(Some(make_filter(
+            vec!["status"],
+            Some("^(active|pending)$"),
+            None,
+        )));
         let fields = vec!["id".to_string(), "status".to_string()];
 
-        assert!(
-            filter
-                .should_filter("users", &fields, &["1", "inactive"])
-                .is_some()
+        assert!(csv.should_filter(&fields, &["1", "inactive"]).is_some());
+    }
+
+    /// Multiple listed fields combine with OR for include: a record passes if
+    /// at least one listed field matches the pattern.
+    #[test]
+    fn test_should_filter_include_or_across_fields() {
+        let csv = make_csv(Some(make_filter(
+            vec!["status", "label"],
+            Some("^active$"),
+            None,
+        )));
+        let fields = vec!["id".to_string(), "status".to_string(), "label".to_string()];
+
+        // status matches.
+        assert!(csv.should_filter(&fields, &["1", "active", "x"]).is_none());
+        // label matches.
+        assert!(csv.should_filter(&fields, &["2", "x", "active"]).is_none());
+        // Neither matches.
+        assert!(csv.should_filter(&fields, &["3", "x", "y"]).is_some());
+    }
+
+    /// Multiple listed fields combine with OR for exclude: a record drops if
+    /// any listed field matches the pattern.
+    #[test]
+    fn test_should_filter_exclude_or_across_fields() {
+        let csv = make_csv(Some(make_filter(
+            vec!["status", "label"],
+            None,
+            Some("^drop$"),
+        )));
+        let fields = vec!["id".to_string(), "status".to_string(), "label".to_string()];
+
+        // status matches exclude.
+        assert!(csv.should_filter(&fields, &["1", "drop", "x"]).is_some());
+        // label matches exclude.
+        assert!(csv.should_filter(&fields, &["2", "x", "drop"]).is_some());
+        // Neither matches.
+        assert!(csv.should_filter(&fields, &["3", "x", "y"]).is_none());
+    }
+
+    /// When a record matches both an include rule and an exclude rule, the
+    /// exclude rule wins. Reason strings are checked exactly so a regression
+    /// where include short-circuits exclude is caught.
+    #[test]
+    fn test_should_filter_exclude_wins_over_include() {
+        let csv = make_csv(Some(make_filter(
+            vec!["status"],
+            Some("^(active|pending)$"),
+            Some("^pending$"),
+        )));
+        let fields = vec!["id".to_string(), "status".to_string()];
+
+        // active: matches include, not exclude -> kept.
+        assert!(csv.should_filter(&fields, &["1", "active"]).is_none());
+        // pending: matches both -> dropped with the exclude reason.
+        assert_eq!(
+            csv.should_filter(&fields, &["2", "pending"]).as_deref(),
+            Some("value 'pending' matches exclude rule"),
         );
-        assert!(
-            filter
-                .should_filter("admins", &fields, &["1", "inactive"])
-                .is_some()
-        );
-        assert!(
-            filter
-                .should_filter("orders", &fields, &["1", "inactive"])
-                .is_none()
+        // archived: doesn't match include -> dropped with the include reason.
+        assert_eq!(
+            csv.should_filter(&fields, &["3", "archived"]).as_deref(),
+            Some("no include rule matched"),
         );
     }
 
     #[test]
-    fn test_invalid_regex_fails_to_load() {
+    fn test_invalid_filter_regex_fails_to_load() {
         let toml_input = r#"
-[[filters.exclude]]
-field = "status"
-regex = "["
-
 [tables.users]
-source = "users.csv"
 fields = [
     { name = "id", type = "NUMBER", primary-key = true },
+    { name = "status", type = "TEXT" },
 ]
+
+[tables.users.csv]
+source = "users.csv"
+
+[tables.users.csv.filter]
+fields = ["status"]
+exclude = "["
 "#;
         let result: Result<Config, _> = toml::from_str(toml_input);
         let err = result.expect_err("invalid regex should fail to parse");
+        assert!(
+            err.to_string().contains("regex parse error") || err.to_string().contains("regex"),
+            "expected error to mention 'regex', got: {err}"
+        );
+    }
+
+    #[test]
+    fn test_filter_references_unknown_field() {
+        let dir = tempfile::tempdir().unwrap();
+        let toml_input = r#"
+[tables.users]
+fields = [
+    { name = "id", type = "NUMBER", primary-key = true },
+    { name = "status", type = "TEXT" },
+]
+
+[tables.users.csv]
+source = "users.csv"
+
+[tables.users.csv.filter]
+fields = ["nonexistent"]
+include = "^x$"
+"#;
+        fs::write(dir.path().join("config.toml"), toml_input).unwrap();
+        let err = Config::load(dir.path()).expect_err("expected unknown-field error");
+        assert!(
+            err.to_string().contains("unknown field 'nonexistent'")
+                || format!("{:#}", err).contains("nonexistent"),
+            "expected unknown-field error, got: {err:#}"
+        );
+    }
+
+    #[test]
+    fn test_filter_without_include_or_exclude_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        let toml_input = r#"
+[tables.users]
+fields = [
+    { name = "id", type = "NUMBER", primary-key = true },
+    { name = "status", type = "TEXT" },
+]
+
+[tables.users.csv]
+source = "users.csv"
+
+[tables.users.csv.filter]
+fields = ["status"]
+"#;
+        fs::write(dir.path().join("config.toml"), toml_input).unwrap();
+        let err = Config::load(dir.path()).expect_err("expected missing-pattern error");
+        assert!(
+            format!("{:#}", err).contains("include"),
+            "expected error to mention 'include'/'exclude', got: {err:#}"
+        );
+    }
+
+    #[test]
+    fn test_filter_empty_fields_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        let toml_input = r#"
+[tables.users]
+fields = [
+    { name = "id", type = "NUMBER", primary-key = true },
+]
+
+[tables.users.csv]
+source = "users.csv"
+
+[tables.users.csv.filter]
+fields = []
+include = "^x$"
+"#;
+        fs::write(dir.path().join("config.toml"), toml_input).unwrap();
+        let err = Config::load(dir.path()).expect_err("expected empty-fields error");
+        assert!(
+            format!("{:#}", err).contains("filter.fields"),
+            "expected error to mention 'filter.fields', got: {err:#}"
+        );
+    }
+
+    #[test]
+    fn test_empty_csv_source_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        let toml_input = r#"
+[tables.users]
+fields = [
+    { name = "id", type = "NUMBER", primary-key = true },
+]
+
+[tables.users.csv]
+source = ""
+"#;
+        fs::write(dir.path().join("config.toml"), toml_input).unwrap();
+        let err = Config::load(dir.path()).expect_err("expected empty-source error");
+        assert!(
+            format!("{:#}", err).contains("csv.source must not be empty"),
+            "expected error about empty csv.source, got: {err:#}"
+        );
+    }
+
+    #[test]
+    fn test_invalid_sentinel_regex_fails_to_load() {
+        let toml_input = r#"
+[tables.users]
+fields = [
+    { name = "id", type = "NUMBER", primary-key = true },
+]
+
+[tables.users.csv]
+source = "users.csv"
+null = "["
+"#;
+        let result: Result<Config, _> = toml::from_str(toml_input);
+        let err = result.expect_err("invalid sentinel regex should fail to parse");
         assert!(
             err.to_string().contains("regex"),
             "expected error to mention 'regex', got: {err}"
@@ -830,195 +786,19 @@ fields = [
     }
 
     #[test]
-    fn test_should_filter_default_config() {
-        let filter = FilterConfig::default();
-        let fields = vec!["id".to_string(), "name".to_string()];
-
-        assert!(
-            filter
-                .should_filter("t", &fields, &["1", "Alice"])
-                .is_none()
-        );
-    }
-
-    #[test]
-    fn test_should_filter_include_match_keeps_record() {
-        let filter = FilterConfig {
-            include: vec![make_rule(vec![], "status", "^(active|pending)$")],
-            ..Default::default()
-        };
-        let fields = vec!["id".to_string(), "status".to_string()];
-
-        assert!(
-            filter
-                .should_filter("t", &fields, &["1", "active"])
-                .is_none()
-        );
-        assert!(
-            filter
-                .should_filter("t", &fields, &["2", "pending"])
-                .is_none()
-        );
-    }
-
-    #[test]
-    fn test_should_filter_include_no_match_drops_record() {
-        let filter = FilterConfig {
-            include: vec![make_rule(vec![], "status", "^(active|pending)$")],
-            ..Default::default()
-        };
-        let fields = vec!["id".to_string(), "status".to_string()];
-
-        assert!(
-            filter
-                .should_filter("t", &fields, &["1", "inactive"])
-                .is_some()
-        );
-    }
-
-    #[test]
-    fn test_should_filter_include_unanchored_regex() {
-        let filter = FilterConfig {
-            include: vec![make_rule(vec![], "desc", "PRODUCTION")],
-            ..Default::default()
-        };
-        let fields = vec!["id".to_string(), "desc".to_string()];
-
-        assert!(
-            filter
-                .should_filter("t", &fields, &["1", "PRODUCTION ready"])
-                .is_none()
-        );
-        assert!(
-            filter
-                .should_filter("t", &fields, &["2", "draft item"])
-                .is_some()
-        );
-    }
-
-    /// Multiple include rules combine with OR semantics: a record passes if
-    /// it matches at least one applicable rule.
-    #[test]
-    fn test_should_filter_include_or_semantics() {
-        let filter = FilterConfig {
-            include: vec![
-                make_rule(vec![], "status", "^active$"),
-                make_rule(vec![], "status", "^pending$"),
-            ],
-            ..Default::default()
-        };
-        let fields = vec!["id".to_string(), "status".to_string()];
-
-        assert!(
-            filter
-                .should_filter("t", &fields, &["1", "active"])
-                .is_none()
-        );
-        assert!(
-            filter
-                .should_filter("t", &fields, &["2", "pending"])
-                .is_none()
-        );
-        assert!(
-            filter
-                .should_filter("t", &fields, &["3", "archived"])
-                .is_some()
-        );
-    }
-
-    /// An include rule whose `field` does not exist in the table is silently
-    /// skipped. When that's the only include rule, the record is unconstrained.
-    #[test]
-    fn test_should_filter_include_skipped_when_field_not_in_table() {
-        let filter = FilterConfig {
-            include: vec![make_rule(vec![], "nonexistent", "^value$")],
-            ..Default::default()
-        };
-        let fields = vec!["id".to_string(), "name".to_string()];
-
-        assert!(
-            filter
-                .should_filter("t", &fields, &["1", "Alice"])
-                .is_none()
-        );
-    }
-
-    /// When include rules exist but all are scoped to other tables, the
-    /// current table is unconstrained — records pass.
-    #[test]
-    fn test_should_filter_include_no_applicable_rule_keeps_record() {
-        let filter = FilterConfig {
-            include: vec![make_rule(vec!["users"], "status", "^active$")],
-            ..Default::default()
-        };
-        let fields = vec!["id".to_string(), "status".to_string()];
-
-        assert!(
-            filter
-                .should_filter("orders", &fields, &["1", "archived"])
-                .is_none()
-        );
-    }
-
-    #[test]
-    fn test_should_filter_include_table_scoped() {
-        let filter = FilterConfig {
-            include: vec![make_rule(vec!["users"], "status", "^active$")],
-            ..Default::default()
-        };
-        let fields = vec!["id".to_string(), "status".to_string()];
-
-        assert!(
-            filter
-                .should_filter("users", &fields, &["1", "active"])
-                .is_none()
-        );
-        assert!(
-            filter
-                .should_filter("users", &fields, &["2", "inactive"])
-                .is_some()
-        );
-        // "orders" table is unconstrained (rule scoped to "users")
-        assert!(
-            filter
-                .should_filter("orders", &fields, &["3", "anything"])
-                .is_none()
-        );
-    }
-
-    /// When a record matches both an include rule and an exclude rule, the
-    /// exclude rule wins. Reason strings are checked exactly to disambiguate
-    /// which rule fired — `.is_some()` would not catch a regression where
-    /// include accidentally short-circuits exclude.
-    #[test]
-    fn test_should_filter_exclude_wins_over_include() {
-        let filter = FilterConfig {
-            include: vec![make_rule(vec![], "status", "^(active|pending)$")],
-            exclude: vec![make_rule(vec![], "status", "^pending$")],
-            ..Default::default()
-        };
-        let fields = vec!["id".to_string(), "status".to_string()];
-
-        // active: matches include, no exclude → kept
-        assert!(
-            filter
-                .should_filter("t", &fields, &["1", "active"])
-                .is_none()
-        );
-        // pending: matches both → dropped with the exclude reason
-        assert_eq!(
-            filter
-                .should_filter("t", &fields, &["2", "pending"])
-                .as_deref(),
-            Some("field 'status' matches exclude rule"),
-        );
-        // archived: doesn't match include → dropped with the include reason
-        assert_eq!(
-            filter
-                .should_filter("t", &fields, &["3", "archived"])
-                .as_deref(),
-            Some("no include rule matched"),
-        );
+    fn test_callback_backed_table_no_csv_block() {
+        let dir = tempfile::tempdir().unwrap();
+        let toml_input = r#"
+[tables.users]
+fields = [
+    { name = "id", type = "NUMBER", primary-key = true },
+    { name = "name", type = "TEXT" },
+]
+"#;
+        fs::write(dir.path().join("config.toml"), toml_input).unwrap();
+        let config = Config::load(dir.path()).unwrap();
+        let table = config.tables.get("users").unwrap();
+        assert!(table.csv.is_none());
     }
 
     #[test]
@@ -1026,16 +806,18 @@ fields = [
         let dir = tempfile::tempdir().unwrap();
         let minimal_toml = r#"
 [tables.users]
-source = "users.csv"
 fields = [
     { name = "id", type = "NUMBER", primary-key = true },
 ]
+
+[tables.users.csv]
+source = "users.csv"
 "#;
         let minimal_json = r#"{
   "tables": {
     "users": {
-      "source": "users.csv",
-      "fields": [{ "name": "id", "type": "NUMBER", "primary-key": true }]
+      "fields": [{ "name": "id", "type": "NUMBER", "primary-key": true }],
+      "csv": { "source": "users.csv" }
     }
   }
 }"#;
@@ -1046,27 +828,6 @@ fields = [
         assert!(
             err.to_string().contains("both config.toml and config.json"),
             "unexpected error: {err}"
-        );
-    }
-
-    #[test]
-    fn test_invalid_include_regex_fails_to_load() {
-        let toml_input = r#"
-[[filters.include]]
-field = "status"
-regex = "["
-
-[tables.users]
-source = "users.csv"
-fields = [
-    { name = "id", type = "NUMBER", primary-key = true },
-]
-"#;
-        let result: Result<Config, _> = toml::from_str(toml_input);
-        let err = result.expect_err("invalid regex should fail to parse");
-        assert!(
-            err.to_string().contains("regex"),
-            "expected error to mention 'regex', got: {err}"
         );
     }
 }

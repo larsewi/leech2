@@ -17,11 +17,13 @@ fn test_two_blocks_insert_delete_update() {
         "config.toml",
         r#"
 [tables.users]
-source = "users.csv"
 fields = [
     { name = "id", type = "NUMBER", primary-key = true },
     { name = "name", type = "TEXT" },
 ]
+
+[tables.users.csv]
+source = "users.csv"
 "#,
     );
 
@@ -79,12 +81,14 @@ fn test_three_blocks_chain_consolidation() {
         "config.toml",
         r#"
 [tables.users]
-source = "users.csv"
 fields = [
     { name = "id", type = "NUMBER", primary-key = true },
     { name = "name", type = "TEXT" },
     { name = "email", type = "TEXT" },
 ]
+
+[tables.users.csv]
+source = "users.csv"
 "#,
     );
 
@@ -187,12 +191,14 @@ fn test_consecutive_updates_same_column_consolidate() {
         "config.toml",
         r#"
 [tables.products]
-source = "products.csv"
 fields = [
     { name = "id", type = "NUMBER", primary-key = true },
     { name = "name", type = "TEXT" },
     { name = "price", type = "NUMBER" },
 ]
+
+[tables.products.csv]
+source = "products.csv"
 "#,
     );
 

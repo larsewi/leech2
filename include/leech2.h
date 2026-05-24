@@ -232,11 +232,11 @@ typedef struct {
 /**
  * Create a new block from the current snapshot of every configured table.
  *
- * Reads each table's contents (from its configured CSV source, or via the
- * callback bundle for tables that have no source), computes the new state
- * and the delta against the previous state, and writes a new block together
- * with updated STATE and HEAD files. History truncation is performed
- * afterwards.
+ * Reads each table's contents (from the CSV source declared under
+ * [tables.X.csv], or via the callback bundle for tables that have no [csv]
+ * block), computes the new state and the delta against the previous state,
+ * and writes a new block together with updated STATE and HEAD files.
+ * History truncation is performed afterwards.
  *
  * @param cfg        Valid config handle (must not be NULL).
  * @param callbacks  Optional callback bundle. May be NULL when every table

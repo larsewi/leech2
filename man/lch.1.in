@@ -137,16 +137,7 @@ work directory.
 .SS Tables
 Each table is defined under
 .BR [tables.\fIname\fR] .
-.TP
-.BI source " = \(dqpath.csv\(dq"
-Path to the CSV file, relative to the work directory or absolute.
-.TP
-.BI header " = true"
-When true, the first CSV row is treated as a header and fields are matched by
-name (columns may appear in any order; extra CSV columns are ignored). When
-false (the default), columns are mapped to fields by position.
-.PP
-Each table must define one or more fields, each with a
+Every table must declare one or more fields, each with a
 .BR name ,
 .BR type ,
 and optionally
@@ -154,6 +145,13 @@ and optionally
 At least one field must have
 .BR "primary\-key = true" .
 Field names within a table must be unique.
+.PP
+A table is CSV-backed when it has a
+.B [tables.\fIname\fR.csv]
+block declaring a
+.BR source ;
+otherwise it is callback-backed and its rows are pulled from the FFI cell
+callback at block creation time.
 .PP
 Supported field types:
 .TP
@@ -178,34 +176,46 @@ and
 .B true
 and
 .B false
-sentinel keys below to override.
+keys on the
+.B [csv]
+block below to override.
 .PP
 These types control SQL quoting only. Your target database may use any
 compatible column type (e.g.
 .BR INTEGER ,
 .BR FLOAT ,
 .BR TIMESTAMP ).
-.PP
-Fields can have an optional
-.B null
-sentinel that specifies which CSV value should be emitted as SQL
-.B NULL
-instead of a typed literal. This is not allowed on primary-key fields.
-.PP
-.B BOOLEAN
-fields can additionally specify
-.B true
+.SS CSV-specific options
+Keys under
+.B [tables.\fIname\fR.csv]
+configure the CSV-load path.
+.TP
+.BI source " = \(dqpath.csv\(dq"
+Path to the CSV file, relative to the work directory or absolute.
+.TP
+.BI header " = true"
+When true, the first CSV row is treated as a header and fields are matched by
+name (columns may appear in any order; extra CSV columns are ignored). When
+false (the default), columns are mapped to fields by position.
+.TP
+.BI null " = \(dq^pattern$\(dq"
+Per-table regex matched against every non-primary-key cell. Matching cells
+become SQL
+.BR NULL .
+Primary-key cells matching this pattern are rejected at load time. Unanchored
+by default; use
+.B ^
 and
-.B false
-sentinel keys to override the default
+.B $
+for exact matches.
+.TP
+.BI true " = \(dq^pattern$\(dq"
+.TQ
+.BI false " = \(dq^pattern$\(dq"
+Per-table regexes overriding the default
 .BR true / false
-strings. When either override is set, only the configured strings are
-accepted — the defaults are not honoured alongside them. The
-.BR true ,
-.BR false ,
-and
-.B null
-sentinels on a single field must all differ.
+literals on BOOLEAN fields. When set, the strict default literal on that side
+is no longer accepted. Setting just one leaves the other on its default.
 .SS Injected fields
 Optional
 .B [[injected\-fields]]
@@ -230,50 +240,43 @@ Fields can also be injected at runtime with
 .BR "lch patch inject" ;
 runtime values overwrite any statically declared field with the same name.
 .SS Filters
-An optional
-.B [filters]
-section drops records at CSV load time. Filtered records never enter state,
+Filters live under the table's
+.B [csv]
+block and drop records at CSV load time. Filtered records never enter state,
 deltas, or SQL output.
 .TP
 .BI max\-field\-length " = N"
+Set inside
+.BR [tables.\fIname\fR.csv] .
 Drop records where any field value exceeds
 .I N
 characters.
 .PP
-.B [[filters.include]]
-entries define inclusion rules (whitelist).
-Each rule specifies a
-.B field
-name and a
-.BR regex .
-When one or more include rules apply to a table, a record is kept only if
-its field value matches at least one applicable rule; rules combine with
-OR. When a table has no applicable include rules, every record passes the
-include check.
+An optional
+.B [tables.\fIname\fR.csv.filter]
+block adds an include/exclude rule scoped to the parent table. It has three
+keys:
+.TP
+.BI fields " = [\(dqf1\(dq, \(dqf2\(dq, ...]"
+List of field names this filter examines. Every name must appear in the
+table's
+.BR fields .
+.TP
+.BI include " = \(dq^pattern$\(dq"
+Optional whitelist regex. The record is kept only if at least one listed
+field matches the pattern.
+.TP
+.BI exclude " = \(dq^pattern$\(dq"
+Optional blacklist regex. The record is dropped if any listed field matches
+the pattern. Evaluated after include, so on overlap exclude wins.
 .PP
-.B [[filters.exclude]]
-entries define exclusion rules (blacklist).
-Each rule specifies a
-.B field
-name and a
-.BR regex ;
-records whose field value matches the regex are dropped. Exclude is
-evaluated after include, so on overlap exclude wins.
-.PP
-Include and exclude regexes share the same syntax: patterns are unanchored
-by default; use
+Both regexes are unanchored by default; use
 .B ^
 and
 .B $
 for exact matches. Syntax follows the Rust
 .B regex
 crate.
-.PP
-An optional
-.B tables
-list restricts a rule to specific tables; when omitted, the rule applies to
-all tables. If the named field does not exist in a table, the rule is silently
-skipped.
 .PP
 In JSON, backslashes in a regex must be doubled (e.g.
 .BR \(dq\(rs\(rsd+\(dq
@@ -284,10 +287,13 @@ In TOML, use single-quoted literal strings to write regexes verbatim
 .BR \(aq\(rsd+\(aq ).
 .PP
 Filtering happens before state computation. When a record that previously
-passed the filters stops passing, by matching an exclude rule or by no
-longer matching the include rules, it appears as a DELETE in the next
-delta. When a previously-filtered record starts passing, it appears as an
-INSERT.
+passed the filter stops passing, it appears as a DELETE in the next delta;
+when a previously-filtered record starts passing, it appears as an INSERT.
+Callback-backed tables (no
+.B [csv]
+block) own their own row inclusion via
+.B LCH_SKIP_RECORD
+and have no filter configuration.
 .SS Compression
 An optional
 .B [compression]

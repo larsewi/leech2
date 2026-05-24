@@ -83,15 +83,15 @@ impl State {
 
     /// Build a fresh snapshot of every table declared in `config`.
     ///
-    /// Tables with a configured `source` are loaded from CSV exactly as
-    /// before. Tables without a `source` are pulled through `callbacks`;
+    /// Tables with a `[csv]` block are loaded from CSV exactly as before.
+    /// Tables without a `[csv]` block are pulled through `callbacks`;
     /// reaching such a table with `callbacks == None` is an error.
     pub fn compute(config: &Config, callbacks: Option<&Callbacks>) -> Result<Self> {
         let mut tables: HashMap<String, Table> = HashMap::new();
 
         for (name, table_config) in &config.tables {
-            let table = if table_config.source.is_some() {
-                Table::load_from_csv(&config.work_dir, name, table_config, &config.filters)?
+            let table = if table_config.csv.is_some() {
+                Table::load_from_csv(&config.work_dir, name, table_config)?
             } else {
                 let Some(cbs) = callbacks else {
                     anyhow::bail!(

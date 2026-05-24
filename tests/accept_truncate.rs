@@ -21,11 +21,13 @@ fn test_truncate_max_blocks() {
 max-blocks = 2
 
 [tables.users]
-source = "users.csv"
 fields = [
     { name = "id", type = "NUMBER", primary-key = true },
     { name = "name", type = "TEXT" },
 ]
+
+[tables.users.csv]
+source = "users.csv"
 "#,
     );
 
@@ -83,11 +85,13 @@ fn test_truncate_max_age() {
 max-age = "1s"
 
 [tables.users]
-source = "users.csv"
 fields = [
     { name = "id", type = "NUMBER", primary-key = true },
     { name = "name", type = "TEXT" },
 ]
+
+[tables.users.csv]
+source = "users.csv"
 "#,
     );
 
@@ -130,11 +134,13 @@ fn test_orphaned_blocks_removed() {
         "config.toml",
         r#"
 [tables.users]
-source = "users.csv"
 fields = [
     { name = "id", type = "NUMBER", primary-key = true },
     { name = "name", type = "TEXT" },
 ]
+
+[tables.users.csv]
+source = "users.csv"
 "#,
     );
 
@@ -201,11 +207,13 @@ fn test_truncate_reported() {
         "config.toml",
         r#"
 [tables.users]
-source = "users.csv"
 fields = [
     { name = "id", type = "NUMBER", primary-key = true },
     { name = "name", type = "TEXT" },
 ]
+
+[tables.users.csv]
+source = "users.csv"
 "#,
     );
 
@@ -256,11 +264,13 @@ fn test_disable_remove_orphans() {
 remove-orphans = false
 
 [tables.users]
-source = "users.csv"
 fields = [
     { name = "id", type = "NUMBER", primary-key = true },
     { name = "name", type = "TEXT" },
 ]
+
+[tables.users.csv]
+source = "users.csv"
 "#,
     );
 
@@ -296,11 +306,13 @@ fn test_disable_truncate_reported() {
 truncate-reported = false
 
 [tables.users]
-source = "users.csv"
 fields = [
     { name = "id", type = "NUMBER", primary-key = true },
     { name = "name", type = "TEXT" },
 ]
+
+[tables.users.csv]
+source = "users.csv"
 "#,
     );
 

@@ -6,11 +6,8 @@ use std::path::Path;
 use anyhow::{Context, Result};
 
 use crate::callbacks::{CellResult, TableCallbacks};
-use crate::cell::{
-    Cell, DEFAULT_FALSE_SENTINEL, DEFAULT_TRUE_SENTINEL, Kind, display_proto_cells, parse_boolean,
-    parse_typed_cell,
-};
-use crate::config::{FieldConfig, FilterConfig, TableConfig};
+use crate::cell::{Cell, Kind, display_proto_cells, parse_boolean, parse_typed_cell};
+use crate::config::{CsvConfig, FieldConfig, TableConfig};
 use crate::record::decode_proto_records;
 
 type ProtoTable = crate::proto::table::Table;
@@ -74,17 +71,17 @@ impl fmt::Display for ProtoTable {
 }
 
 impl Table {
-    /// Loads a table from a CSV file.
-    pub fn load_from_csv(
-        work_dir: &Path,
-        name: &str,
-        config: &TableConfig,
-        filters: &FilterConfig,
-    ) -> Result<Self> {
-        let Some(source) = &config.source else {
-            anyhow::bail!("table '{}' has no configured CSV source", name);
+    /// Loads a table from a CSV file. The table's `csv` block must be
+    /// `Some`; callers (currently `State::compute`) check this before
+    /// dispatching here.
+    pub fn load_from_csv(work_dir: &Path, name: &str, config: &TableConfig) -> Result<Self> {
+        let Some(csv) = config.csv.as_ref() else {
+            anyhow::bail!(
+                "table '{}' is callback-backed; load_from_csv does not apply",
+                name
+            );
         };
-        let path = work_dir.join(source);
+        let path = work_dir.join(&csv.source);
         let file =
             File::open(&path).with_context(|| format!("failed to open '{}'", path.display()))?;
         // Shared advisory lock: defense-in-depth against a cooperating producer
@@ -93,11 +90,11 @@ impl Table {
         file.lock_shared()
             .with_context(|| format!("failed to acquire shared lock on '{}'", path.display()))?;
         let reader = csv::ReaderBuilder::new()
-            .has_headers(config.header)
+            .has_headers(csv.header)
             .from_reader(file);
 
         log::debug!("Parsing csv file '{}'...", path.display());
-        let table = Self::parse_csv(name, config, filters, reader)?;
+        let table = Self::parse_csv(config, reader)?;
 
         log::debug!(
             "Loaded table '{}' with {} records",
@@ -174,14 +171,14 @@ impl Table {
     }
 
     /// Map each config field to its CSV column index.
-    /// When header=true, match by name; otherwise, use positional order.
+    /// When `csv.header` is true, match by name; otherwise, use positional order.
     fn resolve_field_indices(
         config: &TableConfig,
         reader: &mut csv::Reader<File>,
     ) -> Result<Vec<usize>> {
         let field_names = config.field_names();
         let mut indices = Vec::with_capacity(field_names.len());
-        if config.header {
+        if config.csv.as_ref().is_some_and(|csv| csv.header) {
             let headers = reader.headers().context("failed to read CSV header")?;
             for name in &field_names {
                 let index = headers
@@ -238,12 +235,10 @@ impl Table {
             .from_reader(File::open(tmp.path()).unwrap())
     }
 
-    fn parse_csv(
-        table_name: &str,
-        config: &TableConfig,
-        filters: &FilterConfig,
-        mut reader: csv::Reader<File>,
-    ) -> Result<Self> {
+    fn parse_csv(config: &TableConfig, mut reader: csv::Reader<File>) -> Result<Self> {
+        let Some(csv) = config.csv.as_ref() else {
+            anyhow::bail!("parse_csv requires a configured [csv] block");
+        };
         let field_names = config.field_names();
         let field_indices = Self::resolve_field_indices(config, &mut reader)?;
         let (primary_columns, subsidiary_columns) =
@@ -263,7 +258,7 @@ impl Table {
         for (row_num, record) in reader.into_records().enumerate() {
             let record = record?;
 
-            if !config.header && record.len() != field_names.len() {
+            if !csv.header && record.len() != field_names.len() {
                 anyhow::bail!(
                     "row {}: expected {} fields but got {}",
                     row_num + 1,
@@ -273,15 +268,15 @@ impl Table {
             }
 
             let values: Vec<&str> = field_indices.iter().map(|&i| &record[i]).collect();
-            let reason = filters.should_filter(table_name, &field_names, &values);
+            let reason = csv.should_filter(&field_names, &values);
             if let Some(reason) = reason {
                 log::debug!("Filtered record at row {}: {}", row_num + 1, reason);
                 continue;
             }
 
-            let primary_key = parse_columns(&record, &primary_columns)
+            let primary_key = parse_columns(&record, &primary_columns, csv)
                 .with_context(|| format!("row {}", row_num + 1))?;
-            let subsidiary = parse_columns(&record, &subsidiary_columns)
+            let subsidiary = parse_columns(&record, &subsidiary_columns, csv)
                 .with_context(|| format!("row {}", row_num + 1))?;
 
             if records.insert(primary_key.clone(), subsidiary).is_some() {
@@ -299,14 +294,15 @@ impl Table {
 
 /// For each `(column_index, field_config)` entry, pull the value at
 /// `column_index` out of `record` and parse it into a typed `Cell`
-/// according to `field_config`.
+/// according to `field_config` and the table's CSV sentinels.
 fn parse_columns(
     record: &csv::StringRecord,
     columns: &[(usize, &FieldConfig)],
+    csv: &CsvConfig,
 ) -> Result<Vec<Cell>> {
     let mut out = Vec::with_capacity(columns.len());
     for &(column_index, field) in columns {
-        out.push(parse_field_value(&record[column_index], field)?);
+        out.push(parse_field_value(&record[column_index], field, csv)?);
     }
     Ok(out)
 }
@@ -387,27 +383,27 @@ fn validate_cell(cell: &Cell, field: &FieldConfig) -> Result<()> {
     Ok(())
 }
 
-/// Parse a single CSV value into a `Cell` based on its field config.
-/// Values matching the `null` sentinel become `Cell::Null`; otherwise the
-/// value is parsed by its declared kind (`TEXT`/`NUMBER`/`BOOLEAN`). For
-/// BOOLEAN fields the per-field `true` / `false` sentinels are honoured,
-/// falling back to the strict defaults `"true"` / `"false"`.
-fn parse_field_value(value: &str, field: &FieldConfig) -> Result<Cell> {
-    if let Some(sentinel) = &field.null_sentinel
-        && value == sentinel
+/// Parse a single CSV value into a `Cell` based on its field config and the
+/// table-wide CSV sentinels. Values matching `csv.null` become `Cell::Null`
+/// (rejected on primary-key fields); BOOLEAN values match against
+/// `csv.true` / `csv.false` (falling back to the strict defaults `"true"` /
+/// `"false"` when the pattern is unset); other values parse by the field's
+/// declared kind.
+fn parse_field_value(value: &str, field: &FieldConfig, csv: &CsvConfig) -> Result<Cell> {
+    if let Some(pattern) = &csv.null_pattern
+        && pattern.is_match(value)
     {
+        if field.primary_key {
+            anyhow::bail!(
+                "primary-key field '{}' value '{}' matches the null pattern",
+                field.name,
+                value,
+            );
+        }
         return Ok(Cell::Null);
     }
     if let Kind::Boolean = field.kind {
-        let true_sentinel = field
-            .true_sentinel
-            .as_deref()
-            .unwrap_or(DEFAULT_TRUE_SENTINEL);
-        let false_sentinel = field
-            .false_sentinel
-            .as_deref()
-            .unwrap_or(DEFAULT_FALSE_SENTINEL);
-        return parse_boolean(value, true_sentinel, false_sentinel)
+        return parse_boolean(value, csv.true_pattern.as_ref(), csv.false_pattern.as_ref())
             .map(Cell::Boolean)
             .with_context(|| format!("field '{}'", field.name));
     }
@@ -418,6 +414,7 @@ fn parse_field_value(value: &str, field: &FieldConfig) -> Result<Cell> {
 mod tests {
     use super::*;
     use crate::config::FieldConfig;
+    use regex::Regex;
 
     fn make_field(name: &str, primary_key: bool) -> FieldConfig {
         FieldConfig {
@@ -427,11 +424,25 @@ mod tests {
         }
     }
 
+    fn make_csv(header: bool) -> CsvConfig {
+        CsvConfig {
+            source: "test.csv".to_string(),
+            header,
+            ..Default::default()
+        }
+    }
+
     fn make_config(fields: Vec<FieldConfig>, header: bool) -> TableConfig {
         TableConfig {
-            source: Some("test.csv".to_string()),
-            header,
             fields,
+            csv: Some(make_csv(header)),
+        }
+    }
+
+    fn make_config_with_csv(fields: Vec<FieldConfig>, csv: CsvConfig) -> TableConfig {
+        TableConfig {
+            fields,
+            csv: Some(csv),
         }
     }
 
@@ -539,9 +550,9 @@ mod tests {
         let csv = "id,name,email\n1,Alice,alice@example.com\n";
 
         let reader_a = Table::test_reader(csv, true);
-        let table_a = Table::parse_csv("t", &config_a, &FilterConfig::default(), reader_a).unwrap();
+        let table_a = Table::parse_csv(&config_a, reader_a).unwrap();
         let reader_b = Table::test_reader(csv, true);
-        let table_b = Table::parse_csv("t", &config_b, &FilterConfig::default(), reader_b).unwrap();
+        let table_b = Table::parse_csv(&config_b, reader_b).unwrap();
 
         assert_eq!(table_a.primary_key_names, vec!["id"]);
         assert_eq!(table_a.subsidiary_value_names, vec!["email", "name"]);
@@ -566,7 +577,7 @@ mod tests {
             false,
         );
         let reader = Table::test_reader("Alice,1,a@b.com\n", false);
-        let table = Table::parse_csv("t", &config, &FilterConfig::default(), reader).unwrap();
+        let table = Table::parse_csv(&config, reader).unwrap();
 
         // Canonical layout: id (PK), then subsidiaries sorted lex.
         assert_eq!(table.primary_key_names, vec!["id"]);
@@ -645,18 +656,11 @@ mod tests {
 
     // -- numeric normalization on load --
 
-    fn make_typed_field(
-        name: &str,
-        kind: Kind,
-        primary_key: bool,
-        null_sentinel: Option<&str>,
-    ) -> FieldConfig {
+    fn make_typed_field(name: &str, kind: Kind, primary_key: bool) -> FieldConfig {
         FieldConfig {
             name: name.to_string(),
             kind,
             primary_key,
-            null_sentinel: null_sentinel.map(str::to_string),
-            ..Default::default()
         }
     }
 
@@ -664,14 +668,14 @@ mod tests {
     fn test_parse_csv_parses_numbers() {
         let config = make_config(
             vec![
-                make_typed_field("id", Kind::Number, true, None),
-                make_typed_field("count", Kind::Number, false, None),
-                make_typed_field("name", Kind::Text, false, None),
+                make_typed_field("id", Kind::Number, true),
+                make_typed_field("count", Kind::Number, false),
+                make_typed_field("name", Kind::Text, false),
             ],
             true,
         );
         let reader = Table::test_reader("id,count,name\n0.0,1e2,Alice\n+5,1.10,Bob\n", true);
-        let table = Table::parse_csv("t", &config, &FilterConfig::default(), reader).unwrap();
+        let table = Table::parse_csv(&config, reader).unwrap();
 
         // "0.0" parses to 0.0; "1e2" parses to 100.0
         assert_eq!(
@@ -686,23 +690,29 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_csv_respects_null_sentinel_on_number() {
-        let config = make_config(
+    fn test_parse_csv_respects_null_pattern_on_number() {
+        let csv = CsvConfig {
+            source: "test.csv".to_string(),
+            header: true,
+            null_pattern: Some(Regex::new("^N/A$").unwrap()),
+            ..Default::default()
+        };
+        let config = make_config_with_csv(
             vec![
-                make_typed_field("id", Kind::Number, true, None),
-                make_typed_field("count", Kind::Number, false, Some("N/A")),
+                make_typed_field("id", Kind::Number, true),
+                make_typed_field("count", Kind::Number, false),
             ],
-            true,
+            csv,
         );
         let reader = Table::test_reader("id,count\n1,N/A\n2,3.0\n", true);
-        let table = Table::parse_csv("t", &config, &FilterConfig::default(), reader).unwrap();
+        let table = Table::parse_csv(&config, reader).unwrap();
 
-        // Sentinel becomes Cell::Null, even though "N/A" is not a number.
+        // The null pattern produces Cell::Null even though "N/A" is not a number.
         assert_eq!(
             table.records.get(&vec![Cell::Number(1.0)]),
             Some(&vec![Cell::Null])
         );
-        // Non-sentinel parses as a number.
+        // Non-matching value parses as a number.
         assert_eq!(
             table.records.get(&vec![Cell::Number(2.0)]),
             Some(&vec![Cell::Number(3.0)])
@@ -713,13 +723,13 @@ mod tests {
     fn test_parse_csv_parses_booleans_with_default_sentinels() {
         let config = make_config(
             vec![
-                make_typed_field("id", Kind::Number, true, None),
-                make_typed_field("active", Kind::Boolean, false, None),
+                make_typed_field("id", Kind::Number, true),
+                make_typed_field("active", Kind::Boolean, false),
             ],
             true,
         );
         let reader = Table::test_reader("id,active\n1,true\n2,false\n", true);
-        let table = Table::parse_csv("t", &config, &FilterConfig::default(), reader).unwrap();
+        let table = Table::parse_csv(&config, reader).unwrap();
 
         assert_eq!(
             table.records.get(&vec![Cell::Number(1.0)]),
@@ -735,28 +745,35 @@ mod tests {
     fn test_parse_csv_default_boolean_sentinels_are_strict() {
         let config = make_config(
             vec![
-                make_typed_field("id", Kind::Number, true, None),
-                make_typed_field("active", Kind::Boolean, false, None),
+                make_typed_field("id", Kind::Number, true),
+                make_typed_field("active", Kind::Boolean, false),
             ],
             true,
         );
         let reader = Table::test_reader("id,active\n1,True\n", true);
-        let err = Table::parse_csv("t", &config, &FilterConfig::default(), reader).unwrap_err();
+        let err = Table::parse_csv(&config, reader).unwrap_err();
         let msg = format!("{:#}", err);
         assert!(msg.contains("invalid boolean value"), "got: {msg}");
     }
 
     #[test]
-    fn test_parse_csv_respects_custom_boolean_sentinels() {
-        let mut field = make_typed_field("active", Kind::Boolean, false, None);
-        field.true_sentinel = Some("Y".to_string());
-        field.false_sentinel = Some("N".to_string());
-        let config = make_config(
-            vec![make_typed_field("id", Kind::Number, true, None), field],
-            true,
+    fn test_parse_csv_respects_custom_boolean_patterns() {
+        let csv = CsvConfig {
+            source: "test.csv".to_string(),
+            header: true,
+            true_pattern: Some(Regex::new("^Y$").unwrap()),
+            false_pattern: Some(Regex::new("^N$").unwrap()),
+            ..Default::default()
+        };
+        let config = make_config_with_csv(
+            vec![
+                make_typed_field("id", Kind::Number, true),
+                make_typed_field("active", Kind::Boolean, false),
+            ],
+            csv,
         );
         let reader = Table::test_reader("id,active\n1,Y\n2,N\n", true);
-        let table = Table::parse_csv("t", &config, &FilterConfig::default(), reader).unwrap();
+        let table = Table::parse_csv(&config, reader).unwrap();
 
         assert_eq!(
             table.records.get(&vec![Cell::Number(1.0)]),
@@ -769,18 +786,25 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_csv_custom_boolean_sentinels_reject_defaults() {
-        // When per-field sentinels are configured, the strict defaults are no
-        // longer accepted — only the configured strings.
-        let mut field = make_typed_field("active", Kind::Boolean, false, None);
-        field.true_sentinel = Some("Y".to_string());
-        field.false_sentinel = Some("N".to_string());
-        let config = make_config(
-            vec![make_typed_field("id", Kind::Number, true, None), field],
-            true,
+    fn test_parse_csv_custom_boolean_patterns_reject_defaults() {
+        // When per-table boolean patterns are configured, the strict defaults
+        // are no longer accepted -- only values matching the configured patterns.
+        let csv = CsvConfig {
+            source: "test.csv".to_string(),
+            header: true,
+            true_pattern: Some(Regex::new("^Y$").unwrap()),
+            false_pattern: Some(Regex::new("^N$").unwrap()),
+            ..Default::default()
+        };
+        let config = make_config_with_csv(
+            vec![
+                make_typed_field("id", Kind::Number, true),
+                make_typed_field("active", Kind::Boolean, false),
+            ],
+            csv,
         );
         let reader = Table::test_reader("id,active\n1,true\n", true);
-        let err = Table::parse_csv("t", &config, &FilterConfig::default(), reader).unwrap_err();
+        let err = Table::parse_csv(&config, reader).unwrap_err();
         let msg = format!("{:#}", err);
         assert!(msg.contains("invalid boolean value"), "got: {msg}");
     }
@@ -789,13 +813,13 @@ mod tests {
     fn test_parse_csv_rejects_invalid_number() {
         let config = make_config(
             vec![
-                make_typed_field("id", Kind::Number, true, None),
-                make_typed_field("count", Kind::Number, false, None),
+                make_typed_field("id", Kind::Number, true),
+                make_typed_field("count", Kind::Number, false),
             ],
             true,
         );
         let reader = Table::test_reader("id,count\n1,abc\n", true);
-        let err = Table::parse_csv("t", &config, &FilterConfig::default(), reader).unwrap_err();
+        let err = Table::parse_csv(&config, reader).unwrap_err();
         let msg = format!("{:#}", err);
         assert!(msg.contains("row 1"), "expected row context: {msg}");
         assert!(
@@ -812,27 +836,27 @@ mod tests {
 
     #[test]
     fn test_validate_cell_rejects_null_on_primary_key() {
-        let field = make_typed_field("id", Kind::Number, true, None);
+        let field = make_typed_field("id", Kind::Number, true);
         let err = validate_cell(&Cell::Null, &field).unwrap_err();
         assert!(format!("{:#}", err).contains("primary-key"), "got: {err:#}");
     }
 
     #[test]
     fn test_validate_cell_accepts_null_on_subsidiary() {
-        let field = make_typed_field("count", Kind::Number, false, None);
+        let field = make_typed_field("count", Kind::Number, false);
         validate_cell(&Cell::Null, &field).unwrap();
     }
 
     #[test]
     fn test_validate_cell_rejects_kind_mismatch() {
-        let field = make_typed_field("count", Kind::Number, false, None);
+        let field = make_typed_field("count", Kind::Number, false);
         let err = validate_cell(&Cell::Text("oops".to_string()), &field).unwrap_err();
         assert!(format!("{:#}", err).contains("kind"), "got: {err:#}");
     }
 
     #[test]
     fn test_validate_cell_accepts_matching_kind() {
-        let field = make_typed_field("name", Kind::Text, true, None);
+        let field = make_typed_field("name", Kind::Text, true);
         validate_cell(&Cell::Text("Alice".to_string()), &field).unwrap();
     }
 
@@ -944,11 +968,7 @@ mod tests {
     }
 
     fn typed_config(fields: Vec<FieldConfig>) -> TableConfig {
-        TableConfig {
-            source: None,
-            header: false,
-            fields,
-        }
+        TableConfig { fields, csv: None }
     }
 
     fn cell_text(s: &str) -> CellAction {
@@ -962,8 +982,8 @@ mod tests {
     #[test]
     fn test_load_from_callbacks_happy_path() {
         let config = typed_config(vec![
-            make_typed_field("id", Kind::Number, true, None),
-            make_typed_field("name", Kind::Text, false, None),
+            make_typed_field("id", Kind::Number, true),
+            make_typed_field("name", Kind::Text, false),
         ]);
         install_script(Script {
             rows: vec![
@@ -987,8 +1007,8 @@ mod tests {
     #[test]
     fn test_load_from_callbacks_empty_table() {
         let config = typed_config(vec![
-            make_typed_field("id", Kind::Number, true, None),
-            make_typed_field("name", Kind::Text, false, None),
+            make_typed_field("id", Kind::Number, true),
+            make_typed_field("name", Kind::Text, false),
         ]);
         install_script(Script { rows: vec![] });
 
@@ -1001,8 +1021,8 @@ mod tests {
     #[test]
     fn test_load_from_callbacks_skip_record_drops_row() {
         let config = typed_config(vec![
-            make_typed_field("id", Kind::Number, true, None),
-            make_typed_field("name", Kind::Text, false, None),
+            make_typed_field("id", Kind::Number, true),
+            make_typed_field("name", Kind::Text, false),
         ]);
         install_script(Script {
             rows: vec![
@@ -1025,8 +1045,8 @@ mod tests {
     #[test]
     fn test_load_from_callbacks_duplicate_primary_key_errors() {
         let config = typed_config(vec![
-            make_typed_field("id", Kind::Number, true, None),
-            make_typed_field("name", Kind::Text, false, None),
+            make_typed_field("id", Kind::Number, true),
+            make_typed_field("name", Kind::Text, false),
         ]);
         install_script(Script {
             rows: vec![
@@ -1046,8 +1066,8 @@ mod tests {
     #[test]
     fn test_load_from_callbacks_rejects_null_primary_key() {
         let config = typed_config(vec![
-            make_typed_field("id", Kind::Number, true, None),
-            make_typed_field("name", Kind::Text, false, None),
+            make_typed_field("id", Kind::Number, true),
+            make_typed_field("name", Kind::Text, false),
         ]);
         install_script(Script {
             rows: vec![HashMap::from([
@@ -1064,8 +1084,8 @@ mod tests {
     #[test]
     fn test_load_from_callbacks_rejects_kind_mismatch() {
         let config = typed_config(vec![
-            make_typed_field("id", Kind::Number, true, None),
-            make_typed_field("count", Kind::Number, false, None),
+            make_typed_field("id", Kind::Number, true),
+            make_typed_field("count", Kind::Number, false),
         ]);
         install_script(Script {
             rows: vec![HashMap::from([

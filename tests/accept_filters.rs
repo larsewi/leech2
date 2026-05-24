@@ -16,15 +16,15 @@ fn test_filter_max_field_length() {
         work_dir,
         "config.toml",
         r#"
-[filters]
-max-field-length = 5
-
 [tables.users]
-source = "users.csv"
 fields = [
     { name = "id", type = "NUMBER", primary-key = true },
     { name = "name", type = "TEXT" },
 ]
+
+[tables.users.csv]
+source = "users.csv"
+max-field-length = 5
 "#,
     );
 
@@ -56,17 +56,19 @@ fn test_filter_exclude_anchored_regex() {
         work_dir,
         "config.toml",
         r#"
-[[filters.exclude]]
-field = "status"
-regex = "^inactive$"
-
 [tables.users]
-source = "users.csv"
 fields = [
     { name = "id", type = "NUMBER", primary-key = true },
     { name = "name", type = "TEXT" },
     { name = "status", type = "TEXT" },
 ]
+
+[tables.users.csv]
+source = "users.csv"
+
+[tables.users.csv.filter]
+fields = ["status"]
+exclude = "^inactive$"
 "#,
     );
 
@@ -101,16 +103,18 @@ fn test_filter_exclude_unanchored_regex() {
         work_dir,
         "config.toml",
         r#"
-[[filters.exclude]]
-field = "description"
-regex = "DEPRECATED"
-
 [tables.items]
-source = "items.csv"
 fields = [
     { name = "id", type = "NUMBER", primary-key = true },
     { name = "description", type = "TEXT" },
 ]
+
+[tables.items.csv]
+source = "items.csv"
+
+[tables.items.csv.filter]
+fields = ["description"]
+exclude = "DEPRECATED"
 "#,
     );
 
@@ -135,8 +139,10 @@ fields = [
     );
 }
 
+/// Each table's filter is structurally scoped to that table, so one table's
+/// exclude has no effect on a sibling table that lacks its own filter.
 #[test]
-fn test_filter_exclude_scoped_to_table() {
+fn test_filter_only_applies_to_owning_table() {
     common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
@@ -145,24 +151,27 @@ fn test_filter_exclude_scoped_to_table() {
         work_dir,
         "config.toml",
         r#"
-[[filters.exclude]]
-tables = ["users"]
-field = "status"
-regex = "^inactive$"
-
 [tables.users]
-source = "users.csv"
 fields = [
     { name = "id", type = "NUMBER", primary-key = true },
     { name = "status", type = "TEXT" },
 ]
+
+[tables.users.csv]
+source = "users.csv"
+
+[tables.users.csv.filter]
+fields = ["status"]
+exclude = "^inactive$"
 
 [tables.orders]
-source = "orders.csv"
 fields = [
     { name = "id", type = "NUMBER", primary-key = true },
     { name = "status", type = "TEXT" },
 ]
+
+[tables.orders.csv]
+source = "orders.csv"
 "#,
     );
 
@@ -174,8 +183,8 @@ fields = [
     let patch = Patch::create(&config, GENESIS_HASH).unwrap();
     let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
 
-    // User id=1 should be filtered, but order id=10 should NOT (rule scoped to "users")
-    assert!(!sql.contains("VALUES (1, 'inactive')") || sql.contains(r#""orders""#));
+    // users id=1 is filtered out; orders is unaffected.
+    assert!(!sql.contains(r#"INSERT INTO "users" ("id", "status") VALUES (1, 'inactive');"#));
     assert!(sql.contains(r#"INSERT INTO "users" ("id", "status") VALUES (2, 'active');"#));
     assert!(sql.contains(r#"INSERT INTO "orders" ("id", "status") VALUES (10, 'inactive');"#));
     assert!(sql.contains(r#"INSERT INTO "orders" ("id", "status") VALUES (20, 'active');"#));
@@ -191,16 +200,18 @@ fn test_filter_produces_delete_when_record_starts_matching() {
         work_dir,
         "config.toml",
         r#"
-[[filters.exclude]]
-field = "status"
-regex = "^inactive$"
-
 [tables.users]
-source = "users.csv"
 fields = [
     { name = "id", type = "NUMBER", primary-key = true },
     { name = "status", type = "TEXT" },
 ]
+
+[tables.users.csv]
+source = "users.csv"
+
+[tables.users.csv.filter]
+fields = ["status"]
+exclude = "^inactive$"
 "#,
     );
 
@@ -230,16 +241,18 @@ fn test_filter_produces_insert_when_record_stops_matching() {
         work_dir,
         "config.toml",
         r#"
-[[filters.exclude]]
-field = "status"
-regex = "^inactive$"
-
 [tables.users]
-source = "users.csv"
 fields = [
     { name = "id", type = "NUMBER", primary-key = true },
     { name = "status", type = "TEXT" },
 ]
+
+[tables.users.csv]
+source = "users.csv"
+
+[tables.users.csv.filter]
+fields = ["status"]
+exclude = "^inactive$"
 "#,
     );
 
@@ -269,17 +282,19 @@ fn test_filter_include_keeps_only_matching_records() {
         work_dir,
         "config.toml",
         r#"
-[[filters.include]]
-field = "status"
-regex = "^(active|pending)$"
-
 [tables.users]
-source = "users.csv"
 fields = [
     { name = "id", type = "NUMBER", primary-key = true },
     { name = "name", type = "TEXT" },
     { name = "status", type = "TEXT" },
 ]
+
+[tables.users.csv]
+source = "users.csv"
+
+[tables.users.csv.filter]
+fields = ["status"]
+include = "^(active|pending)$"
 "#,
     );
 
@@ -314,16 +329,18 @@ fn test_filter_include_unanchored_regex() {
         work_dir,
         "config.toml",
         r#"
-[[filters.include]]
-field = "description"
-regex = "PRODUCTION"
-
 [tables.items]
-source = "items.csv"
 fields = [
     { name = "id", type = "NUMBER", primary-key = true },
     { name = "description", type = "TEXT" },
 ]
+
+[tables.items.csv]
+source = "items.csv"
+
+[tables.items.csv.filter]
+fields = ["description"]
+include = "PRODUCTION"
 "#,
     );
 
@@ -348,8 +365,10 @@ fields = [
     );
 }
 
+/// Multiple fields in a filter combine with OR: a record passes the include
+/// check if at least one listed field matches the pattern.
 #[test]
-fn test_filter_include_scoped_to_table() {
+fn test_filter_include_or_across_fields() {
     common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
@@ -358,41 +377,42 @@ fn test_filter_include_scoped_to_table() {
         work_dir,
         "config.toml",
         r#"
-[[filters.include]]
-tables = ["users"]
-field = "status"
-regex = "^active$"
-
-[tables.users]
-source = "users.csv"
+[tables.items]
 fields = [
     { name = "id", type = "NUMBER", primary-key = true },
-    { name = "status", type = "TEXT" },
+    { name = "primary_tag", type = "TEXT" },
+    { name = "fallback_tag", type = "TEXT" },
 ]
 
-[tables.orders]
-source = "orders.csv"
-fields = [
-    { name = "id", type = "NUMBER", primary-key = true },
-    { name = "status", type = "TEXT" },
-]
+[tables.items.csv]
+source = "items.csv"
+
+[tables.items.csv.filter]
+fields = ["primary_tag", "fallback_tag"]
+include = "^active$"
 "#,
     );
 
-    common::write_csv(work_dir, "users.csv", "1,active\n2,inactive\n");
-    common::write_csv(work_dir, "orders.csv", "10,inactive\n20,active\n");
+    // CSV columns are positional: col 0 = id, col 1 = primary_tag, col 2 = fallback_tag.
+    // Row 1: primary_tag matches; row 2: fallback_tag matches; row 3: neither matches.
+    common::write_csv(
+        work_dir,
+        "items.csv",
+        "1,active,old\n\
+         2,old,active\n\
+         3,old,old\n",
+    );
     let config = Config::load(work_dir).unwrap();
     Block::create(&config, None).unwrap();
 
     let patch = Patch::create(&config, GENESIS_HASH).unwrap();
     let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
 
-    // users: only "active" survives the include rule
-    assert!(sql.contains(r#"INSERT INTO "users" ("id", "status") VALUES (1, 'active');"#));
-    assert!(!sql.contains(r#"INSERT INTO "users" ("id", "status") VALUES (2, 'inactive');"#));
-    // orders: rule scoped to "users", so both rows pass
-    assert!(sql.contains(r#"INSERT INTO "orders" ("id", "status") VALUES (10, 'inactive');"#));
-    assert!(sql.contains(r#"INSERT INTO "orders" ("id", "status") VALUES (20, 'active');"#));
+    // SQL emits columns in canonical (alphabetical) order:
+    // id (PK), fallback_tag, primary_tag.
+    assert!(sql.contains(r#"VALUES (1, 'old', 'active');"#));
+    assert!(sql.contains(r#"VALUES (2, 'active', 'old');"#));
+    assert!(!sql.contains(r#"VALUES (3, 'old', 'old');"#));
 }
 
 #[test]
@@ -405,20 +425,19 @@ fn test_filter_exclude_wins_over_include() {
         work_dir,
         "config.toml",
         r#"
-[[filters.include]]
-field = "status"
-regex = "^(active|pending)$"
-
-[[filters.exclude]]
-field = "status"
-regex = "^pending$"
-
 [tables.users]
-source = "users.csv"
 fields = [
     { name = "id", type = "NUMBER", primary-key = true },
     { name = "status", type = "TEXT" },
 ]
+
+[tables.users.csv]
+source = "users.csv"
+
+[tables.users.csv.filter]
+fields = ["status"]
+include = "^(active|pending)$"
+exclude = "^pending$"
 "#,
     );
 
@@ -449,16 +468,18 @@ fn test_filter_produces_delete_when_record_stops_matching_include() {
         work_dir,
         "config.toml",
         r#"
-[[filters.include]]
-field = "status"
-regex = "^active$"
-
 [tables.users]
-source = "users.csv"
 fields = [
     { name = "id", type = "NUMBER", primary-key = true },
     { name = "status", type = "TEXT" },
 ]
+
+[tables.users.csv]
+source = "users.csv"
+
+[tables.users.csv.filter]
+fields = ["status"]
+include = "^active$"
 "#,
     );
 
@@ -488,16 +509,18 @@ fn test_filter_produces_insert_when_record_starts_matching_include() {
         work_dir,
         "config.toml",
         r#"
-[[filters.include]]
-field = "status"
-regex = "^active$"
-
 [tables.users]
-source = "users.csv"
 fields = [
     { name = "id", type = "NUMBER", primary-key = true },
     { name = "status", type = "TEXT" },
 ]
+
+[tables.users.csv]
+source = "users.csv"
+
+[tables.users.csv.filter]
+fields = ["status"]
+include = "^active$"
 "#,
     );
 

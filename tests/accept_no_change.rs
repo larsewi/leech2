@@ -16,11 +16,13 @@ fn test_unchanged_csv_between_blocks() {
         "config.toml",
         r#"
 [tables.users]
-source = "users.csv"
 fields = [
     { name = "id", type = "NUMBER", primary-key = true },
     { name = "name", type = "TEXT" },
 ]
+
+[tables.users.csv]
+source = "users.csv"
 "#,
     );
 

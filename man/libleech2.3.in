@@ -93,13 +93,15 @@ be used.
 .SS Block creation
 .TP
 .BI "int lch_block_create(const lch_config_t *" cfg ", const lch_callbacks_t *" callbacks )
-Read each table's contents -- from its configured CSV source, or via
+Read each table's contents -- from its configured CSV source under
+.BR [tables.\fIname\fR.csv] ,
+or via
 .I callbacks
-for tables that omit
-.B source
-in the configuration -- compute the new state and the delta against the
-previous state, and write a new block together with updated STATE and HEAD
-files. History truncation is performed afterwards.
+for tables that omit the
+.B [csv]
+block entirely -- compute the new state and the delta against the previous
+state, and write a new block together with updated STATE and HEAD files.
+History truncation is performed afterwards.
 .IP
 .I callbacks
 may be NULL when every table in
@@ -139,18 +141,20 @@ accepted on any non-primary-key field.
 .IP
 CSV-specific
 .B config.toml
-attributes apply to CSV-backed tables only: per-field
+attributes live under
+.B [tables.\fIname\fR.csv]
+and apply to that table only: per-table
 .BR null ,
 .BR true ,
 and
 .B false
-sentinels, and the filters block
-.RB ( max-field-length ,
-.BR include ,
-.BR exclude ).
-When filters are configured alongside any callback-backed table, a
-warning is logged at block creation; the callback owns row inclusion for
-those tables via
+regex sentinels, the
+.B max-field-length
+limit, and the optional
+.B [csv.filter]
+block. Callback-backed tables (those without a
+.B [csv]
+block) own their own row inclusion via
 .BR LCH_SKIP_RECORD .
 .SS Patch operations
 .TP

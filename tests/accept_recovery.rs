@@ -16,11 +16,13 @@ fn setup_users(work_dir: &std::path::Path) -> Config {
         "config.toml",
         r#"
 [tables.users]
-source = "users.csv"
 fields = [
     { name = "id", type = "NUMBER", primary-key = true },
     { name = "name", type = "TEXT" },
 ]
+
+[tables.users.csv]
+source = "users.csv"
 "#,
     );
     Config::load(work_dir).unwrap()
