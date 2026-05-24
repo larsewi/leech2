@@ -145,7 +145,7 @@ impl Block {
 
         drop(chain_lock);
 
-        truncate::spawn_background(work_dir.clone(), config.truncate.clone());
+        truncate::spawn_background(config);
 
         Ok(hash)
     }

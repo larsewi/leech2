@@ -94,8 +94,9 @@ pub unsafe extern "C" fn lch_init(work_dir: *const c_char) -> *mut config::Confi
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn lch_deinit(config: *mut config::Config) {
     ffi_guard("lch_deinit", (), || {
-        truncate::wait_for_pending();
         if !config.is_null() {
+            // `Drop for Config` joins any background truncation thread, so
+            // this call blocks until truncation has finished.
             unsafe {
                 drop(Box::from_raw(config));
             }

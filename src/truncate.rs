@@ -1,13 +1,11 @@
 use std::collections::HashSet;
-use std::path::{Path, PathBuf};
-use std::sync::Mutex;
-use std::thread::JoinHandle;
+use std::path::Path;
 use std::time::SystemTime;
 
 use anyhow::{Context, Result};
 
 use crate::block::Block;
-use crate::config::TruncateConfig;
+use crate::config::{Config, TruncateConfig};
 use crate::head;
 use crate::reported;
 use crate::storage;
@@ -199,33 +197,54 @@ pub fn run(work_dir: &Path, config: &TruncateConfig) -> Result<()> {
     Ok(())
 }
 
-/// Tracks the JoinHandles of background truncation threads spawned by
-/// `spawn_background`. `wait_for_pending` drains and joins all of them.
-/// Used by `lch_deinit`, the CLI's run loop, and tests that need to observe
-/// truncation results after `Block::create` returns.
-static PENDING: Mutex<Vec<JoinHandle<()>>> = Mutex::new(Vec::new());
+/// Spawn `run` on a background thread, taking an owned snapshot of
+/// `config.work_dir` and `config.truncate` so the thread is decoupled from
+/// the `Config`'s lifetime. The `JoinHandle` is parked in
+/// `config.background_truncation`.
+///
+/// If a previous background pass is still running, this is a no-op: that
+/// pass is either holding or waiting on the chain lock and will observe
+/// the latest `HEAD` when it runs, so a follow-up spawn would only queue
+/// behind the same chain lock and repeat the cleanup work.
+pub fn spawn_background(config: &Config) {
+    let mut slot = config
+        .background_truncation
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
 
-/// Spawn `run` on a background thread with an owned snapshot. The
-/// JoinHandle is recorded in [`PENDING`] so `wait_for_pending` can drain it.
-pub fn spawn_background(work_dir: PathBuf, config: TruncateConfig) {
+    let previous = slot.take();
+    if let Some(handle) = previous {
+        if handle.is_finished() {
+            let _ = handle.join();
+        } else {
+            log::debug!(
+                "Skipping background truncation for '{}': previous pass still in flight",
+                config.work_dir.display()
+            );
+            *slot = Some(handle);
+            return;
+        }
+    }
+
+    let work_dir = config.work_dir.clone();
+    let truncate_config = config.truncate.clone();
     let handle = std::thread::spawn(move || {
-        if let Err(e) = run(&work_dir, &config) {
+        if let Err(e) = run(&work_dir, &truncate_config) {
             log::warn!("Background truncation failed (non-fatal): {:#}", e);
         }
     });
-    let mut pending = PENDING.lock().unwrap_or_else(|e| e.into_inner());
-    pending.retain(|h| !h.is_finished());
-    pending.push(handle);
+    *slot = Some(handle);
 }
 
-/// Join every background truncation thread spawned via `spawn_background`
-/// that has not yet been reaped. Returns when all of them have exited.
-pub fn wait_for_pending() {
-    let handles: Vec<JoinHandle<()>> = {
-        let mut pending = PENDING.lock().unwrap_or_else(|e| e.into_inner());
-        std::mem::take(&mut *pending)
-    };
-    for handle in handles {
+/// Join the background truncation thread most recently spawned for
+/// `config`, if any. Returns after it has exited.
+pub fn wait_for_pending(config: &Config) {
+    let mut slot = config
+        .background_truncation
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let handle = slot.take();
+    if let Some(handle) = handle {
         let _ = handle.join();
     }
 }

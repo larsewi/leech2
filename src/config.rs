@@ -3,6 +3,8 @@ use serde::{Deserialize, Deserializer};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+use std::thread::JoinHandle;
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
@@ -323,6 +325,27 @@ pub struct Config {
     /// Block chain truncation policy.
     #[serde(default)]
     pub truncate: TruncateConfig,
+    /// Handle of the background truncation thread most recently spawned for
+    /// this config (if any). `truncate::spawn_background` only spawns a new
+    /// thread when this slot is empty or holds a finished handle, so at most
+    /// one pass is in flight at a time for a given `Config`. `Drop` joins
+    /// any unfinished handle so `lch_deinit` (and end-of-scope in tests and
+    /// the CLI) cleanly waits for truncation before tearing down.
+    #[serde(skip)]
+    pub(crate) background_truncation: Mutex<Option<JoinHandle<()>>>,
+}
+
+impl Drop for Config {
+    fn drop(&mut self) {
+        let slot = self
+            .background_truncation
+            .get_mut()
+            .unwrap_or_else(|e| e.into_inner());
+        let handle = slot.take();
+        if let Some(handle) = handle {
+            let _ = handle.join();
+        }
+    }
 }
 
 /// One column in a table record.

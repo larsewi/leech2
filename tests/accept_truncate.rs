@@ -13,7 +13,7 @@ use leech2::utils::GENESIS_HASH;
 /// wait for the background pass to finish before the next assertion runs.
 fn create_block(config: &Config) -> String {
     let hash = Block::create(config, None).unwrap();
-    truncate::wait_for_pending();
+    truncate::wait_for_pending(config);
     hash
 }
 

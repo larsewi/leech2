@@ -7,7 +7,6 @@ use clap::{Parser, Subcommand};
 use leech2::block::Block;
 use leech2::cell::{Kind, parse_typed_cell};
 use leech2::config::Config;
-use leech2::truncate;
 use leech2::utils::{GENESIS_HASH, format_timestamp};
 
 const LEECH2_DIR: &str = ".leech2";
@@ -386,13 +385,10 @@ fn main() -> ExitCode {
 
     let cli = Cli::parse();
 
-    let result = run(cli);
-
-    // Block::create runs truncation in the background; wait for it so the
-    // CLI exits with the work dir in a fully cleaned-up state.
-    truncate::wait_for_pending();
-
-    if let Err(e) = result {
+    // `Config` is created and dropped inside `run`; its `Drop` joins any
+    // background truncation thread, so by the time we get here the work
+    // directory is in a fully cleaned-up state.
+    if let Err(e) = run(cli) {
         eprintln!("error: {:#}", e);
         return ExitCode::FAILURE;
     }

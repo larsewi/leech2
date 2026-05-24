@@ -208,9 +208,16 @@ and truncation in the same work directory serialize on an exclusive lock on
 `.chain.lock`, held by `Block::create()` across the block-file write, `STATE`
 write, and `HEAD` advance, and held by `truncate::run()` for the whole pass.
 Without this lock a concurrent truncator could observe the new block file
-before `HEAD` points at it and remove it as an orphan. `lch_deinit()`, the
-`lch` CLI, and tests that assert on truncation state call
-`truncate::wait_for_pending()` to join any in-flight background pass.
+before `HEAD` points at it and remove it as an orphan.
+
+The most recently spawned background `JoinHandle` lives in the `Config`'s
+`background_truncation` slot; `truncate::spawn_background` short-circuits
+while that slot holds an unfinished handle, since the in-flight pass will
+see the latest `HEAD` once it acquires the chain lock. `Drop for Config`
+joins the handle, so `lch_deinit()` (and end-of-scope in the CLI) cleanly
+wait for truncation before tearing down. Tests that assert on truncation
+state call `truncate::wait_for_pending(&config)` between `Block::create`
+and the assertion.
 
 ### Recovery from missing files
 
