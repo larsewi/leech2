@@ -39,6 +39,26 @@ impl TryFrom<ProtoDelta> for Delta {
         let updates = decode_proto_updates(proto.updates, num_subsidiary)
             .context("decoding delta updates")?;
 
+        // The three operation maps must be pairwise key-disjoint.
+        // `Delta::compute` produces them this way by construction; this
+        // check rejects a peer that sends a malformed wire delta where the
+        // same key appears in two or more sections (which would otherwise
+        // make the merge result depend on iteration order rather than spec
+        // semantics).
+        for key in inserts.keys() {
+            if deletes.contains_key(key) {
+                bail!("delta key {:?} appears in both inserts and deletes", key);
+            }
+            if updates.contains_key(key) {
+                bail!("delta key {:?} appears in both inserts and updates", key);
+            }
+        }
+        for key in deletes.keys() {
+            if updates.contains_key(key) {
+                bail!("delta key {:?} appears in both deletes and updates", key);
+            }
+        }
+
         Ok(Delta {
             primary_key_names: proto.primary_key_names,
             subsidiary_value_names: proto.subsidiary_value_names,
@@ -1230,5 +1250,75 @@ mod tests {
             text_cells(&["150"])
         );
         assert!(parent_delta.updates.is_empty());
+    }
+
+    // ---- TryFrom<ProtoDelta> self-consistency tests ----
+    //
+    // Production code never produces a delta with the same key in two
+    // operation sets, but a peer that sends a malformed wire delta should be
+    // rejected at the proto -> domain boundary rather than getting absorbed
+    // into the merge logic in iteration-order-dependent ways.
+
+    use crate::cell::text_proto_cells;
+    use crate::proto::record::Record as ProtoRecord;
+    use crate::proto::update::Update as ProtoUpdate;
+
+    fn proto_record(key: &[&str], value: &[&str]) -> ProtoRecord {
+        ProtoRecord {
+            key: text_proto_cells(key),
+            value: text_proto_cells(value),
+        }
+    }
+
+    #[test]
+    fn test_try_from_proto_delta_rejects_insert_delete_overlap() {
+        let proto = ProtoDelta {
+            primary_key_names: vec!["id".to_string()],
+            subsidiary_value_names: vec!["name".to_string()],
+            inserts: vec![proto_record(&["1"], &["Alice"])],
+            deletes: vec![proto_record(&["1"], &["Alice"])],
+            updates: vec![],
+        };
+        let err = Delta::try_from(proto).unwrap_err();
+        let msg = format!("{:#}", err);
+        assert!(msg.contains("inserts and deletes"), "got: {msg}");
+    }
+
+    #[test]
+    fn test_try_from_proto_delta_rejects_insert_update_overlap() {
+        let proto = ProtoDelta {
+            primary_key_names: vec!["id".to_string()],
+            subsidiary_value_names: vec!["name".to_string()],
+            inserts: vec![proto_record(&["1"], &["Alice"])],
+            deletes: vec![],
+            updates: vec![ProtoUpdate {
+                key: text_proto_cells(&["1"]),
+                changed_indices: vec![],
+                old_value: text_proto_cells(&["Alice"]),
+                new_value: text_proto_cells(&["Alicia"]),
+            }],
+        };
+        let err = Delta::try_from(proto).unwrap_err();
+        let msg = format!("{:#}", err);
+        assert!(msg.contains("inserts and updates"), "got: {msg}");
+    }
+
+    #[test]
+    fn test_try_from_proto_delta_rejects_delete_update_overlap() {
+        let proto = ProtoDelta {
+            primary_key_names: vec!["id".to_string()],
+            subsidiary_value_names: vec!["name".to_string()],
+            inserts: vec![],
+            deletes: vec![proto_record(&["1"], &["Alice"])],
+            updates: vec![ProtoUpdate {
+                key: text_proto_cells(&["1"]),
+                changed_indices: vec![],
+                old_value: text_proto_cells(&["Alice"]),
+                new_value: text_proto_cells(&["Alicia"]),
+            }],
+        };
+        let err = Delta::try_from(proto).unwrap_err();
+        let msg = format!("{:#}", err);
+        assert!(msg.contains("deletes and updates"), "got: {msg}");
     }
 }
