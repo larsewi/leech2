@@ -1142,6 +1142,54 @@ mod tests {
         assert!(parent_delta.deletes.is_empty());
     }
 
+    // Rule 15a cross-column: parent changes col 0, child changes col 1.
+    // Both columns end up in the merged update, taking parent's "before" for
+    // col 0 and child's "after" for col 1 (parent passed col 1 through, so
+    // its "after" equals the row's prior value for that column).
+    #[test]
+    fn test_merge_rule15_cross_column_parent_col0_child_col1() {
+        let mut parent_delta = empty_delta();
+        parent_delta.updates.insert(
+            text_cells(&["1"]),
+            (text_cells(&["a", "b"]), text_cells(&["x", "b"])),
+        );
+        let mut child_delta = empty_delta();
+        child_delta.updates.insert(
+            text_cells(&["1"]),
+            (text_cells(&["x", "b"]), text_cells(&["x", "y"])),
+        );
+
+        parent_delta.merge(child_delta).unwrap();
+
+        assert_eq!(parent_delta.updates.len(), 1);
+        let (old_value, new_value) = &parent_delta.updates[&text_cells(&["1"])];
+        assert_eq!(old_value, &text_cells(&["a", "b"]));
+        assert_eq!(new_value, &text_cells(&["x", "y"]));
+    }
+
+    // Symmetric inverse of the above: parent changes col 1, child changes
+    // col 0.
+    #[test]
+    fn test_merge_rule15_cross_column_parent_col1_child_col0() {
+        let mut parent_delta = empty_delta();
+        parent_delta.updates.insert(
+            text_cells(&["1"]),
+            (text_cells(&["a", "b"]), text_cells(&["a", "y"])),
+        );
+        let mut child_delta = empty_delta();
+        child_delta.updates.insert(
+            text_cells(&["1"]),
+            (text_cells(&["a", "y"]), text_cells(&["x", "y"])),
+        );
+
+        parent_delta.merge(child_delta).unwrap();
+
+        assert_eq!(parent_delta.updates.len(), 1);
+        let (old_value, new_value) = &parent_delta.updates[&text_cells(&["1"])];
+        assert_eq!(old_value, &text_cells(&["a", "b"]));
+        assert_eq!(new_value, &text_cells(&["x", "y"]));
+    }
+
     // Test merging with multiple keys exercising different rules simultaneously
     #[test]
     fn test_merge_multiple_keys_mixed_rules() {
