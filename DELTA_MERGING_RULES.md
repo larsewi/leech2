@@ -169,12 +169,16 @@ inconsistent.
 | ---- | ---------------------- | ---------------------- | ------------------------ |
 | 15a  | `update(key, old → X)` | `update(key, X → new)` | `update(key, old → new)` |
 | 15b  | `update(key, val → X)` | `update(key, X → val)` |                          |
+| 15c  | `update(key, old → X)` | `update(key, Y → new)` | `error` (X ≠ Y)          |
 
 When two updates are stacked, the result is an update from the first update's
-old value to the second update's new value. The intermediate value (`X`) does
-not matter for the result. If, after the merge, every column in the resulting
-update would have an unchanged value (rule 15b), the update is dropped entirely
-— emitting it would produce SQL with an empty `SET` clause.
+old value to the second update's new value. The intermediate value (`X`) must
+agree between the two updates -- the parent's per-column "new" must equal the
+child's per-column "old". A mismatch (rule 15c) is an error, mirroring rule
+14b's strictness about the intermediate value between update and delete. If,
+after the merge, every column in the resulting update would have an unchanged
+value (rule 15b), the update is dropped entirely -- emitting it would produce
+SQL with an empty `SET` clause.
 
 **Example (15a):** Parent updates `(1, Alice)` to `(1, Alicia)`. Child updates
 key `1` from `Alicia` to `Ali`. Result: `update(1, Alice → Ali)`.
@@ -182,6 +186,11 @@ key `1` from `Alicia` to `Ali`. Result: `update(1, Alice → Ali)`.
 **Example (15b):** Parent updates row `1`'s name from `Alice` to `Alicia`. Child
 updates the same row's name from `Alicia` back to `Alice`. The net effect is no
 change; the update is dropped.
+
+**Example (15c):** Parent updates key `1` from `Alice` to `Alicia`. Child
+updates key `1` from `Bob` to `Robert`. The child's view of the row's prior
+value (`Bob`) disagrees with the parent's view of the row's current value
+(`Alicia`). Result: error -- the deltas are inconsistent.
 
 ---
 
@@ -207,7 +216,10 @@ change; the update is dropped.
 | 14b  | `update` | `delete≠` | `error`             |
 | 15a  | `update` | `update≠` | `update(old → new)` |
 | 15b  | `update` | `update=` |                     |
+| 15c  | `update` | `update⊥` | `error`             |
 
-`=` means values match, `≠` means values differ. For rule 15, the comparison is
-between the parent's `old` and the child's `new`: matching means the net effect
-across the two updates is no change, so the record is dropped.
+`=` means values match, `≠` means values differ. For rule 15, the `=` / `≠`
+comparison is between the parent's `old` and the child's `new`: matching means
+the net effect across the two updates is no change, so the record is dropped.
+`⊥` means the parent's `new` (the intermediate value) disagrees with the
+child's `old`, signalling that the deltas don't compose.

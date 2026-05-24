@@ -235,10 +235,14 @@ impl Delta {
         } else if self.deletes.contains_key(&key) {
             // Rule 11: update after delete → error
             bail!("rule 11: key {:?} deleted in parent, updated in child", key);
-        } else if let Some((mut merged_old, mut merged_new)) = self.updates.remove(&key) {
+        } else if let Some((merged_old, mut merged_new)) = self.updates.remove(&key) {
             // Rules 15a/15b: combine parent and child updates per column.
-            // Keep the earliest "before" and the latest "after" for each
-            // column.
+            // The merged result is `(parent's old, child's new)`. For that
+            // to be coherent, the child's per-column "old" must match the
+            // parent's per-column "new" -- otherwise the child is acting
+            // on a state the parent didn't produce, which is the same
+            // kind of inconsistency Rule 14b catches between update +
+            // delete.
             if merged_old.len() != merged_new.len()
                 || merged_old.len() != child_old.len()
                 || merged_old.len() != child_new.len()
@@ -254,21 +258,18 @@ impl Delta {
                 );
             }
             for i in 0..merged_old.len() {
-                let parent_changed = merged_old[i] != merged_new[i];
-                let child_changed = child_old[i] != child_new[i];
-                match (parent_changed, child_changed) {
-                    // Both changed: keep parent's "before", take child's "after".
-                    (true, true) => merged_new[i] = child_new[i].clone(),
-                    // Only parent changed: existing pair is correct.
-                    (true, false) => {}
-                    // Only child changed: adopt child's pair.
-                    (false, true) => {
-                        merged_old[i] = child_old[i].clone();
-                        merged_new[i] = child_new[i].clone();
-                    }
-                    // Neither changed: nothing to do.
-                    (false, false) => {}
+                if merged_new[i] != child_old[i] {
+                    bail!(
+                        "rule 15 conflict: parent's update of key {:?} \
+                         leaves column {} at {:?}, but child's update \
+                         expects {:?}",
+                        key,
+                        i,
+                        merged_new[i],
+                        child_old[i]
+                    );
                 }
+                merged_new[i] = child_new[i].clone();
             }
             if merged_old != merged_new {
                 // Rule 15a: net change is non-zero, keep the merged update.
@@ -1051,6 +1052,50 @@ mod tests {
         parent_delta.merge(child_delta).unwrap();
 
         assert!(parent_delta.updates.is_empty());
+    }
+
+    // Rule 15 conflict: parent's update ends at a value the child's update
+    // doesn't expect (single-column case). Mirrors Rule 14b's strictness
+    // about the intermediate value.
+    #[test]
+    fn test_merge_rule15_intermediate_mismatch_errors() {
+        let mut parent_delta = empty_delta();
+        parent_delta.updates.insert(
+            text_cells(&["1"]),
+            (text_cells(&["Alice"]), text_cells(&["Alicia"])),
+        );
+        let mut child_delta = empty_delta();
+        child_delta.updates.insert(
+            text_cells(&["1"]),
+            (text_cells(&["Bob"]), text_cells(&["Robert"])),
+        );
+
+        let err = parent_delta.merge(child_delta).unwrap_err();
+        let msg = format!("{:#}", err);
+        assert!(msg.contains("rule 15 conflict"), "got: {msg}");
+        assert!(msg.contains("column 0"), "got: {msg}");
+    }
+
+    // Rule 15 conflict in one column of a multi-column update: parent
+    // changed col 0, child operates on a different value for col 1 than
+    // parent left it at.
+    #[test]
+    fn test_merge_rule15_per_column_mismatch_errors() {
+        let mut parent_delta = empty_delta();
+        parent_delta.updates.insert(
+            text_cells(&["1"]),
+            (text_cells(&["a", "b"]), text_cells(&["x", "b"])),
+        );
+        let mut child_delta = empty_delta();
+        child_delta.updates.insert(
+            text_cells(&["1"]),
+            (text_cells(&["x", "zzz"]), text_cells(&["x", "y"])),
+        );
+
+        let err = parent_delta.merge(child_delta).unwrap_err();
+        let msg = format!("{:#}", err);
+        assert!(msg.contains("rule 15 conflict"), "got: {msg}");
+        assert!(msg.contains("column 1"), "got: {msg}");
     }
 
     // Rule 15a: update then update → update(old1 → new2)
