@@ -200,8 +200,8 @@ typedef int (*lch_table_end_cb_t)(const char *table, void *usr_data);
  *                    ignored.
  * @param usr_data    Opaque pointer from lch_callbacks_t::usr_data.
  * @return LCH_SUCCESS         out_cell populated; leech2 will ask for the
- *                             remaining fields of this row.
- *                             and then advance to row + 1.
+ *                             remaining fields of this row and then
+ *                             advance to row + 1.
  *         LCH_END_OF_TABLE    No row exists at this index; iteration for
  *                             this table stops. May be returned from any
  *                             column.
