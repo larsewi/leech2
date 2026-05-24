@@ -31,7 +31,8 @@ pub mod wire;
 /// The first call installs the global logger; subsequent calls atomically swap
 /// the callback and `user_data`. After a swap, the old callback is no longer
 /// invoked, but the library does not free or otherwise touch the previous
-/// `user_data` — the caller owns its lifetime and must release it if needed.
+/// `user_data` -- the program that called `lch_log_init` owns its lifetime
+/// and must release it if needed.
 ///
 /// Safe to call concurrently from multiple threads. Once installed, the
 /// callback itself may be invoked from any thread (including in parallel),

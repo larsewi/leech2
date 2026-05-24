@@ -95,8 +95,8 @@ typedef void (*lch_log_callback_t)(lch_log_level_t level, const char *msg,
  *
  * May be called again to atomically replace @p callback and @p usr_data. After
  * a replacement, the previous callback is no longer invoked; the library does
- * not free the previous @p usr_data, so the caller is responsible for its
- * lifetime.
+ * not free the previous @p usr_data, so the program that called
+ * lch_log_init() is responsible for its lifetime.
  *
  * Safe to call concurrently from multiple threads. Once installed, @p callback
  * itself may be invoked from any thread, possibly in parallel, so both
