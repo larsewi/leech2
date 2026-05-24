@@ -9,7 +9,7 @@ use crate::config::{Config, TruncateConfig};
 use crate::head;
 use crate::reported;
 use crate::storage;
-use crate::utils::GENESIS_HASH;
+use crate::utils::{GENESIS_HASH, join_logging_panics};
 
 /// Lock-file name used to serialize chain-mutating operations (block creation
 /// advancing HEAD, and truncation walking the chain and removing orphans).
@@ -215,7 +215,7 @@ pub fn spawn_background(config: &Config) {
     let previous = slot.take();
     if let Some(handle) = previous {
         if handle.is_finished() {
-            let _ = handle.join();
+            join_logging_panics(handle, "Background truncation thread");
         } else {
             log::debug!(
                 "Skipping background truncation for '{}': previous pass still in flight",
@@ -245,7 +245,7 @@ pub fn wait_for_pending(config: &Config) {
         .unwrap_or_else(|e| e.into_inner());
     let handle = slot.take();
     if let Some(handle) = handle {
-        let _ = handle.join();
+        join_logging_panics(handle, "Background truncation thread");
     }
 }
 

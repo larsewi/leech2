@@ -10,7 +10,7 @@ use std::time::Duration;
 use anyhow::{Context, Result, bail};
 
 use crate::cell::{Kind, parse_typed_cell};
-use crate::utils::parse_duration;
+use crate::utils::{join_logging_panics, parse_duration};
 
 /// Post-deserialize semantic checks for config structs (cross-field
 /// invariants, value ranges, etc.) that serde can't express on its own.
@@ -343,7 +343,7 @@ impl Drop for Config {
             .unwrap_or_else(|e| e.into_inner());
         let handle = slot.take();
         if let Some(handle) = handle {
-            let _ = handle.join();
+            join_logging_panics(handle, "Background truncation thread");
         }
     }
 }
