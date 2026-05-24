@@ -225,7 +225,7 @@ typedef struct {
   /** May be NULL if no per-table teardown is needed. */
   lch_table_end_cb_t table_end;
   /** Opaque pointer forwarded verbatim to every invoked callback. May be
-   *  NULL if the callbacks do not need per-bundle state. */
+   *  NULL if the callbacks do not need shared state. */
   void *usr_data;
 } lch_callbacks_t;
 
