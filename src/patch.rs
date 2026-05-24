@@ -18,7 +18,7 @@ use crate::proto::injected::Field;
 use crate::proto::state::State as ProtoState;
 use crate::proto::table::Table as ProtoTable;
 use crate::utils;
-use crate::utils::GENESIS_HASH;
+use crate::utils::{GENESIS_HASH, validate_field_name};
 
 impl TryFrom<&InjectedFieldConfig> for Field {
     type Error = anyhow::Error;
@@ -372,9 +372,7 @@ impl Patch {
     /// previous inject_field call), its value is replaced; a warning is
     /// logged when the replacement actually differs from the existing value.
     pub fn inject_field(&mut self, name: &str, value: Cell) -> Result<()> {
-        if name.is_empty() {
-            bail!("inject_field: name must not be empty");
-        }
+        validate_field_name(name).context("inject_field")?;
         if matches!(value, Cell::Null) {
             bail!("inject_field: NULL values are not supported");
         }
@@ -483,7 +481,28 @@ mod tests {
     fn test_inject_field_rejects_empty_name() {
         let mut patch = empty_patch();
         let err = patch.inject_field("", Cell::from("value")).unwrap_err();
-        assert!(err.to_string().contains("name must not be empty"));
+        let msg = format!("{:#}", err);
+        assert!(msg.contains("field name must not be empty"), "got: {msg}");
+    }
+
+    #[test]
+    fn test_inject_field_rejects_control_character_in_name() {
+        let mut patch = empty_patch();
+        let err = patch
+            .inject_field("host\nINSERT", Cell::from("value"))
+            .unwrap_err();
+        let msg = format!("{:#}", err);
+        assert!(msg.contains("control character"), "got: {msg}");
+    }
+
+    #[test]
+    fn test_inject_field_rejects_nul_in_name() {
+        let mut patch = empty_patch();
+        let err = patch
+            .inject_field("host\0", Cell::from("value"))
+            .unwrap_err();
+        let msg = format!("{:#}", err);
+        assert!(msg.contains("control character"), "got: {msg}");
     }
 
     #[test]

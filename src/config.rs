@@ -10,7 +10,7 @@ use std::time::Duration;
 use anyhow::{Context, Result, bail};
 
 use crate::cell::{Kind, parse_typed_cell};
-use crate::utils::{join_logging_panics, parse_duration};
+use crate::utils::{join_logging_panics, parse_duration, validate_field_name};
 
 /// Post-deserialize semantic checks for config structs (cross-field
 /// invariants, value ranges, etc.) that serde can't express on its own.
@@ -162,9 +162,7 @@ impl Default for InjectedFieldConfig {
 
 impl Validate for InjectedFieldConfig {
     fn validate(&self) -> Result<()> {
-        if self.name.is_empty() {
-            bail!("name must not be empty");
-        }
+        validate_field_name(&self.name)?;
         if self.value.is_empty() {
             bail!("'{}': value must not be empty", self.name);
         }
@@ -390,10 +388,7 @@ pub struct TableConfig {
 
 impl Validate for FieldConfig {
     fn validate(&self) -> Result<()> {
-        if self.name.is_empty() {
-            bail!("field name must not be empty");
-        }
-        Ok(())
+        validate_field_name(&self.name)
     }
 }
 
@@ -919,6 +914,47 @@ fields = [
         assert!(
             msg.contains("some-removed-feature"),
             "expected error to mention the unknown top-level key, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_load_rejects_control_character_in_field_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let toml_input = "
+[tables.users]
+fields = [
+    { name = \"id\\nevil\", type = \"NUMBER\", primary-key = true },
+]
+";
+        fs::write(dir.path().join("config.toml"), toml_input).unwrap();
+        let err = Config::load(dir.path()).expect_err("expected validation error");
+        let msg = format!("{:#}", err);
+        assert!(
+            msg.contains("control character"),
+            "expected error to mention the control character, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_load_rejects_control_character_in_injected_field_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let toml_input = "
+[[injected-fields]]
+name = \"host\\u0000\"
+type = \"TEXT\"
+value = \"agent1\"
+
+[tables.users]
+fields = [
+    { name = \"id\", type = \"NUMBER\", primary-key = true },
+]
+";
+        fs::write(dir.path().join("config.toml"), toml_input).unwrap();
+        let err = Config::load(dir.path()).expect_err("expected validation error");
+        let msg = format!("{:#}", err);
+        assert!(
+            msg.contains("control character"),
+            "expected error to mention the control character, got: {msg}"
         );
     }
 }
