@@ -12,6 +12,24 @@ use leech2::utils::{GENESIS_HASH, format_timestamp};
 const LEECH2_DIR: &str = ".leech2";
 const PATCH_FILE: &str = "PATCH";
 
+const INIT_CONFIG_TEMPLATE: &str = r#"[tables.products.csv]
+source = "products.csv"
+header = true
+
+[[tables.products.fields]]
+name = "id"
+type = "NUMBER"
+primary-key = true
+
+[[tables.products.fields]]
+name = "name"
+type = "TEXT"
+
+[[tables.products.fields]]
+name = "price"
+type = "NUMBER"
+"#;
+
 #[derive(Parser)]
 #[command(name = "lch", about = "leech2 CLI - track CSV changes", version)]
 struct Cli {
@@ -132,26 +150,7 @@ fn cmd_init(work_dir: &std::path::Path) -> Result<()> {
 
     std::fs::create_dir_all(work_dir)?;
 
-    std::fs::write(
-        work_dir.join("config.toml"),
-        r#"[tables.products]
-source = "products.csv"
-header = true
-
-[[tables.products.fields]]
-name = "id"
-type = "NUMBER"
-primary-key = true
-
-[[tables.products.fields]]
-name = "name"
-type = "TEXT"
-
-[[tables.products.fields]]
-name = "price"
-type = "NUMBER"
-"#,
-    )?;
+    std::fs::write(work_dir.join("config.toml"), INIT_CONFIG_TEMPLATE)?;
 
     std::fs::write(
         work_dir.join("products.csv"),
@@ -394,4 +393,27 @@ fn main() -> ExitCode {
     }
 
     ExitCode::SUCCESS
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn init_template_parses_as_csv_backed_table() {
+        let work_dir = tempfile::tempdir().unwrap();
+        std::fs::write(work_dir.path().join("config.toml"), INIT_CONFIG_TEMPLATE).unwrap();
+
+        let config = Config::load(work_dir.path()).unwrap();
+        let products = config
+            .tables
+            .get("products")
+            .expect("init template must define a 'products' table");
+        let csv = products
+            .csv
+            .as_ref()
+            .expect("init template must place 'source'/'header' under [tables.products.csv]");
+        assert_eq!(csv.source, "products.csv");
+        assert_eq!(csv.header, true);
+    }
 }
