@@ -79,33 +79,33 @@ pub unsafe fn cstr_arg<'a>(fn_name: &str, arg_name: &str, ptr: *const c_char) ->
 /// ABI-compatible mirror of `lch_buffer_t` from `leech2.h`. An owned byte
 /// buffer handed across the FFI boundary; freed with `lch_buffer_free`.
 #[repr(C)]
-pub struct LchBuffer {
+pub struct FfiBuffer {
     pub data: *mut u8,
     pub len: usize,
 }
 
-impl From<Vec<u8>> for LchBuffer {
+impl From<Vec<u8>> for FfiBuffer {
     fn from(buf: Vec<u8>) -> Self {
         let boxed = buf.into_boxed_slice();
         let len = boxed.len();
         let data = Box::into_raw(boxed) as *mut u8;
-        LchBuffer { data, len }
+        FfiBuffer { data, len }
     }
 }
 
 /// ABI-compatible mirror of `lch_cell_t` from `leech2.h`. Only used to type
 /// FFI parameters; the Rust side reads it via [`cell_from_ffi`].
 #[repr(C)]
-pub union LchCellPayload {
+pub union FfiCellPayload {
     pub text: *const c_char,
     pub number: f64,
     pub boolean: bool,
 }
 
 #[repr(C)]
-pub struct LchCell {
+pub struct FfiCell {
     pub kind: c_int,
-    pub payload: LchCellPayload,
+    pub payload: FfiCellPayload,
 }
 
 /// Convert an FFI `lch_cell_t` into a domain [`Cell`]. Validates the kind
@@ -116,7 +116,7 @@ pub struct LchCell {
 /// When `cell.kind == LCH_VALUE_TEXT`, `cell.payload.text` must point to a
 /// valid, null-terminated C string. A null pointer is rejected with an
 /// error; use `LCH_VALUE_NULL` to represent a null value.
-pub unsafe fn cell_from_ffi(fn_name: &str, cell: &LchCell) -> Option<Cell> {
+pub unsafe fn cell_from_ffi(fn_name: &str, cell: &FfiCell) -> Option<Cell> {
     match cell.kind {
         VALUE_NULL => Some(Cell::Null),
         VALUE_TEXT => {

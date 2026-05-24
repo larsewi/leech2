@@ -864,12 +864,12 @@ mod tests {
     //
     // Tests use a thread-local script that maps (row, field_name) -> action;
     // the test callback walks the script and forwards the result back to leech2
-    // through an `LchCell`. The script owns the CStrings backing TEXT cells so
+    // through an `FfiCell`. The script owns the CStrings backing TEXT cells so
     // their pointers stay valid for the duration of the call.
 
-    use crate::callbacks::{Callbacks, LchCallbacks};
+    use crate::callbacks::{Callbacks, FfiCallbacks};
     use crate::ffi::{
-        END_OF_TABLE, LchCell, LchCellPayload, SKIP_RECORD, SUCCESS as FFI_SUCCESS, VALUE_NULL,
+        END_OF_TABLE, FfiCell, FfiCellPayload, SKIP_RECORD, SUCCESS as FFI_SUCCESS, VALUE_NULL,
     };
     use std::cell::RefCell;
     use std::collections::HashMap;
@@ -914,7 +914,7 @@ mod tests {
         row: usize,
         _col: usize,
         field: *const c_char,
-        out_cell: *mut LchCell,
+        out_cell: *mut FfiCell,
         _usr_data: *mut c_void,
     ) -> i32 {
         let field_name = unsafe { CStr::from_ptr(field) }.to_str().unwrap();
@@ -931,17 +931,17 @@ mod tests {
                 CellAction::Skip => SKIP_RECORD,
                 CellAction::Cell(value) => {
                     let cell = match value {
-                        CellValue::Null => LchCell {
+                        CellValue::Null => FfiCell {
                             kind: VALUE_NULL,
-                            payload: LchCellPayload { number: 0.0 },
+                            payload: FfiCellPayload { number: 0.0 },
                         },
-                        CellValue::Text(s) => LchCell {
+                        CellValue::Text(s) => FfiCell {
                             kind: 1, // LCH_VALUE_TEXT
-                            payload: LchCellPayload { text: s.as_ptr() },
+                            payload: FfiCellPayload { text: s.as_ptr() },
                         },
-                        CellValue::Number(n) => LchCell {
+                        CellValue::Number(n) => FfiCell {
                             kind: 2, // LCH_VALUE_NUMBER
-                            payload: LchCellPayload { number: *n },
+                            payload: FfiCellPayload { number: *n },
                         },
                     };
                     unsafe { *out_cell = cell };
@@ -952,7 +952,7 @@ mod tests {
     }
 
     fn make_callbacks() -> Callbacks {
-        Callbacks::from(&LchCallbacks {
+        Callbacks::from(&FfiCallbacks {
             table_begin: None,
             read_cell: Some(test_read_cell),
             table_end: None,

@@ -1,6 +1,6 @@
 //! Safe-Rust adapter for the FFI callback bundle that drives the
 //! callback-based path of `lch_block_create`. The repr-C mirror
-//! ([`LchCallbacks`]) is decoded once at the FFI boundary into a [`Callbacks`]
+//! ([`FfiCallbacks`]) is decoded once at the FFI boundary into a [`Callbacks`]
 //! value, then bound to one table at a time via [`Callbacks::for_table`].
 //!
 //! Not `Send`/`Sync`: callbacks are invoked exclusively on the thread that
@@ -13,7 +13,7 @@ use anyhow::{Context, Result, bail};
 
 use crate::cell::Cell;
 use crate::ffi::{
-    END_OF_TABLE, LchCell, LchCellPayload, SKIP_RECORD, SUCCESS, VALUE_NULL, cell_from_ffi,
+    END_OF_TABLE, FfiCell, FfiCellPayload, SKIP_RECORD, SUCCESS, VALUE_NULL, cell_from_ffi,
 };
 
 type TableBeginFn = unsafe extern "C" fn(*const c_char, *mut c_void) -> i32;
@@ -23,7 +23,7 @@ type ReadCellFn = unsafe extern "C" fn(
     usize,
     usize,
     *const c_char,
-    *mut LchCell,
+    *mut FfiCell,
     *mut c_void,
 ) -> i32;
 
@@ -31,7 +31,7 @@ type ReadCellFn = unsafe extern "C" fn(
 /// use `Option<unsafe extern "C" fn ...>` so a NULL function pointer on the C
 /// side deserializes to `None`.
 #[repr(C)]
-pub struct LchCallbacks {
+pub struct FfiCallbacks {
     pub table_begin: Option<TableBeginFn>,
     pub read_cell: Option<ReadCellFn>,
     pub table_end: Option<TableEndFn>,
@@ -59,8 +59,8 @@ pub struct Callbacks {
     usr_data: *mut c_void,
 }
 
-impl From<&LchCallbacks> for Callbacks {
-    fn from(raw: &LchCallbacks) -> Self {
+impl From<&FfiCallbacks> for Callbacks {
+    fn from(raw: &FfiCallbacks) -> Self {
         Callbacks {
             table_begin: raw.table_begin,
             read_cell: raw.read_cell,
@@ -148,9 +148,9 @@ impl TableCallbacks<'_> {
             );
         };
         let field = &self.field_cstrings[col];
-        let mut out = LchCell {
+        let mut out = FfiCell {
             kind: VALUE_NULL,
-            payload: LchCellPayload { number: 0.0 },
+            payload: FfiCellPayload { number: 0.0 },
         };
         let rc = unsafe {
             cb(
@@ -200,7 +200,7 @@ mod tests {
     }
 
     fn callbacks_with_failing_begin() -> Callbacks {
-        Callbacks::from(&LchCallbacks {
+        Callbacks::from(&FfiCallbacks {
             table_begin: Some(fail_table_begin),
             read_cell: None,
             table_end: None,
@@ -209,7 +209,7 @@ mod tests {
     }
 
     fn callbacks_with_failing_end() -> Callbacks {
-        Callbacks::from(&LchCallbacks {
+        Callbacks::from(&FfiCallbacks {
             table_begin: None,
             read_cell: None,
             table_end: Some(fail_table_end),
@@ -244,7 +244,7 @@ mod tests {
     }
 
     fn empty_callbacks() -> Callbacks {
-        Callbacks::from(&LchCallbacks {
+        Callbacks::from(&FfiCallbacks {
             table_begin: None,
             read_cell: None,
             table_end: None,
@@ -282,7 +282,7 @@ mod tests {
     fn test_read_cell_missing_is_an_error() {
         // A callback-backed table with no read_cell hook is a configuration
         // error: the cell-pull contract is unsatisfiable.
-        let callbacks = Callbacks::from(&LchCallbacks {
+        let callbacks = Callbacks::from(&FfiCallbacks {
             table_begin: None,
             read_cell: None,
             table_end: None,

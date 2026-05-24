@@ -2,7 +2,7 @@ use std::ffi::{CStr, CString, c_char, c_void};
 use std::path::PathBuf;
 
 use crate::ffi::{
-    FAILURE, LchBuffer, LchCell, SUCCESS, cell_from_ffi, cstr_arg, ffi_guard, null_arg,
+    FAILURE, FfiBuffer, FfiCell, SUCCESS, cell_from_ffi, cstr_arg, ffi_guard, null_arg,
 };
 
 pub mod block;
@@ -112,7 +112,7 @@ pub unsafe extern "C" fn lch_deinit(config: *mut config::Config) {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn lch_block_create(
     config: *const config::Config,
-    callbacks: *const callbacks::LchCallbacks,
+    callbacks: *const callbacks::FfiCallbacks,
 ) -> i32 {
     ffi_guard("lch_block_create", FAILURE, || {
         if null_arg("lch_block_create", "config", config) {
@@ -142,7 +142,7 @@ pub unsafe extern "C" fn lch_block_create(
 pub unsafe extern "C" fn lch_patch_create(
     config: *const config::Config,
     last_known: *const c_char,
-    out: *mut LchBuffer,
+    out: *mut FfiBuffer,
 ) -> i32 {
     ffi_guard("lch_patch_create", FAILURE, || {
         if null_arg("lch_patch_create", "config", config) {
@@ -204,7 +204,7 @@ pub unsafe extern "C" fn lch_patch_create(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn lch_patch_to_sql(
     config: *const config::Config,
-    patch: *const LchBuffer,
+    patch: *const FfiBuffer,
     out: *mut *mut c_char,
 ) -> i32 {
     ffi_guard("lch_patch_to_sql", FAILURE, || {
@@ -273,10 +273,10 @@ pub unsafe extern "C" fn lch_patch_to_sql(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn lch_patch_inject(
     config: *const config::Config,
-    r#in: *const LchBuffer,
+    r#in: *const FfiBuffer,
     name: *const c_char,
-    cell: *const LchCell,
-    out: *mut LchBuffer,
+    cell: *const FfiCell,
+    out: *mut FfiBuffer,
 ) -> i32 {
     ffi_guard("lch_patch_inject", FAILURE, || {
         if null_arg("lch_patch_inject", "config", config) {
@@ -356,7 +356,7 @@ pub unsafe extern "C" fn lch_string_free(ptr: *mut c_char) {
 /// receives a newly allocated, null-terminated string that the caller must
 /// release with `lch_string_free`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn lch_patch_hash(patch: *const LchBuffer, out: *mut *mut c_char) -> i32 {
+pub unsafe extern "C" fn lch_patch_hash(patch: *const FfiBuffer, out: *mut *mut c_char) -> i32 {
     ffi_guard("lch_patch_hash", FAILURE, || {
         if null_arg("lch_patch_hash", "patch", patch) {
             return FAILURE;
@@ -403,7 +403,7 @@ pub unsafe extern "C" fn lch_patch_hash(patch: *const LchBuffer, out: *mut *mut 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn lch_patch_applied(
     config: *const config::Config,
-    patch: *const LchBuffer,
+    patch: *const FfiBuffer,
 ) -> i32 {
     ffi_guard("lch_patch_applied", FAILURE, || {
         if null_arg("lch_patch_applied", "config", config) {
@@ -462,7 +462,7 @@ pub unsafe extern "C" fn lch_patch_failed(config: *const config::Config) -> i32 
 /// `data` field was previously filled in by the library. A buffer with
 /// `data == NULL` is a no-op.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn lch_buffer_free(buf: *mut LchBuffer) {
+pub unsafe extern "C" fn lch_buffer_free(buf: *mut FfiBuffer) {
     ffi_guard("lch_buffer_free", (), || {
         if buf.is_null() {
             return;
