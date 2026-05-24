@@ -87,8 +87,16 @@ impl Table {
         // Shared advisory lock: defense-in-depth against a cooperating producer
         // that takes an exclusive lock while rewriting the CSV in place. The
         // lock is released when `file` (moved into the reader) is dropped.
-        file.lock_shared()
-            .with_context(|| format!("failed to acquire shared lock on '{}'", path.display()))?;
+        // Best-effort: some Windows filesystems return ErrorKind::Unsupported
+        // for `lock_shared`; the read can still proceed safely without the
+        // lock (correctness doesn't depend on it), so log and continue.
+        if let Err(e) = file.lock_shared() {
+            log::warn!(
+                "failed to acquire shared lock on '{}': {} (continuing without lock)",
+                path.display(),
+                e
+            );
+        }
         let reader = csv::ReaderBuilder::new()
             .has_headers(csv.header)
             .from_reader(file);
