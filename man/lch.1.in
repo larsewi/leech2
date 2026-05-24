@@ -108,7 +108,7 @@ file. The patch is decoded, the field is inserted, and the patch is
 re-encoded in place. Repeat the command to inject multiple fields. If a
 field with the same
 .I NAME
-already exists — whether from static configuration or a prior injection —
+already exists -- whether from static configuration or a prior injection --
 both its value and type are replaced.
 .I TYPE
 defaults to
@@ -348,7 +348,7 @@ Trace messages are only emitted in debug builds.
 .TP
 .B PAGER
 Program used to paginate output when it exceeds the terminal height and stdout
-is a terminal. Defaults too
+is a terminal. Defaults to
 .B less
 on Unix and
 .B more
