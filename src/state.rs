@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::path::Path;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use prost::Message;
 
 use crate::callbacks::Callbacks;
@@ -137,17 +137,13 @@ fn load_from_callback(
         .iter()
         .map(|f| f.name.as_str())
         .collect();
-    let bound = callbacks
-        .for_table(name, &field_names)
-        .with_context(|| format!("table '{}'", name))?;
-    bound
-        .table_begin()
-        .with_context(|| format!("table '{}'", name))?;
+    let bound = callbacks.for_table(name, &field_names)?;
+    bound.table_begin()?;
 
     let load_result = Table::load_from_callbacks(name, table_config, &bound);
     let end_result = bound.table_end();
 
-    let table = load_result.with_context(|| format!("table '{}'", name))?;
-    end_result.with_context(|| format!("table '{}'", name))?;
+    let table = load_result?;
+    end_result?;
     Ok(table)
 }

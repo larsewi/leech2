@@ -77,10 +77,12 @@ impl Callbacks {
             .with_context(|| format!("table name '{}' contains a NUL byte", name))?;
         let mut field_cstrings = Vec::with_capacity(field_names.len());
         for field in field_names {
-            field_cstrings.push(
-                CString::new(*field)
-                    .with_context(|| format!("field name '{}' contains a NUL byte", field))?,
-            );
+            field_cstrings.push(CString::new(*field).with_context(|| {
+                format!(
+                    "field name '{}' in table '{}' contains a NUL byte",
+                    field, name
+                )
+            })?);
         }
         Ok(TableCallbacks {
             inner: self,
