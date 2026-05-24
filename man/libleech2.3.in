@@ -20,13 +20,15 @@ libleech2 \- C API for tracking CSV changes and producing SQL patches
 .br
 .BI "int lch_patch_inject(const lch_config_t *" cfg ", const lch_buffer_t *" in ", const char *" name ", const lch_cell_t *" cell ", lch_buffer_t *" out );
 .br
+.BI "int lch_patch_hash(const lch_buffer_t *" patch ", char **" out );
+.br
 .BI "int lch_patch_applied(const lch_config_t *" cfg ", const lch_buffer_t *" patch );
 .br
 .BI "int lch_patch_failed(const lch_config_t *" cfg );
 .PP
 .BI "void lch_buffer_free(lch_buffer_t *" buf );
 .br
-.BI "void lch_sql_free(char *" sql );
+.BI "void lch_string_free(char *" str );
 .SH DESCRIPTION
 .B libleech2
 is a C-compatible shared library for tracking CSV table changes using a git-like
@@ -206,7 +208,7 @@ If the patch contains no actionable changes,
 is set to NULL and the function returns
 .BR LCH_SUCCESS .
 Otherwise, the string must be freed with
-.BR lch_sql_free ().
+.BR lch_string_free ().
 .TP
 .BI "int lch_patch_inject(const lch_config_t *" cfg ", const lch_buffer_t *" in ", const char *" name ", const lch_cell_t *" cell ", lch_buffer_t *" out )
 Decode the patch in
@@ -244,6 +246,28 @@ The buffer written to
 must eventually be freed with
 .BR lch_buffer_free ().
 .TP
+.BI "int lch_patch_hash(const lch_buffer_t *" patch ", char **" out )
+Decode the patch in
+.I patch
+and return its head hash -- the hash of the most recent block consolidated
+into the patch -- as a newly allocated, null-terminated string written to
+.IR out .
+The hash is always exactly 40 hexadecimal characters (SHA-1).
+.IP
+Useful when multiple receivers consume patches from the same agent and each
+needs to track its own last-known position independently of the REPORTED
+file (which assumes a single receiver). After applying a patch, a receiver
+can record the extracted hash and pass it back as the
+.I hash
+argument to
+.BR lch_patch_create ()
+on the next request.
+.IP
+The string written to
+.I out
+must eventually be freed with
+.BR lch_string_free ().
+.TP
 .BI "int lch_patch_applied(const lch_config_t *" cfg ", const lch_buffer_t *" patch )
 Mark a patch as applied by updating the REPORTED file with the patch's head
 hash. Future truncation uses this to know which blocks are safe to remove.
@@ -261,9 +285,12 @@ buffer whose
 .B data
 field is NULL.
 .TP
-.BI "void lch_sql_free(char *" sql )
-Free an SQL string previously returned by
-.BR lch_patch_to_sql ().
+.BI "void lch_string_free(char *" str )
+Free a null-terminated string previously returned by the library (for
+example, by
+.BR lch_patch_to_sql ()
+or
+.BR lch_patch_hash ()).
 Passing NULL is a safe no-op.
 .SH TYPES
 .TP
@@ -363,7 +390,7 @@ returns a pointer on success or NULL on failure.
 .BR lch_deinit (),
 .BR lch_buffer_free (),
 and
-.BR lch_sql_free ()
+.BR lch_string_free ()
 do not return a value.
 .SH CONCURRENCY
 .B libleech2
@@ -433,7 +460,7 @@ int main(void) {
 
     if (sql) {
         printf("%s", sql);
-        lch_sql_free(sql);
+        lch_string_free(sql);
     }
 
     /* Mark as applied on success, or failed on error */

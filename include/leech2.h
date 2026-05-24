@@ -300,7 +300,7 @@ extern int lch_patch_create(const lch_config_t *cfg, const char *hash,
  * @param cfg       Valid config handle (must not be NULL).
  * @param patch     Encoded patch buffer (must not be NULL).
  * @param[out] sql  Receives a pointer to the SQL string, or NULL if the patch
- *                  is empty. Free with lch_sql_free().
+ *                  is empty. Free with lch_string_free().
  * @return LCH_SUCCESS on success, LCH_FAILURE on error.
  */
 extern int lch_patch_to_sql(const lch_config_t *cfg, const lch_buffer_t *patch,
@@ -336,6 +336,28 @@ extern int lch_patch_to_sql(const lch_config_t *cfg, const lch_buffer_t *patch,
 extern int lch_patch_inject(const lch_config_t *cfg, const lch_buffer_t *in,
                             const char *name, const lch_cell_t *cell,
                             lch_buffer_t *out);
+
+/**
+ * Extract the head hash from an encoded patch.
+ *
+ * Decodes @p patch and returns its head hash -- the hash of the most recent
+ * block consolidated into the patch -- as a newly allocated, null-terminated
+ * string. The hash is always exactly 40 hexadecimal characters (SHA-1).
+ *
+ * Useful when multiple receivers consume patches from the same agent and
+ * each needs to track its own last-known position independently of the
+ * REPORTED file (which assumes a single receiver). After applying a patch,
+ * a receiver can record the extracted hash and pass it back as the @c hash
+ * argument to lch_patch_create() on the next request.
+ *
+ * The string written to @p out must eventually be freed with
+ * lch_string_free().
+ *
+ * @param patch     Encoded patch buffer (must not be NULL).
+ * @param[out] out  Receives a pointer to the hash string (must not be NULL).
+ * @return LCH_SUCCESS on success, LCH_FAILURE on error.
+ */
+extern int lch_patch_hash(const lch_buffer_t *patch, char **out);
 
 /**
  * Mark a patch as applied.
@@ -374,13 +396,14 @@ extern int lch_patch_failed(const lch_config_t *cfg);
 extern void lch_buffer_free(lch_buffer_t *buf);
 
 /**
- * Free an SQL string returned by lch_patch_to_sql().
+ * Free a null-terminated string returned by the library.
  *
- * Passing NULL is a safe no-op.
+ * Used for any C string produced by leech2 (e.g. lch_patch_to_sql(),
+ * lch_patch_hash()). Passing NULL is a safe no-op.
  *
- * @param sql  SQL string to free, or NULL.
+ * @param str  String to free, or NULL.
  */
-extern void lch_sql_free(char *sql);
+extern void lch_string_free(char *str);
 
 #ifdef __cplusplus
 }
