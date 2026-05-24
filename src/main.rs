@@ -385,6 +385,9 @@ fn main() -> ExitCode {
 
     let cli = Cli::parse();
 
+    // `Config` is created and dropped inside `run`; its `Drop` joins any
+    // background truncation thread, so by the time we get here the work
+    // directory is in a fully cleaned-up state.
     if let Err(e) = run(cli) {
         eprintln!("error: {:#}", e);
         return ExitCode::FAILURE;

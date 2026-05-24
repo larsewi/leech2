@@ -86,6 +86,13 @@ impl Block {
     /// Build a new block from `config`. Callback-backed tables are pulled
     /// through `callbacks`. Pass `None` when every table in `config` is
     /// CSV-backed.
+    ///
+    /// The write window — store the new block file, then store STATE, then
+    /// advance HEAD — is held under an exclusive lock on `.chain.lock` so a
+    /// concurrent truncation cannot observe the new block file before HEAD
+    /// points at it (which would orphan-mark and delete it). After HEAD
+    /// advances, truncation is kicked off on a background thread; use
+    /// [`truncate::wait_for_pending`] to observe its completion.
     pub fn create(config: &Config, callbacks: Option<&Callbacks>) -> Result<String> {
         let work_dir = &config.work_dir;
         let current_state =
@@ -122,6 +129,10 @@ impl Block {
             .encode(&mut encoded)
             .context("failed to encode block")?;
         let hash = utils::compute_hash(&encoded);
+
+        let chain_lock = storage::acquire_lock(work_dir, "chain", true)
+            .context("failed to acquire chain lock")?;
+
         storage::store(work_dir, &hash, &encoded)
             .with_context(|| format!("failed to store block {:.7}", hash))?;
 
@@ -132,9 +143,9 @@ impl Block {
             .context("failed to store current state")?;
         head::store(work_dir, &hash).context("failed to update head of state")?;
 
-        if let Err(e) = truncate::run(config) {
-            log::warn!("Truncation failed (non-fatal): {}", e);
-        }
+        drop(chain_lock);
+
+        truncate::spawn_background(config);
 
         Ok(hash)
     }

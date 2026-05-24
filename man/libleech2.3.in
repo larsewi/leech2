@@ -115,7 +115,10 @@ for tables that omit the
 .B [csv]
 block entirely -- compute the new state and the delta against the previous
 state, and write a new block together with updated STATE and HEAD files.
-History truncation is performed afterwards.
+History truncation runs on a background thread after HEAD advances, so this
+call returns before truncation completes. Any pending background truncation
+is joined by
+.BR lch_deinit ().
 .IP
 .I callbacks
 may be NULL when every table in
