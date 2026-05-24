@@ -241,6 +241,41 @@ mod tests {
         assert!(msg.contains("table 't'"), "got: {msg}");
     }
 
+    fn empty_callbacks() -> Callbacks {
+        Callbacks::from_ffi(&LchCallbacks {
+            table_begin: None,
+            read_cell: None,
+            table_end: None,
+            usr_data: std::ptr::null_mut(),
+        })
+    }
+
+    fn expect_for_table_err(callbacks: &Callbacks, name: &str, fields: &[&str]) -> anyhow::Error {
+        match callbacks.for_table(name, fields) {
+            Ok(_) => panic!("expected for_table({name:?}, {fields:?}) to fail"),
+            Err(e) => e,
+        }
+    }
+
+    #[test]
+    fn test_nul_byte_in_table_name_rejected() {
+        let callbacks = empty_callbacks();
+        let err = expect_for_table_err(&callbacks, "t\0bad", &["id"]);
+        let msg = format!("{:#}", err);
+        assert!(msg.contains("table name"), "got: {msg}");
+        assert!(msg.contains("NUL byte"), "got: {msg}");
+    }
+
+    #[test]
+    fn test_nul_byte_in_field_name_rejected() {
+        let callbacks = empty_callbacks();
+        let err = expect_for_table_err(&callbacks, "t", &["id", "bad\0col"]);
+        let msg = format!("{:#}", err);
+        assert!(msg.contains("field name 'bad\0col'"), "got: {msg}");
+        assert!(msg.contains("table 't'"), "got: {msg}");
+        assert!(msg.contains("NUL byte"), "got: {msg}");
+    }
+
     #[test]
     fn test_read_cell_missing_is_an_error() {
         // A callback-backed table with no read_cell hook is a configuration
