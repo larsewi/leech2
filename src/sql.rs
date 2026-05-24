@@ -304,6 +304,14 @@ fn format_update(
         update.changed_indices.clone()
     };
 
+    if indices.len() != update.new_value.len() {
+        bail!(
+            "update new_value count mismatch: got {} values, expected {}",
+            update.new_value.len(),
+            indices.len()
+        );
+    }
+
     let mut set_parts = Vec::new();
     for (&index, proto_value) in indices.iter().zip(update.new_value.iter()) {
         let name = subsidiary_names.get(index as usize).ok_or_else(|| {
@@ -365,6 +373,14 @@ fn primary_key_where_clause(
     schema: &TableSchema,
     injected_fields: &[InjectedField],
 ) -> Result<String> {
+    if key.len() != schema.primary_key_names.len() {
+        bail!(
+            "primary key field count mismatch: got {} values, expected {}",
+            key.len(),
+            schema.primary_key_names.len()
+        );
+    }
+
     let mut where_parts = Vec::new();
     for (proto_value, name) in key.iter().zip(schema.primary_key_names) {
         let value = Cell::try_from(proto_value).with_context(|| format!("field '{}'", name))?;
@@ -595,15 +611,15 @@ mod tests {
 
     #[test]
     fn test_patch_to_sql_rejects_update_with_no_set_assignments() {
-        // A sparse update with empty `changed_indices` and empty `new_value`
-        // would render as `UPDATE "t" SET  WHERE ...;` with an empty SET
-        // clause. Reject it instead of emitting malformed SQL.
-        let table_config = dummy_table(&[("id", true), ("name", false)]);
+        // An update on a table with zero subsidiary columns has nothing to
+        // assign and would render as `UPDATE "t" SET  WHERE ...;` with an
+        // empty SET clause. Reject it instead of emitting malformed SQL.
+        let table_config = dummy_table(&[("id", true), ("host", true)]);
         let config = dummy_config(HashMap::from([("test_table".to_string(), table_config)]));
 
-        let mut delta = dummy_delta(&["id"], &["name"]);
+        let mut delta = dummy_delta(&["id", "host"], &[]);
         delta.updates.push(ProtoUpdate {
-            key: text_proto_cells(&["1"]),
+            key: text_proto_cells(&["1", "h"]),
             changed_indices: vec![],
             old_value: vec![],
             new_value: vec![],
@@ -746,5 +762,66 @@ mod tests {
         let err = patch_to_sql(&config, &patch).unwrap_err();
         let msg = format!("{:#}", err);
         assert!(msg.contains("does not match declared type"), "got: {msg}");
+    }
+
+    #[test]
+    fn test_patch_to_sql_rejects_update_with_mismatched_value_count() {
+        let table = dummy_table(&[("id", true), ("a", false), ("b", false)]);
+        let config = dummy_config(HashMap::from([("t".to_string(), table)]));
+
+        let mut delta = dummy_delta(&["id"], &["a", "b"]);
+        delta.updates.push(ProtoUpdate {
+            key: text_proto_cells(&["1"]),
+            changed_indices: vec![0, 1],
+            old_value: text_proto_cells(&["x", "y"]),
+            new_value: text_proto_cells(&["only-one"]),
+        });
+        let patch = dummy_patch(HashMap::from([("t".to_string(), delta)]));
+
+        let err = patch_to_sql(&config, &patch).unwrap_err();
+        let msg = format!("{:#}", err);
+        assert!(msg.contains("new_value count mismatch"), "got: {msg}");
+    }
+
+    #[test]
+    fn test_patch_to_sql_rejects_delete_with_short_primary_key() {
+        let table = dummy_table(&[("id", true), ("host", true), ("name", false)]);
+        let config = dummy_config(HashMap::from([("t".to_string(), table)]));
+
+        let mut delta = dummy_delta(&["id", "host"], &["name"]);
+        delta.deletes.push(ProtoRecord {
+            key: text_proto_cells(&["1"]),
+            value: vec![],
+        });
+        let patch = dummy_patch(HashMap::from([("t".to_string(), delta)]));
+
+        let err = patch_to_sql(&config, &patch).unwrap_err();
+        let msg = format!("{:#}", err);
+        assert!(
+            msg.contains("primary key field count mismatch"),
+            "got: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_patch_to_sql_rejects_update_with_empty_primary_key() {
+        let table = dummy_table(&[("id", true), ("name", false)]);
+        let config = dummy_config(HashMap::from([("t".to_string(), table)]));
+
+        let mut delta = dummy_delta(&["id"], &["name"]);
+        delta.updates.push(ProtoUpdate {
+            key: vec![],
+            changed_indices: vec![0],
+            old_value: text_proto_cells(&["before"]),
+            new_value: text_proto_cells(&["after"]),
+        });
+        let patch = dummy_patch(HashMap::from([("t".to_string(), delta)]));
+
+        let err = patch_to_sql(&config, &patch).unwrap_err();
+        let msg = format!("{:#}", err);
+        assert!(
+            msg.contains("primary key field count mismatch"),
+            "got: {msg}"
+        );
     }
 }
