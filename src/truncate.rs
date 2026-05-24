@@ -1,15 +1,23 @@
 use std::collections::HashSet;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+use std::thread::JoinHandle;
 use std::time::SystemTime;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 use crate::block::Block;
-use crate::config::Config;
+use crate::config::TruncateConfig;
 use crate::head;
 use crate::reported;
 use crate::storage;
 use crate::utils::GENESIS_HASH;
+
+/// Lock-file name used to serialize chain-mutating operations (block creation
+/// advancing HEAD, and truncation walking the chain and removing orphans).
+/// Held exclusively by `Block::create` and by `truncate::run`; held for no
+/// other reason.
+const CHAIN_LOCK_NAME: &str = "chain";
 
 struct ChainEntry {
     hash: String,
@@ -104,11 +112,14 @@ fn walk_chain(work_dir: &Path, head_hash: &str) -> (Vec<ChainEntry>, HashSet<Str
 /// (whose corresponding block no longer exists on disk). This also cleans up
 /// corrupt blocks, since `walk_chain` stops before adding them to the
 /// reachable set.
-fn remove_orphans(config: &Config, reachable: &HashSet<String>) -> Result<()> {
-    let work_dir = &config.work_dir;
+fn remove_orphans(
+    work_dir: &Path,
+    config: &TruncateConfig,
+    reachable: &HashSet<String>,
+) -> Result<()> {
     let (on_disk, stale_locks) = scan_work_dir(work_dir)?;
 
-    if config.truncate.remove_orphans {
+    if config.remove_orphans {
         for hash in &on_disk {
             if !reachable.contains(hash) {
                 log::info!("Removing orphaned block '{:.7}...'", hash);
@@ -133,10 +144,8 @@ fn remove_orphans(config: &Config, reachable: &HashSet<String>) -> Result<()> {
 
 /// Truncate blocks from the chain according to the configured rules
 /// (max_blocks, max_age, truncate_reported). Never deletes HEAD.
-fn truncate_chain(config: &Config, chain: &[ChainEntry]) -> Result<()> {
-    let work_dir = &config.work_dir;
-
-    let reported_pos = if config.truncate.truncate_reported {
+fn truncate_chain(work_dir: &Path, config: &TruncateConfig, chain: &[ChainEntry]) -> Result<()> {
+    let reported_pos = if config.truncate_reported {
         match reported::load(work_dir)? {
             Some(hash) => chain
                 .iter()
@@ -147,11 +156,8 @@ fn truncate_chain(config: &Config, chain: &[ChainEntry]) -> Result<()> {
         None
     };
 
-    let max_blocks = config.truncate.max_blocks.map(|n| n as usize);
-    let max_age_cutoff = config
-        .truncate
-        .max_age
-        .map(|max_age| SystemTime::now() - max_age);
+    let max_blocks = config.max_blocks.map(|n| n as usize);
+    let max_age_cutoff = config.max_age.map(|max_age| SystemTime::now() - max_age);
 
     let mut removed = 0;
     for (i, entry) in chain.iter().enumerate() {
@@ -178,15 +184,50 @@ fn truncate_chain(config: &Config, chain: &[ChainEntry]) -> Result<()> {
     Ok(())
 }
 
-pub fn run(config: &Config) -> Result<()> {
-    let work_dir = &config.work_dir;
-    let head_hash = head::load(work_dir)?;
+/// Run a single truncation pass under the chain lock. Blocks until the
+/// chain lock is available; serializes against `Block::create` and any
+/// other in-progress truncation in the same work directory.
+pub fn run(work_dir: &Path, config: &TruncateConfig) -> Result<()> {
+    let _chain_lock = storage::acquire_lock(work_dir, CHAIN_LOCK_NAME, true)
+        .context("failed to acquire chain lock for truncation")?;
 
+    let head_hash = head::load(work_dir)?;
     let (chain, reachable) = walk_chain(work_dir, &head_hash);
-    remove_orphans(config, &reachable)?;
-    truncate_chain(config, &chain)?;
+    remove_orphans(work_dir, config, &reachable)?;
+    truncate_chain(work_dir, config, &chain)?;
 
     Ok(())
+}
+
+/// Tracks the JoinHandles of background truncation threads spawned by
+/// `spawn_background`. `wait_for_pending` drains and joins all of them.
+/// Used by `lch_deinit`, the CLI's run loop, and tests that need to observe
+/// truncation results after `Block::create` returns.
+static PENDING: Mutex<Vec<JoinHandle<()>>> = Mutex::new(Vec::new());
+
+/// Spawn `run` on a background thread with an owned snapshot. The
+/// JoinHandle is recorded in [`PENDING`] so `wait_for_pending` can drain it.
+pub fn spawn_background(work_dir: PathBuf, config: TruncateConfig) {
+    let handle = std::thread::spawn(move || {
+        if let Err(e) = run(&work_dir, &config) {
+            log::warn!("Background truncation failed (non-fatal): {:#}", e);
+        }
+    });
+    let mut pending = PENDING.lock().unwrap_or_else(|e| e.into_inner());
+    pending.retain(|h| !h.is_finished());
+    pending.push(handle);
+}
+
+/// Join every background truncation thread spawned via `spawn_background`
+/// that has not yet been reaped. Returns when all of them have exited.
+pub fn wait_for_pending() {
+    let handles: Vec<JoinHandle<()>> = {
+        let mut pending = PENDING.lock().unwrap_or_else(|e| e.into_inner());
+        std::mem::take(&mut *pending)
+    };
+    for handle in handles {
+        let _ = handle.join();
+    }
 }
 
 #[cfg(test)]

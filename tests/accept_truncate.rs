@@ -5,7 +5,17 @@ use leech2::config::Config;
 use leech2::head;
 use leech2::patch::Patch;
 use leech2::reported;
+use leech2::truncate;
 use leech2::utils::GENESIS_HASH;
+
+/// Block::create kicks truncation off on a background thread. These tests
+/// assert directly on the post-truncation file layout, so each call has to
+/// wait for the background pass to finish before the next assertion runs.
+fn create_block(config: &Config) -> String {
+    let hash = Block::create(config, None).unwrap();
+    truncate::wait_for_pending();
+    hash
+}
 
 #[test]
 fn test_truncate_max_blocks() {
@@ -33,10 +43,10 @@ source = "users.csv"
 
     common::write_csv(work_dir, "users.csv", "1,Alice\n");
     let config = Config::load(work_dir).unwrap();
-    let hash1 = Block::create(&config, None).unwrap();
+    let hash1 = create_block(&config);
 
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
-    let hash2 = Block::create(&config, None).unwrap();
+    let hash2 = create_block(&config);
 
     // After 2 blocks, both should still exist (within limit)
     assert!(work_dir.join(&hash1).exists(), "within limit, should exist");
@@ -44,7 +54,7 @@ source = "users.csv"
 
     // Block 3 pushes hash1 past the limit
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n3,Charlie\n");
-    let hash3 = Block::create(&config, None).unwrap();
+    let hash3 = create_block(&config);
 
     // hash1 should be removed (oldest, beyond max-blocks=2)
     assert!(
@@ -61,7 +71,7 @@ source = "users.csv"
     // --- Under limit: create with max-blocks=2, only 2 blocks exist → both preserved ---
     // (We already have hash2 and hash3 remaining, which is exactly max-blocks=2)
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n3,Charlie\n4,Dave\n");
-    let hash4 = Block::create(&config, None).unwrap();
+    let hash4 = create_block(&config);
 
     // hash2 should now be truncated (3 blocks, limit is 2)
     assert!(!work_dir.join(&hash2).exists());
@@ -97,14 +107,14 @@ source = "users.csv"
 
     common::write_csv(work_dir, "users.csv", "1,Alice\n");
     let config = Config::load(work_dir).unwrap();
-    let hash1 = Block::create(&config, None).unwrap();
+    let hash1 = create_block(&config);
 
     // Wait for the first block to become older than 1s
     std::thread::sleep(std::time::Duration::from_secs(2));
 
     // Create second block — truncation should remove hash1 (older than 1s)
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
-    let hash2 = Block::create(&config, None).unwrap();
+    let hash2 = create_block(&config);
 
     assert!(
         !work_dir.join(&hash1).exists(),
@@ -114,7 +124,7 @@ source = "users.csv"
 
     // Create two more blocks quickly — both should be preserved (within 1s window)
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n3,Charlie\n");
-    let hash3 = Block::create(&config, None).unwrap();
+    let hash3 = create_block(&config);
 
     assert!(
         work_dir.join(&hash2).exists(),
@@ -146,7 +156,7 @@ source = "users.csv"
 
     common::write_csv(work_dir, "users.csv", "1,Alice\n");
     let config = Config::load(work_dir).unwrap();
-    let hash1 = Block::create(&config, None).unwrap();
+    let hash1 = create_block(&config);
 
     // Add a fake orphaned 40-hex file and a stale lock file
     let orphan_hash = "aa00000000000000000000000000000000000000";
@@ -158,7 +168,7 @@ source = "users.csv"
 
     // Create another block — truncation runs and should remove the orphan
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
-    let hash2 = Block::create(&config, None).unwrap();
+    let hash2 = create_block(&config);
 
     // Orphan and its stale lock file should be gone
     assert!(
@@ -180,7 +190,7 @@ source = "users.csv"
 
     // Create a new block — truncation should remove the now-orphaned blocks
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n3,Charlie\n");
-    let hash3 = Block::create(&config, None).unwrap();
+    let hash3 = create_block(&config);
 
     // Old blocks should be removed (orphaned)
     assert!(
@@ -219,13 +229,13 @@ source = "users.csv"
 
     common::write_csv(work_dir, "users.csv", "1,Alice\n");
     let config = Config::load(work_dir).unwrap();
-    let hash1 = Block::create(&config, None).unwrap();
+    let hash1 = create_block(&config);
 
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
-    let hash2 = Block::create(&config, None).unwrap();
+    let hash2 = create_block(&config);
 
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n3,Charlie\n");
-    let hash3 = Block::create(&config, None).unwrap();
+    let hash3 = create_block(&config);
 
     // No REPORTED file yet — all blocks should be preserved
     assert!(work_dir.join(&hash1).exists());
@@ -236,7 +246,7 @@ source = "users.csv"
     reported::save(work_dir, &hash2).unwrap();
 
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n3,Charlie\n4,Dave\n");
-    let hash4 = Block::create(&config, None).unwrap();
+    let hash4 = create_block(&config);
 
     // B1 should be removed (older than REPORTED=B2)
     assert!(
@@ -276,7 +286,7 @@ source = "users.csv"
 
     common::write_csv(work_dir, "users.csv", "1,Alice\n");
     let config = Config::load(work_dir).unwrap();
-    let _hash1 = Block::create(&config, None).unwrap();
+    let _hash1 = create_block(&config);
 
     // Add a fake orphaned block file
     let orphan_hash = "aa00000000000000000000000000000000000000";
@@ -284,7 +294,7 @@ source = "users.csv"
 
     // Create another block — orphan should survive because remove-orphans is false
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
-    let _hash2 = Block::create(&config, None).unwrap();
+    let _hash2 = create_block(&config);
 
     assert!(
         work_dir.join(orphan_hash).exists(),
@@ -318,20 +328,20 @@ source = "users.csv"
 
     common::write_csv(work_dir, "users.csv", "1,Alice\n");
     let config = Config::load(work_dir).unwrap();
-    let hash1 = Block::create(&config, None).unwrap();
+    let hash1 = create_block(&config);
 
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
-    let hash2 = Block::create(&config, None).unwrap();
+    let hash2 = create_block(&config);
 
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n3,Charlie\n");
-    let hash3 = Block::create(&config, None).unwrap();
+    let hash3 = create_block(&config);
 
     // Mark B2 as reported
     reported::save(work_dir, &hash2).unwrap();
 
     // Create another block — B1 should survive because truncate-reported is false
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n3,Charlie\n4,Dave\n");
-    let hash4 = Block::create(&config, None).unwrap();
+    let hash4 = create_block(&config);
 
     assert!(
         work_dir.join(&hash1).exists(),

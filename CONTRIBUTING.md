@@ -202,6 +202,16 @@ timestamps, then removes orphaned
 blocks (not reachable from `HEAD`), blocks older than the `REPORTED` position,
 and blocks exceeding configured `max-blocks` or `max-age` limits.
 
+Truncation runs on a background thread spawned after `Block::create()` advances
+`HEAD`, so the call returns without waiting for it. Concurrent block creation
+and truncation in the same work directory serialize on an exclusive lock on
+`.chain.lock`, held by `Block::create()` across the block-file write, `STATE`
+write, and `HEAD` advance, and held by `truncate::run()` for the whole pass.
+Without this lock a concurrent truncator could observe the new block file
+before `HEAD` points at it and remove it as an orphan. `lch_deinit()`, the
+`lch` CLI, and tests that assert on truncation state call
+`truncate::wait_for_pending()` to join any in-flight background pass.
+
 ### Recovery from missing files
 
 Work directory files can go missing due to truncation, manual deletion, or disk

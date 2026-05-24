@@ -94,6 +94,7 @@ pub unsafe extern "C" fn lch_init(work_dir: *const c_char) -> *mut config::Confi
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn lch_deinit(config: *mut config::Config) {
     ffi_guard("lch_deinit", (), || {
+        truncate::wait_for_pending();
         if !config.is_null() {
             unsafe {
                 drop(Box::from_raw(config));

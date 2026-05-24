@@ -6,9 +6,12 @@ use anyhow::{Context, Result, bail};
 
 use crate::utils::GENESIS_HASH;
 
-/// Acquires a lock on a separate `.<name>.lock` file for inter-process synchronization.
-/// Returns the lock file handle; the lock is released when the handle is dropped.
-fn acquire_lock(dir: &Path, name: &str, exclusive: bool) -> Result<File> {
+/// Acquires a lock on a separate `.<name>.lock` file for inter-process
+/// synchronization. Returns the lock file handle; the lock is released when
+/// the handle is dropped. Use `exclusive = true` to serialize multi-step
+/// operations that span several individual file accesses (e.g. chain
+/// mutation, which writes a block file and then advances HEAD).
+pub fn acquire_lock(dir: &Path, name: &str, exclusive: bool) -> Result<File> {
     let lock_path = dir.join(format!(".{}.lock", name));
     let lock_file = File::create(&lock_path)
         .with_context(|| format!("failed to open lock file '{}'", lock_path.display()))?;

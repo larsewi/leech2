@@ -61,7 +61,7 @@ enum ConfigFormat {
 }
 
 /// Controls block cleanup / truncation of the block chain.
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(default)]
 pub struct TruncateConfig {
     /// Keep at most this many blocks; older ones are removed. `None` disables the limit.
