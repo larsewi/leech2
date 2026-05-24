@@ -88,8 +88,9 @@ impl Block {
     /// CSV-backed.
     ///
     /// If `config` has filters configured and any table is callback-backed,
-    /// a one-time warning is emitted naming the affected tables: filters are
-    /// CSV-only, and the callback owns row inclusion via `LCH_SKIP_RECORD`.
+    /// a warning naming the affected tables is emitted on every call:
+    /// filters are CSV-only, and the callback owns row inclusion via
+    /// `LCH_SKIP_RECORD`.
     pub fn create(config: &Config, callbacks: Option<&Callbacks>) -> Result<String> {
         if callbacks.is_some() && !config.filters.is_default() {
             let callback_tables: Vec<&str> = config
