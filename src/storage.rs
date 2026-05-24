@@ -42,6 +42,17 @@ pub fn acquire_lock(dir: &Path, name: &str, exclusive: bool) -> Result<File> {
     Ok(lock_file)
 }
 
+/// Best-effort cleanup of an in-progress temp file. Removes the path on
+/// `Drop`, swallowing any error (including the expected `NotFound` after a
+/// successful rename has consumed the file).
+struct TmpCleanup<'a>(&'a Path);
+
+impl Drop for TmpCleanup<'_> {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(self.0);
+    }
+}
+
 /// Saves data to a file in the work directory using a separate lock file and atomic rename.
 pub fn store(work_dir: &Path, name: &str, data: &[u8]) -> Result<()> {
     fs::create_dir_all(work_dir)
@@ -55,6 +66,11 @@ pub fn store(work_dir: &Path, name: &str, data: &[u8]) -> Result<()> {
 
     let mut file = File::create(&tmp_path)
         .with_context(|| format!("failed to create temp file '{}'", tmp_path.display()))?;
+    // Remove the temp file on any early return below so that a persistent
+    // write failure on a unique name (e.g. a block hash that's never retried)
+    // doesn't leave an orphan `.tmp` behind. On the success path the rename
+    // has already moved it; the Drop call is a no-op then.
+    let _tmp_cleanup = TmpCleanup(&tmp_path);
     file.write_all(data)
         .with_context(|| format!("failed to write to '{}'", tmp_path.display()))?;
     file.sync_all()
