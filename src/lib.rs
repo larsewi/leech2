@@ -55,6 +55,15 @@ pub unsafe extern "C" fn lch_log_init(
     })
 }
 
+/// Return a pointer to a static, null-terminated string containing the
+/// library version (e.g. "4.1.3"). The pointer is valid for the lifetime
+/// of the process and must not be freed.
+#[unsafe(no_mangle)]
+pub extern "C" fn lch_version() -> *const c_char {
+    static VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "\0");
+    VERSION.as_ptr() as *const c_char
+}
+
 /// # Safety
 /// `work_dir` must be a valid, non-null, null-terminated C string.
 /// Returns a config handle on success, or NULL on failure.

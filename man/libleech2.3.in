@@ -6,6 +6,8 @@ libleech2 \- C API for tracking CSV changes and producing SQL patches
 .PP
 .BI "int lch_log_init(lch_log_callback_t " callback ", void *" usr_data );
 .PP
+.BI "const char *lch_version(void);"
+.PP
 .BI "lch_config_t *lch_init(const char *" work_dir );
 .br
 .BI "void lch_deinit(lch_config_t *" cfg );
@@ -74,6 +76,16 @@ call or the process exits. Returns
 on success and
 .B LCH_FAILURE
 on error.
+.SS Version
+.TP
+.BI "const char *lch_version(void)"
+Return a pointer to a static, null-terminated string containing the library
+version. For this build the returned string is
+.BR @VERSION@ .
+Useful for verifying at runtime that the program is linked against the expected
+.BR libleech2 .
+The returned pointer is valid for the lifetime of the process and must not be
+freed or modified.
 .SS Lifecycle
 .TP
 .BI "lch_config_t *lch_init(const char *" work_dir )

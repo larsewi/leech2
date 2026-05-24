@@ -111,6 +111,13 @@ int main(int argc, char *argv[]) {
   log_state_t log_state = {0};
   lch_log_init(log_callback, &log_state);
 
+  const char *version = lch_version();
+  if (version == NULL || version[0] == '\0') {
+    fprintf(stderr, "lch_version returned an empty string\n");
+    return EXIT_FAILURE;
+  }
+  printf("leech2 version: %s\n", version);
+
   lch_config_t *cfg = lch_init(work_dir);
   if (cfg == NULL) {
     fprintf(stderr, "lch_init failed\n");

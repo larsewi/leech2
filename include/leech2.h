@@ -111,6 +111,18 @@ typedef void (*lch_log_callback_t)(lch_log_level_t level, const char *msg,
 extern int lch_log_init(lch_log_callback_t callback, void *usr_data);
 
 /**
+ * Return the leech2 library version.
+ *
+ * Useful for verifying at runtime that the program is linked against the
+ * expected libleech2.
+ *
+ * @return Pointer to a null-terminated, statically-allocated version string
+ *         (e.g. "4.1.3"). The pointer is valid for the lifetime of the
+ *         process and must not be freed or modified.
+ */
+extern const char *lch_version(void);
+
+/**
  * Opaque configuration handle.
  *
  * Created by lch_init() and freed by lch_deinit(). All other API functions
