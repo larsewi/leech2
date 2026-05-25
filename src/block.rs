@@ -3,7 +3,7 @@ use std::fmt;
 use std::path::Path;
 use std::time::SystemTime;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use prost::Message;
 
 use crate::callbacks::Callbacks;
@@ -51,21 +51,15 @@ impl fmt::Display for Block {
     }
 }
 
-/// Read the block file at `hash` and decode it as `T`. `kind` names what is
-/// being decoded (e.g. `"block"`, `"block header"`) and appears in log and
-/// error messages.
-fn load_decode<T: Message + Default>(work_dir: &Path, hash: &str, kind: &str) -> Result<T> {
-    let data = storage::load(work_dir, hash)?
-        .with_context(|| format!("failed to load block '{:.7}...'", hash))?;
-    let value = T::decode(data.as_slice())
-        .with_context(|| format!("failed to decode {} '{:.7}...'", kind, hash))?;
-    log::debug!("Loaded {} '{:.7}...'", kind, hash);
-    Ok(value)
-}
-
 impl Block {
     pub fn load(work_dir: &Path, hash: &str) -> Result<Block> {
-        load_decode(work_dir, hash, "block")
+        let Some(data) = storage::load(work_dir, hash)? else {
+            bail!("failed to load block '{:.7}...'", hash);
+        };
+        let block = Block::decode(data.as_slice())
+            .with_context(|| format!("failed to decode block '{:.7}...'", hash))?;
+        log::debug!("Loaded block '{:.7}...'", hash);
+        Ok(block)
     }
 
     /// Load the block header (parent hash + created timestamp) without
@@ -74,7 +68,13 @@ impl Block {
     /// the unknown payload field so only the parent hash and timestamp are
     /// deserialized.
     pub fn load_header(work_dir: &Path, hash: &str) -> Result<BlockHeader> {
-        load_decode(work_dir, hash, "block header")
+        let Some(data) = storage::load(work_dir, hash)? else {
+            bail!("failed to load block '{:.7}...'", hash);
+        };
+        let header = BlockHeader::decode(data.as_slice())
+            .with_context(|| format!("failed to decode block header '{:.7}...'", hash))?;
+        log::debug!("Loaded block header '{:.7}...'", hash);
+        Ok(header)
     }
 
     /// Build a new block from `config`. Callback-backed tables are pulled
