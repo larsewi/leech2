@@ -135,7 +135,7 @@ fn walk_back(work_dir: &std::path::Path, num_blocks: u32) -> Result<String> {
                 i
             );
         }
-        hash = Block::load_parent_hash(work_dir, &hash)?;
+        hash = Block::load_header(work_dir, &hash)?.parent;
     }
     Ok(hash)
 }

@@ -77,12 +77,6 @@ impl Block {
         load_decode(work_dir, hash, "block header")
     }
 
-    /// Load only the parent hash from a block by decoding just the header,
-    /// avoiding the heavier full-payload parse.
-    pub fn load_parent_hash(work_dir: &Path, hash: &str) -> Result<String> {
-        Ok(Self::load_header(work_dir, hash)?.parent)
-    }
-
     /// Build a new block from `config`. Callback-backed tables are pulled
     /// through `callbacks`. Pass `None` when every table in `config` is
     /// CSV-backed.

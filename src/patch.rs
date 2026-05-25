@@ -100,7 +100,7 @@ fn collect_block_hashes(
 
     while parent != GENESIS_HASH && parent != last_known {
         hashes.push(parent.clone());
-        parent = Block::load_parent_hash(work_dir, &parent)?;
+        parent = Block::load_header(work_dir, &parent)?.parent;
     }
 
     if parent != last_known {
