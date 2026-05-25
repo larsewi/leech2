@@ -895,7 +895,7 @@ mod tests {
     // through an `FfiCell`. The script owns the CStrings backing TEXT cells so
     // their pointers stay valid for the duration of the call.
 
-    use crate::callbacks::{Callbacks, FfiCallbacks};
+    use crate::callbacks::Callbacks;
     use crate::ffi::{
         END_OF_TABLE, FfiCell, FfiCellPayload, SKIP_RECORD, SUCCESS as FFI_SUCCESS, VALUE_NULL,
     };
@@ -980,12 +980,12 @@ mod tests {
     }
 
     fn make_callbacks() -> Callbacks {
-        Callbacks::from(&FfiCallbacks {
+        Callbacks {
             table_begin: None,
             read_cell: Some(test_read_cell),
             table_end: None,
             usr_data: std::ptr::null_mut(),
-        })
+        }
     }
 
     fn load_table(name: &str, config: &TableConfig) -> Result<Table> {

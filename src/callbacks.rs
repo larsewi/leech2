@@ -1,7 +1,7 @@
 //! Safe-Rust adapter for the FFI callback bundle that drives the
-//! callback-based path of `lch_block_create`. The repr-C mirror
-//! ([`FfiCallbacks`]) is decoded once at the FFI boundary into a [`Callbacks`]
-//! value, then bound to one table at a time via [`Callbacks::for_table`].
+//! callback-based path of `lch_block_create`. [`Callbacks`] is the repr-C
+//! mirror of `lch_callbacks_t` from `leech2.h`; it is bound to one table at
+//! a time via [`Callbacks::for_table`].
 //!
 //! Not `Send`/`Sync`: callbacks are invoked exclusively on the thread that
 //! called `lch_block_create`, and the raw `usr_data` pointer is the C
@@ -31,7 +31,7 @@ type ReadCellFn = unsafe extern "C" fn(
 /// use `Option<unsafe extern "C" fn ...>` so a NULL function pointer on the C
 /// side deserializes to `None`.
 #[repr(C)]
-pub struct FfiCallbacks {
+pub struct Callbacks {
     pub table_begin: Option<TableBeginFn>,
     pub read_cell: Option<ReadCellFn>,
     pub table_end: Option<TableEndFn>,
@@ -47,27 +47,6 @@ pub enum CellResult {
     EndOfTable,
     /// `LCH_SKIP_RECORD`: drop the current row.
     SkipRecord,
-}
-
-/// Rust-side view of the callback bundle. Owned by `lch_block_create` for
-/// the duration of one call and forwarded down to the block-creation
-/// pipeline.
-pub struct Callbacks {
-    table_begin: Option<TableBeginFn>,
-    read_cell: Option<ReadCellFn>,
-    table_end: Option<TableEndFn>,
-    usr_data: *mut c_void,
-}
-
-impl From<&FfiCallbacks> for Callbacks {
-    fn from(raw: &FfiCallbacks) -> Self {
-        Callbacks {
-            table_begin: raw.table_begin,
-            read_cell: raw.read_cell,
-            table_end: raw.table_end,
-            usr_data: raw.usr_data,
-        }
-    }
 }
 
 impl Callbacks {
@@ -200,21 +179,21 @@ mod tests {
     }
 
     fn callbacks_with_failing_begin() -> Callbacks {
-        Callbacks::from(&FfiCallbacks {
+        Callbacks {
             table_begin: Some(fail_table_begin),
             read_cell: None,
             table_end: None,
             usr_data: std::ptr::null_mut(),
-        })
+        }
     }
 
     fn callbacks_with_failing_end() -> Callbacks {
-        Callbacks::from(&FfiCallbacks {
+        Callbacks {
             table_begin: None,
             read_cell: None,
             table_end: Some(fail_table_end),
             usr_data: std::ptr::null_mut(),
-        })
+        }
     }
 
     #[test]
@@ -244,12 +223,12 @@ mod tests {
     }
 
     fn empty_callbacks() -> Callbacks {
-        Callbacks::from(&FfiCallbacks {
+        Callbacks {
             table_begin: None,
             read_cell: None,
             table_end: None,
             usr_data: std::ptr::null_mut(),
-        })
+        }
     }
 
     fn expect_for_table_err(callbacks: &Callbacks, name: &str, fields: &[&str]) -> anyhow::Error {
@@ -282,12 +261,12 @@ mod tests {
     fn test_read_cell_missing_is_an_error() {
         // A callback-backed table with no read_cell hook is a configuration
         // error: the cell-pull contract is unsatisfiable.
-        let callbacks = Callbacks::from(&FfiCallbacks {
+        let callbacks = Callbacks {
             table_begin: None,
             read_cell: None,
             table_end: None,
             usr_data: std::ptr::null_mut(),
-        });
+        };
         let bound = callbacks.for_table("t", &["id"]).unwrap();
         let err = match bound.read_cell(0, 0) {
             Ok(_) => panic!("expected read_cell to fail without a read_cell hook"),

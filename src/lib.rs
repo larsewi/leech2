@@ -113,18 +113,17 @@ pub unsafe extern "C" fn lch_deinit(config: *mut config::Config) {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn lch_block_create(
     config: *const config::Config,
-    callbacks: *const callbacks::FfiCallbacks,
+    callbacks: *const callbacks::Callbacks,
 ) -> i32 {
     ffi_guard("lch_block_create", FAILURE, || {
         if null_arg("lch_block_create", "config", config) {
             return FAILURE;
         }
 
-        let rust_callbacks =
-            (!callbacks.is_null()).then(|| callbacks::Callbacks::from(unsafe { &*callbacks }));
+        let rust_callbacks = (!callbacks.is_null()).then(|| unsafe { &*callbacks });
 
         let config = unsafe { &*config };
-        match block::Block::create(config, rust_callbacks.as_ref()) {
+        match block::Block::create(config, rust_callbacks) {
             Ok(_) => SUCCESS,
             Err(e) => {
                 log::error!("lch_block_create(): {:#}", e);
