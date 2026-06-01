@@ -52,6 +52,7 @@ label wins: `breaking` > `feature` > anything else.
      - Windows aarch64
    - Package `.deb`, `.rpm` and `.msi` files for Linux and Windows targets
    - Create `.tar.gz` or `.zip` archives for all targets
+   - Create a source tarball (`cargo package`) for building from source
    - Run virus scan on all build artifacts
    - Create a GitHub Release with all artifacts attached
 
@@ -68,6 +69,7 @@ label wins: `breaking` > `feature` > anything else.
    - `leech2-X.Y.Z-windows-aarch64.zip`
    - `leech2-X.Y.Z-windows-x86_64.zip`
    - `leech2-X.Y.Z-x86_64.msi`
+   - `leech2-X.Y.Z.tar.gz` (source)
    - `leech2_X.Y.Z-1_amd64.deb`
    - `leech2_X.Y.Z-1_arm64.deb`
 

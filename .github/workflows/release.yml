@@ -28,6 +28,27 @@ jobs:
             exit 1
           fi
 
+  source:
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install protobuf compiler
+        uses: ./.github/actions/setup-protoc
+
+      - name: Create source tarball
+        run: |
+          cargo package
+          cp "target/package/leech2-${{ needs.validate.outputs.version }}.crate" \
+             "leech2-${{ needs.validate.outputs.version }}.tar.gz"
+
+      - name: Upload source tarball
+        uses: actions/upload-artifact@v7
+        with:
+          name: source-tarball
+          path: leech2-*.tar.gz
+
   build:
     needs: validate
     strategy:
@@ -154,7 +175,7 @@ jobs:
           path: target/wix/*.msi
 
   release:
-    needs: [validate, build]
+    needs: [validate, source, build]
     runs-on: ubuntu-latest
     permissions:
       contents: write
