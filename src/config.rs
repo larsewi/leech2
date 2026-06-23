@@ -56,6 +56,28 @@ where
         .transpose()
 }
 
+/// Default Unix permission bits for files created in the work directory.
+/// Secure-by-default: only the owner can read or write.
+fn default_file_mode() -> u32 {
+    0o600
+}
+
+// Custom deserializer for `file-mode`: reads the field as a string and parses
+// it as octal. JSON has no octal integer literal, so accepting a string lets
+// both TOML and JSON express the mode the way Unix users write it (e.g.
+// `"0600"`). An optional `0o` prefix is allowed. The parsed value is range
+// checked in `Config::validate`.
+fn deserialize_file_mode<'de, D>(deserializer: D) -> Result<u32, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let raw = String::deserialize(deserializer)?;
+    let trimmed = raw.trim();
+    let digits = trimmed.strip_prefix("0o").unwrap_or(trimmed);
+    u32::from_str_radix(digits, 8)
+        .map_err(|e| serde::de::Error::custom(format!("invalid octal file-mode '{}': {}", raw, e)))
+}
+
 // Config file formats we accept.
 enum ConfigFormat {
     Toml,
@@ -325,6 +347,14 @@ pub struct Config {
     /// Block chain truncation policy.
     #[serde(default)]
     pub truncate: TruncateConfig,
+    /// Unix permission bits for files created in the work directory, written
+    /// as an octal string (e.g. `"0600"`). Ignored on non-Unix platforms.
+    #[serde(
+        default = "default_file_mode",
+        rename = "file-mode",
+        deserialize_with = "deserialize_file_mode"
+    )]
+    pub file_mode: u32,
     /// Handle of the background truncation thread most recently spawned for
     /// this config (if any). `truncate::spawn_background` only spawns a new
     /// thread when this slot is empty or holds a finished handle, so at most
@@ -462,6 +492,13 @@ impl Validate for Config {
                     );
                 }
             }
+        }
+
+        if self.file_mode > 0o777 {
+            bail!(
+                "file-mode {:o} is out of range (must be <= 0o777)",
+                self.file_mode
+            );
         }
 
         self.truncate.validate()?;
@@ -955,6 +992,77 @@ fields = [
         assert!(
             msg.contains("control character"),
             "expected error to mention the control character, got: {msg}"
+        );
+    }
+
+    fn minimal_config_with(extra: &str) -> String {
+        format!(
+            "{}\n[tables.users]\nfields = [\n    {{ name = \"id\", type = \"NUMBER\", primary-key = true }},\n]\n",
+            extra
+        )
+    }
+
+    #[test]
+    fn test_file_mode_defaults_to_0600() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("config.toml"), minimal_config_with("")).unwrap();
+        let config = Config::load(dir.path()).unwrap();
+        assert_eq!(config.file_mode, 0o600);
+    }
+
+    #[test]
+    fn test_file_mode_parses_octal_string() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("config.toml"),
+            minimal_config_with("file-mode = \"0640\""),
+        )
+        .unwrap();
+        let config = Config::load(dir.path()).unwrap();
+        assert_eq!(config.file_mode, 0o640);
+    }
+
+    #[test]
+    fn test_file_mode_accepts_0o_prefix() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("config.toml"),
+            minimal_config_with("file-mode = \"0o644\""),
+        )
+        .unwrap();
+        let config = Config::load(dir.path()).unwrap();
+        assert_eq!(config.file_mode, 0o644);
+    }
+
+    #[test]
+    fn test_file_mode_out_of_range_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("config.toml"),
+            minimal_config_with("file-mode = \"1000\""),
+        )
+        .unwrap();
+        let err = Config::load(dir.path()).expect_err("expected out-of-range error");
+        let msg = format!("{:#}", err);
+        assert!(
+            msg.contains("file-mode"),
+            "expected error to mention 'file-mode', got: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_file_mode_non_octal_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("config.toml"),
+            minimal_config_with("file-mode = \"99\""),
+        )
+        .unwrap();
+        let err = Config::load(dir.path()).expect_err("expected parse error");
+        let msg = format!("{:#}", err);
+        assert!(
+            msg.contains("file-mode"),
+            "expected error to mention 'file-mode', got: {msg}"
         );
     }
 }

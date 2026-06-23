@@ -508,6 +508,7 @@ mod tests {
             compression: crate::config::CompressionConfig::default(),
             tables,
             truncate: TruncateConfig::default(),
+            file_mode: 0o600,
             background_truncation: Default::default(),
         }
     }
