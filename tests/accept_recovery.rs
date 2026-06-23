@@ -45,10 +45,10 @@ fn test_reported_block_truncated() {
     let hash2 = Block::create(&config, None).unwrap();
 
     // Mark block 1 as reported (simulates: database has data up to hash1)
-    reported::save(work_dir, &hash1).unwrap();
+    reported::save(work_dir, &hash1, config.file_mode).unwrap();
 
     // Delete block 1 from disk (simulates truncation)
-    storage::remove(work_dir, &hash1).unwrap();
+    storage::remove(work_dir, &hash1, config.file_mode).unwrap();
     assert!(!work_dir.join(&hash1).exists());
 
     // Patch from REPORTED should fall back to STATE (TRUNCATE + INSERT)
@@ -79,9 +79,13 @@ fn test_reported_file_deleted() {
     let hash1 = Block::create(&config, None).unwrap();
 
     // Mark as reported, then delete the REPORTED file
-    reported::save(work_dir, &hash1).unwrap();
-    storage::remove(work_dir, "REPORTED").unwrap();
-    assert!(reported::load(work_dir).unwrap().is_none());
+    reported::save(work_dir, &hash1, config.file_mode).unwrap();
+    storage::remove(work_dir, "REPORTED", config.file_mode).unwrap();
+    assert!(
+        reported::load(work_dir, config.file_mode)
+            .unwrap()
+            .is_none()
+    );
 
     // CLI/FFI would resolve to GENESIS when REPORTED is missing
     let patch = Patch::create(&config, GENESIS_HASH).unwrap();
@@ -109,8 +113,11 @@ fn test_head_file_deleted() {
     Block::create(&config, None).unwrap();
 
     // Delete HEAD — load should return GENESIS
-    storage::remove(work_dir, "HEAD").unwrap();
-    assert_eq!(head::load(work_dir).unwrap(), GENESIS_HASH);
+    storage::remove(work_dir, "HEAD", config.file_mode).unwrap();
+    assert_eq!(
+        head::load(work_dir, config.file_mode).unwrap(),
+        GENESIS_HASH
+    );
 
     // Patch from GENESIS with HEAD=GENESIS → empty patch (no blocks exist)
     let patch = Patch::create(&config, GENESIS_HASH).unwrap();
@@ -148,7 +155,7 @@ fn test_block_chain_broken() {
     let hash3 = Block::create(&config, None).unwrap();
 
     // Delete the middle block — chain is: hash3 -> hash2 (missing) -> hash1
-    storage::remove(work_dir, &hash2).unwrap();
+    storage::remove(work_dir, &hash2, config.file_mode).unwrap();
     assert!(!work_dir.join(&hash2).exists());
 
     // Patch from hash1: consolidation walks hash3 -> tries hash2 -> fails -> STATE
@@ -177,15 +184,19 @@ fn test_patch_failed_forces_full_state() {
     // Create initial data and mark as reported
     common::write_csv(work_dir, "users.csv", "1,Alice\n");
     let hash1 = Block::create(&config, None).unwrap();
-    reported::save(work_dir, &hash1).unwrap();
+    reported::save(work_dir, &hash1, config.file_mode).unwrap();
 
     // Add more data
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
     let hash2 = Block::create(&config, None).unwrap();
 
     // Simulate patch failure: remove REPORTED
-    reported::remove(work_dir).unwrap();
-    assert!(reported::load(work_dir).unwrap().is_none());
+    reported::remove(work_dir, config.file_mode).unwrap();
+    assert!(
+        reported::load(work_dir, config.file_mode)
+            .unwrap()
+            .is_none()
+    );
 
     // Next patch from genesis should be full state
     let patch = Patch::create(&config, GENESIS_HASH).unwrap();
@@ -218,7 +229,7 @@ fn test_state_file_deleted_with_valid_chain() {
     let hash2 = Block::create(&config, None).unwrap();
 
     // Delete STATE — consolidation should still work via block chain
-    storage::remove(work_dir, "STATE").unwrap();
+    storage::remove(work_dir, "STATE", config.file_mode).unwrap();
 
     let patch = Patch::create(&config, &hash1).unwrap();
     assert_eq!(patch.head, hash2);

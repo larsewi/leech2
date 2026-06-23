@@ -235,6 +235,20 @@ behaviors. Disabling orphan removal is not recommended — corrupt blocks are
 detected during the chain walk and left unreachable so that orphan removal can
 clean them up.
 
+### File permissions
+
+Files created in the work directory (`HEAD`, `STATE`, `REPORTED`, block files,
+and their lock files) are given Unix permission bits taken from the optional
+top-level `file-mode` option:
+
+```toml
+file-mode = "0600"  # owner read/write only (default)
+```
+
+The value is an octal string (an optional `0o` prefix is accepted) and must be
+`<= 0o777`. It defaults to `"0600"`, so only the owner can read or write the
+work directory's files. The option is ignored on non-Unix platforms.
+
 ## C API
 
 See [`include/leech2.h`](include/leech2.h) for the full API reference.

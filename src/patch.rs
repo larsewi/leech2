@@ -87,8 +87,9 @@ fn collect_block_hashes(
     work_dir: &Path,
     head: &str,
     last_known: &str,
+    mode: u32,
 ) -> Result<(Option<Timestamp>, Vec<String>)> {
-    let block = Block::load_header(work_dir, head)?;
+    let block = Block::load_header(work_dir, head, mode)?;
     let created = block.created;
 
     if head == last_known {
@@ -100,7 +101,7 @@ fn collect_block_hashes(
 
     while parent != GENESIS_HASH && parent != last_known {
         hashes.push(parent.clone());
-        parent = Block::load_header(work_dir, &parent)?.parent;
+        parent = Block::load_header(work_dir, &parent, mode)?.parent;
     }
 
     if parent != last_known {
@@ -190,8 +191,13 @@ type ConsolidateResult = (
     HashMap<String, ProtoTable>,
 );
 
-fn try_consolidate(work_dir: &Path, head: &str, last_known: &str) -> Result<ConsolidateResult> {
-    let (created, block_hashes) = collect_block_hashes(work_dir, head, last_known)?;
+fn try_consolidate(
+    work_dir: &Path,
+    head: &str,
+    last_known: &str,
+    mode: u32,
+) -> Result<ConsolidateResult> {
+    let (created, block_hashes) = collect_block_hashes(work_dir, head, last_known, mode)?;
 
     if block_hashes.is_empty() {
         return Ok((created, 0, HashMap::new(), HashMap::new()));
@@ -213,7 +219,7 @@ fn try_consolidate(work_dir: &Path, head: &str, last_known: &str) -> Result<Cons
             num_blocks,
             hash
         );
-        let block = Block::load(work_dir, hash)?;
+        let block = Block::load(work_dir, hash, mode)?;
         merge_block_deltas(
             block,
             &mut merged_deltas,
@@ -223,7 +229,7 @@ fn try_consolidate(work_dir: &Path, head: &str, last_known: &str) -> Result<Cons
     }
 
     // Load state for per-table size comparison and fallback.
-    let state_tables = match ProtoState::load(work_dir)? {
+    let state_tables = match ProtoState::load(work_dir, mode)? {
         Some(state) => state.tables,
         None => HashMap::new(),
     };
@@ -283,11 +289,17 @@ fn try_consolidate(work_dir: &Path, head: &str, last_known: &str) -> Result<Cons
     Ok((created, num_blocks, result_deltas, result_states))
 }
 
-fn full_state_patch(work_dir: &Path, head: &str, injected_fields: Vec<Field>) -> Result<Patch> {
-    let created = Block::load(work_dir, head)
+fn full_state_patch(
+    work_dir: &Path,
+    head: &str,
+    injected_fields: Vec<Field>,
+    mode: u32,
+) -> Result<Patch> {
+    let created = Block::load(work_dir, head, mode)
         .ok()
         .and_then(|block| block.created);
-    let state = ProtoState::load(work_dir)?.context("no STATE file found for full state patch")?;
+    let state =
+        ProtoState::load(work_dir, mode)?.context("no STATE file found for full state patch")?;
     let patch = Patch {
         head: head.to_string(),
         created,
@@ -303,10 +315,11 @@ fn full_state_patch(work_dir: &Path, head: &str, injected_fields: Vec<Field>) ->
 impl Patch {
     pub fn create(config: &Config, last_known: &str) -> Result<Patch> {
         let work_dir = &config.work_dir;
+        let file_mode = config.file_mode;
 
         let resolved = crate::storage::resolve_hash_prefix(work_dir, last_known);
 
-        let head = head::load(work_dir)?;
+        let head = head::load(work_dir, file_mode)?;
 
         let mut injected_fields: Vec<Field> = Vec::with_capacity(config.injected_fields.len());
         for field_config in &config.injected_fields {
@@ -333,23 +346,23 @@ impl Patch {
             Ok(hash) if hash != GENESIS_HASH => hash,
             Ok(_) => {
                 log::info!("Reference is genesis, producing full state patch");
-                return full_state_patch(work_dir, &head, injected_fields);
+                return full_state_patch(work_dir, &head, injected_fields, file_mode);
             }
             Err(e) => {
                 log::warn!(
                     "Reference block not found, producing full state patch: {}",
                     e
                 );
-                return full_state_patch(work_dir, &head, injected_fields);
+                return full_state_patch(work_dir, &head, injected_fields, file_mode);
             }
         };
 
         let (created, num_blocks, deltas, states) =
-            match try_consolidate(work_dir, &head, &last_known) {
+            match try_consolidate(work_dir, &head, &last_known, file_mode) {
                 Ok(result) => result,
                 Err(e) => {
                     log::warn!("Consolidation failed, falling back to full state: {}", e);
-                    return full_state_patch(work_dir, &head, injected_fields);
+                    return full_state_patch(work_dir, &head, injected_fields, file_mode);
                 }
             };
 

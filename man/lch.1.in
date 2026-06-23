@@ -335,6 +335,16 @@ Remove blocks on disk that are not reachable from HEAD (default: true).
 .TP
 .BI truncate\-reported " = true"
 Remove blocks older than the last reported position (default: true).
+.SS File permissions
+.TP
+.BI file\-mode " = 0600"
+Unix permission bits for files created in the work directory (HEAD, STATE,
+REPORTED, block files, and their lock files), written as an octal string. An
+optional
+.B 0o
+prefix is accepted and the value must be <= 0o777. Defaults to
+.BR 0600 .
+Ignored on non-Unix platforms.
 .SH ENVIRONMENT
 .TP
 .B LEECH2_LOG
