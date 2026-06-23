@@ -54,6 +54,7 @@ label wins: `breaking` > `feature` > anything else.
    - Create `.tar.gz` or `.zip` archives for all targets
    - Create a source tarball (`cargo package`) for building from source
    - Run virus scan on all build artifacts
+   - Generate a `checksums.txt` with the SHA-256 sum of every artifact
    - Create a GitHub Release with all artifacts attached
 
 4. **Verify the release**
@@ -72,5 +73,6 @@ label wins: `breaking` > `feature` > anything else.
    - `leech2-X.Y.Z.tar.gz` (source)
    - `leech2_X.Y.Z-1_amd64.deb`
    - `leech2_X.Y.Z-1_arm64.deb`
+   - `checksums.txt`
 
    Update changelog.

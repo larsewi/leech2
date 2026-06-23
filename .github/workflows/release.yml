@@ -196,6 +196,11 @@ jobs:
           sudo freshclam
           clamscan --recursive --infected release-assets/
 
+      - name: Generate checksums
+        run: |
+          cd release-assets
+          sha256sum * > checksums.txt
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
