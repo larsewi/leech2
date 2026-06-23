@@ -26,6 +26,7 @@ type ReadCellFn = unsafe extern "C" fn(
     *mut FfiCell,
     *mut c_void,
 ) -> i32;
+type DestroyCellFn = unsafe extern "C" fn(*mut FfiCell, *mut c_void);
 
 /// ABI-compatible mirror of `lch_callbacks_t` from `leech2.h`. Function fields
 /// use `Option<unsafe extern "C" fn ...>` so a NULL function pointer on the C
@@ -34,6 +35,7 @@ type ReadCellFn = unsafe extern "C" fn(
 pub struct Callbacks {
     pub table_begin: Option<TableBeginFn>,
     pub read_cell: Option<ReadCellFn>,
+    pub destroy_cell: Option<DestroyCellFn>,
     pub table_end: Option<TableEndFn>,
     pub usr_data: *mut c_void,
 }
@@ -143,7 +145,13 @@ impl TableCallbacks<'_> {
         };
         match rc {
             SUCCESS => {
-                let Some(cell) = (unsafe { cell_from_ffi("lch_block_create", &out) }) else {
+                let cell = unsafe { cell_from_ffi("lch_block_create", &out) };
+                // Hand the populated cell back for cleanup before acting on the
+                // decode result, so a dynamically allocated text pointer is
+                // released even when decoding fails. Fires for every kind; the
+                // read_cell implementation decides what, if anything, to free.
+                self.destroy_cell(&mut out);
+                let Some(cell) = cell else {
                     bail!(
                         "invalid cell from callback for table '{}' row {} field '{}'",
                         self.table_c.to_string_lossy(),
@@ -163,12 +171,22 @@ impl TableCallbacks<'_> {
             ),
         }
     }
+
+    /// Invoke the optional `destroy_cell` hook for a successfully read cell,
+    /// regardless of kind. A `None` hook is a no-op.
+    fn destroy_cell(&self, cell: &mut FfiCell) {
+        if let Some(cb) = self.inner.destroy_cell {
+            unsafe { cb(cell, self.inner.usr_data) };
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
     use super::*;
-    use crate::ffi::FAILURE;
+    use crate::ffi::{FAILURE, VALUE_TEXT};
 
     unsafe extern "C" fn fail_table_begin(_table: *const c_char, _usr_data: *mut c_void) -> i32 {
         FAILURE
@@ -182,6 +200,7 @@ mod tests {
         Callbacks {
             table_begin: Some(fail_table_begin),
             read_cell: None,
+            destroy_cell: None,
             table_end: None,
             usr_data: std::ptr::null_mut(),
         }
@@ -191,6 +210,7 @@ mod tests {
         Callbacks {
             table_begin: None,
             read_cell: None,
+            destroy_cell: None,
             table_end: Some(fail_table_end),
             usr_data: std::ptr::null_mut(),
         }
@@ -226,6 +246,7 @@ mod tests {
         Callbacks {
             table_begin: None,
             read_cell: None,
+            destroy_cell: None,
             table_end: None,
             usr_data: std::ptr::null_mut(),
         }
@@ -264,6 +285,7 @@ mod tests {
         let callbacks = Callbacks {
             table_begin: None,
             read_cell: None,
+            destroy_cell: None,
             table_end: None,
             usr_data: std::ptr::null_mut(),
         };
@@ -278,5 +300,68 @@ mod tests {
             "got: {msg}"
         );
         assert!(msg.contains("table 't'"), "got: {msg}");
+    }
+
+    static DESTROY_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+    // Returns an owned C string as a TEXT cell for the first two rows, then
+    // signals end-of-table. The CString is leaked into the FFI cell on the
+    // assumption that `destroy_cell_free` reclaims it.
+    unsafe extern "C" fn read_cell_text(
+        _table: *const c_char,
+        row: usize,
+        _col: usize,
+        _field: *const c_char,
+        out_cell: *mut FfiCell,
+        _usr_data: *mut c_void,
+    ) -> i32 {
+        if row >= 2 {
+            return END_OF_TABLE;
+        }
+        let owned = CString::new(format!("value-{row}")).unwrap();
+        let out = unsafe { &mut *out_cell };
+        out.kind = VALUE_TEXT;
+        out.payload = FfiCellPayload {
+            text: owned.into_raw(),
+        };
+        SUCCESS
+    }
+
+    unsafe extern "C" fn destroy_cell_free(cell: *mut FfiCell, _usr_data: *mut c_void) {
+        let cell = unsafe { &*cell };
+        if cell.kind == VALUE_TEXT {
+            // Reclaim the CString leaked by `read_cell_text`.
+            unsafe { drop(CString::from_raw(cell.payload.text as *mut c_char)) };
+        }
+        DESTROY_COUNT.fetch_add(1, Ordering::SeqCst);
+    }
+
+    #[test]
+    fn test_destroy_cell_fires_once_per_successful_cell() {
+        DESTROY_COUNT.store(0, Ordering::SeqCst);
+        let callbacks = Callbacks {
+            table_begin: None,
+            read_cell: Some(read_cell_text),
+            destroy_cell: Some(destroy_cell_free),
+            table_end: None,
+            usr_data: std::ptr::null_mut(),
+        };
+        let bound = callbacks.for_table("t", &["v"]).unwrap();
+
+        // Each successful read_cell hands back exactly one destroy_cell call.
+        for row in 0..2 {
+            match bound.read_cell(row, 0).unwrap() {
+                CellResult::Cell(Cell::Text(text)) => assert_eq!(text, format!("value-{row}")),
+                _ => panic!("expected a text cell for row {row}"),
+            }
+        }
+        assert_eq!(DESTROY_COUNT.load(Ordering::SeqCst), 2);
+
+        // LCH_END_OF_TABLE must not invoke destroy_cell: out_cell is ignored.
+        match bound.read_cell(2, 0).unwrap() {
+            CellResult::EndOfTable => {}
+            _ => panic!("expected end of table"),
+        }
+        assert_eq!(DESTROY_COUNT.load(Ordering::SeqCst), 2);
     }
 }

@@ -227,13 +227,40 @@ typedef int (*lch_read_cell_cb_t)(const char *table, size_t row, size_t col,
                                   void *usr_data);
 
 /**
+ * Per-cell cleanup hook for callback-backed tables.
+ *
+ * Invoked once for each lch_read_cell_cb_t call that returned LCH_SUCCESS,
+ * for every cell kind, immediately after leech2 has copied the value into its
+ * own storage. This gives the read_cell implementation a single point to
+ * release any memory it allocated for the cell (typically the borrowed text
+ * pointer) using its own allocator; leech2 never frees that memory itself.
+ *
+ * Not invoked for read_cell calls that returned LCH_END_OF_TABLE,
+ * LCH_SKIP_RECORD, or LCH_FAILURE (out_cell is ignored in those cases, so
+ * read_cell must not have allocated).
+ *
+ * @param cell      The lch_cell_t the read_cell implementation populated. Its
+ *                  contents are valid on entry; leech2 does not touch them
+ *                  after this call returns.
+ * @param usr_data  Opaque pointer from lch_callbacks_t::usr_data.
+ */
+typedef void (*lch_destroy_cell_cb_t)(lch_cell_t *cell, void *usr_data);
+
+/**
  * Callback bundle passed to lch_block_create() for callback-backed tables.
+ *
+ * Initialize with designated initializers (e.g. `.read_cell = my_read_cell`)
+ * rather than positional ones, so optional fields added in future releases
+ * default to NULL without breaking the initializer.
  */
 typedef struct {
   /** May be NULL if no per-table setup is needed. */
   lch_table_begin_cb_t table_begin;
   /** Required when any table in the config is callback-backed. */
   lch_read_cell_cb_t read_cell;
+  /** May be NULL if no per-cell cleanup is needed. Invoked after every
+   *  successful read_cell, for every cell kind; see lch_destroy_cell_cb_t. */
+  lch_destroy_cell_cb_t destroy_cell;
   /** May be NULL if no per-table teardown is needed. */
   lch_table_end_cb_t table_end;
   /** Opaque pointer forwarded verbatim to every invoked callback. May be

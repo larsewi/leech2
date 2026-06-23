@@ -24,7 +24,7 @@ pub const SKIP_RECORD: i32 = 2;
 /// `LCH_VALUE_NULL` from `leech2.h`. Cell kind tag.
 pub const VALUE_NULL: c_int = 0;
 /// `LCH_VALUE_TEXT` from `leech2.h`. Cell kind tag.
-const VALUE_TEXT: c_int = 1;
+pub const VALUE_TEXT: c_int = 1;
 /// `LCH_VALUE_NUMBER` from `leech2.h`. Cell kind tag.
 const VALUE_NUMBER: c_int = 2;
 /// `LCH_VALUE_BOOLEAN` from `leech2.h`. Cell kind tag.
