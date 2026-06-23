@@ -57,8 +57,8 @@ impl fmt::Display for ProtoState {
 }
 
 impl ProtoState {
-    pub fn load(work_dir: &Path) -> Result<Option<Self>> {
-        let Some(data) = storage::load(work_dir, STATE_FILE)? else {
+    pub fn load(work_dir: &Path, mode: u32) -> Result<Option<Self>> {
+        let Some(data) = storage::load(work_dir, STATE_FILE, mode)? else {
             log::info!("No previous state found");
             return Ok(None);
         };
@@ -74,8 +74,8 @@ impl ProtoState {
 }
 
 impl State {
-    pub fn load(work_dir: &Path) -> Result<Option<Self>> {
-        let Some(proto) = ProtoState::load(work_dir)? else {
+    pub fn load(work_dir: &Path, mode: u32) -> Result<Option<Self>> {
+        let Some(proto) = ProtoState::load(work_dir, mode)? else {
             return Ok(None);
         };
         Ok(Some(State::try_from(proto)?))
@@ -110,11 +110,11 @@ impl State {
         Ok(state)
     }
 
-    pub fn store(&self, work_dir: &Path) -> Result<()> {
+    pub fn store(&self, work_dir: &Path, mode: u32) -> Result<()> {
         let proto_state = ProtoState::from(self.clone());
         let mut buf = Vec::new();
         proto_state.encode(&mut buf)?;
-        storage::store(work_dir, STATE_FILE, &buf)?;
+        storage::store(work_dir, STATE_FILE, &buf, mode)?;
         log::debug!(
             "Updated previous state to current state with {} tables",
             self.tables.len()

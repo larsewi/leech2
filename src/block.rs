@@ -52,8 +52,8 @@ impl fmt::Display for Block {
 }
 
 impl Block {
-    pub fn load(work_dir: &Path, hash: &str) -> Result<Block> {
-        let Some(data) = storage::load(work_dir, hash)? else {
+    pub fn load(work_dir: &Path, hash: &str, mode: u32) -> Result<Block> {
+        let Some(data) = storage::load(work_dir, hash, mode)? else {
             bail!("failed to load block '{:.7}...'", hash);
         };
         let block = Block::decode(data.as_slice())
@@ -67,8 +67,8 @@ impl Block {
     /// [`BlockHeader`], which shares field tags with [`Block`] — prost skips
     /// the unknown payload field so only the parent hash and timestamp are
     /// deserialized.
-    pub fn load_header(work_dir: &Path, hash: &str) -> Result<BlockHeader> {
-        let Some(data) = storage::load(work_dir, hash)? else {
+    pub fn load_header(work_dir: &Path, hash: &str, mode: u32) -> Result<BlockHeader> {
+        let Some(data) = storage::load(work_dir, hash, mode)? else {
             bail!("failed to load block '{:.7}...'", hash);
         };
         let header = BlockHeader::decode(data.as_slice())
@@ -89,10 +89,12 @@ impl Block {
     /// [`truncate::wait_for_pending`] to observe its completion.
     pub fn create(config: &Config, callbacks: Option<&Callbacks>) -> Result<String> {
         let work_dir = &config.work_dir;
+        let file_mode = config.file_mode;
         let current_state =
             state::State::compute(config, callbacks).context("failed to compute current state")?;
 
-        let parent_hash = head::load(work_dir).context("failed to load head of chain")?;
+        let parent_hash =
+            head::load(work_dir, file_mode).context("failed to load head of chain")?;
 
         let created = Some(SystemTime::now().into());
 
@@ -105,7 +107,7 @@ impl Block {
             HashMap::new()
         } else {
             let previous_state =
-                state::State::load(work_dir).context("failed to load previous state")?;
+                state::State::load(work_dir, file_mode).context("failed to load previous state")?;
 
             delta::Delta::compute(previous_state, &current_state)
                 .into_iter()
@@ -124,18 +126,18 @@ impl Block {
             .context("failed to encode block")?;
         let hash = utils::compute_hash(&encoded);
 
-        let chain_lock = storage::acquire_lock(work_dir, "chain", true)
+        let chain_lock = storage::acquire_lock(work_dir, "chain", true, file_mode)
             .context("failed to acquire chain lock")?;
 
-        storage::store(work_dir, &hash, &encoded)
+        storage::store(work_dir, &hash, &encoded, file_mode)
             .with_context(|| format!("failed to store block {:.7}", hash))?;
 
         log::info!("Created block '{:.7}...': {}", hash, block);
 
         current_state
-            .store(work_dir)
+            .store(work_dir, file_mode)
             .context("failed to store current state")?;
-        head::store(work_dir, &hash).context("failed to update head of state")?;
+        head::store(work_dir, &hash, file_mode).context("failed to update head of state")?;
 
         drop(chain_lock);
 

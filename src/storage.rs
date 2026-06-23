@@ -13,7 +13,7 @@
 //! other way around. Violating this ordering risks ABBA deadlock between
 //! `Block::create` and `truncate::run`.
 
-use std::fs::{self, File};
+use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::Path;
 
@@ -21,17 +21,34 @@ use anyhow::{Context, Result, bail};
 
 use crate::utils::GENESIS_HASH;
 
+/// Create (or truncate) a file at `path` with the given Unix permission
+/// `mode`. Behaves like `File::create` (write + create + truncate) plus an
+/// explicit mode; the mode is ignored on non-Unix platforms.
+fn create_file(path: &Path, mode: u32) -> std::io::Result<File> {
+    let mut options = OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(mode);
+    }
+    #[cfg(not(unix))]
+    let _ = mode;
+    options.open(path)
+}
+
 /// Acquires a lock on a separate `.<name>.lock` file for inter-process
 /// synchronization. Returns the lock file handle; the lock is released when
 /// the handle is dropped. Use `exclusive = true` to serialize multi-step
 /// operations that span several individual file accesses (e.g. chain
-/// mutation, which writes a block file and then advances HEAD).
+/// mutation, which writes a block file and then advances HEAD). `mode` sets
+/// the lock file's Unix permission bits when it is created.
 ///
 /// See the module-level lock-ordering note before holding multiple locks at
 /// once: the `chain` lock must always be acquired first.
-pub fn acquire_lock(dir: &Path, name: &str, exclusive: bool) -> Result<File> {
+pub fn acquire_lock(dir: &Path, name: &str, exclusive: bool, mode: u32) -> Result<File> {
     let lock_path = dir.join(format!(".{}.lock", name));
-    let lock_file = File::create(&lock_path)
+    let lock_file = create_file(&lock_path, mode)
         .with_context(|| format!("failed to open lock file '{}'", lock_path.display()))?;
     if exclusive {
         lock_file.lock()
@@ -53,18 +70,20 @@ impl Drop for TmpCleanup<'_> {
     }
 }
 
-/// Saves data to a file in the work directory using a separate lock file and atomic rename.
-pub fn store(work_dir: &Path, name: &str, data: &[u8]) -> Result<()> {
+/// Saves data to a file in the work directory using a separate lock file and
+/// atomic rename. `mode` sets the Unix permission bits of the files created
+/// (the data file and its lock file).
+pub fn store(work_dir: &Path, name: &str, data: &[u8], mode: u32) -> Result<()> {
     fs::create_dir_all(work_dir)
         .with_context(|| format!("failed to create work directory '{}'", work_dir.display()))?;
 
-    let _lock = acquire_lock(work_dir, name, true)?;
+    let _lock = acquire_lock(work_dir, name, true, mode)?;
 
     // Write to temp file, then atomic rename for crash safety.
     let tmp_path = work_dir.join(format!("{}.tmp", name));
     let path = work_dir.join(name);
 
-    let mut file = File::create(&tmp_path)
+    let mut file = create_file(&tmp_path, mode)
         .with_context(|| format!("failed to create temp file '{}'", tmp_path.display()))?;
     // Remove the temp file on any early return below so that a persistent
     // write failure on a unique name (e.g. a block hash that's never retried)
@@ -108,11 +127,12 @@ pub fn store(work_dir: &Path, name: &str, data: &[u8]) -> Result<()> {
     Ok(())
 }
 
-/// Removes a file from the work directory using an exclusive lock.
-pub fn remove(work_dir: &Path, name: &str) -> Result<()> {
+/// Removes a file from the work directory using an exclusive lock. `mode`
+/// sets the Unix permission bits of the lock file if it must be created.
+pub fn remove(work_dir: &Path, name: &str, mode: u32) -> Result<()> {
     let path = work_dir.join(name);
 
-    let _lock = acquire_lock(work_dir, name, true)?;
+    let _lock = acquire_lock(work_dir, name, true, mode)?;
 
     match fs::remove_file(&path) {
         Ok(()) => {}
@@ -137,11 +157,12 @@ pub fn remove(work_dir: &Path, name: &str) -> Result<()> {
     Ok(())
 }
 
-/// Loads data from a file in the work directory with a shared lock.
-pub fn load(work_dir: &Path, name: &str) -> Result<Option<Vec<u8>>> {
+/// Loads data from a file in the work directory with a shared lock. `mode`
+/// sets the Unix permission bits of the lock file if it must be created.
+pub fn load(work_dir: &Path, name: &str, mode: u32) -> Result<Option<Vec<u8>>> {
     let path = work_dir.join(name);
 
-    let _lock = acquire_lock(work_dir, name, false)?;
+    let _lock = acquire_lock(work_dir, name, false, mode)?;
 
     match File::open(&path) {
         Ok(mut file) => {
@@ -200,21 +221,44 @@ mod tests {
     #[test]
     fn test_acquire_lock_creates_lock_file() {
         let dir = tempdir().unwrap();
-        let _lock = acquire_lock(dir.path(), "foo", true).unwrap();
+        let _lock = acquire_lock(dir.path(), "foo", true, 0o600).unwrap();
         assert!(dir.path().join(".foo.lock").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_store_applies_file_mode() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempdir().unwrap();
+        store(dir.path(), "HEAD", b"abc", 0o600).unwrap();
+
+        // Both the data file and its lock file get the requested mode. 0o600
+        // has no group/other bits, so the result is independent of the umask.
+        let data_mode = fs::metadata(dir.path().join("HEAD"))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(data_mode, 0o600);
+        let lock_mode = fs::metadata(dir.path().join(".HEAD.lock"))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(lock_mode, 0o600);
     }
 
     #[test]
     fn test_shared_locks_do_not_block_each_other() {
         let dir = tempdir().unwrap();
-        let _lock1 = acquire_lock(dir.path(), "foo", false).unwrap();
-        let _lock2 = acquire_lock(dir.path(), "foo", false).unwrap();
+        let _lock1 = acquire_lock(dir.path(), "foo", false, 0o600).unwrap();
+        let _lock2 = acquire_lock(dir.path(), "foo", false, 0o600).unwrap();
     }
 
     #[test]
     fn test_exclusive_lock_blocks_exclusive_lock() {
         let dir = tempdir().unwrap();
-        let _lock = acquire_lock(dir.path(), "foo", true).unwrap();
+        let _lock = acquire_lock(dir.path(), "foo", true, 0o600).unwrap();
 
         let lock_path = dir.path().join(".foo.lock");
         let file = File::create(&lock_path).unwrap();
@@ -224,7 +268,7 @@ mod tests {
     #[test]
     fn test_exclusive_lock_blocks_shared_lock() {
         let dir = tempdir().unwrap();
-        let _lock = acquire_lock(dir.path(), "foo", true).unwrap();
+        let _lock = acquire_lock(dir.path(), "foo", true, 0o600).unwrap();
 
         let lock_path = dir.path().join(".foo.lock");
         let file = File::create(&lock_path).unwrap();
@@ -234,7 +278,7 @@ mod tests {
     #[test]
     fn test_shared_lock_blocks_exclusive_lock() {
         let dir = tempdir().unwrap();
-        let _lock = acquire_lock(dir.path(), "foo", false).unwrap();
+        let _lock = acquire_lock(dir.path(), "foo", false, 0o600).unwrap();
 
         let lock_path = dir.path().join(".foo.lock");
         let file = File::create(&lock_path).unwrap();
@@ -245,14 +289,14 @@ mod tests {
     fn test_lock_released_on_drop() {
         let dir = tempdir().unwrap();
         {
-            let _lock = acquire_lock(dir.path(), "foo", true).unwrap();
+            let _lock = acquire_lock(dir.path(), "foo", true, 0o600).unwrap();
         }
-        let _lock = acquire_lock(dir.path(), "foo", true).unwrap();
+        let _lock = acquire_lock(dir.path(), "foo", true, 0o600).unwrap();
     }
 
     #[test]
     fn test_acquire_lock_invalid_dir() {
-        let result = acquire_lock(Path::new("/nonexistent/path"), "foo", true);
+        let result = acquire_lock(Path::new("/nonexistent/path"), "foo", true, 0o600);
         assert!(result.is_err());
     }
 

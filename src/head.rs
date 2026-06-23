@@ -7,8 +7,8 @@ use crate::utils::GENESIS_HASH;
 
 const HEAD_FILE: &str = "HEAD";
 
-pub fn load(work_dir: &Path) -> Result<String> {
-    let hash = match storage::load(work_dir, HEAD_FILE)? {
+pub fn load(work_dir: &Path, mode: u32) -> Result<String> {
+    let hash = match storage::load(work_dir, HEAD_FILE, mode)? {
         Some(data) => {
             let text = String::from_utf8(data).context("HEAD file contains non-UTF-8 data")?;
             // Tolerate trailing whitespace from manual edits or differing
@@ -22,8 +22,8 @@ pub fn load(work_dir: &Path) -> Result<String> {
     Ok(hash)
 }
 
-pub fn store(work_dir: &Path, hash: &str) -> Result<()> {
-    storage::store(work_dir, HEAD_FILE, hash.as_bytes())?;
+pub fn store(work_dir: &Path, hash: &str, mode: u32) -> Result<()> {
+    storage::store(work_dir, HEAD_FILE, hash.as_bytes(), mode)?;
     log::debug!("Updated head to '{:.7}...'", hash);
     Ok(())
 }

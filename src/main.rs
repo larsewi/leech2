@@ -120,13 +120,13 @@ fn resolve_ref(
         (Some(reference), None) => {
             leech2::storage::resolve_hash_prefix(&config.work_dir, reference)
         }
-        (None, Some(num_blocks)) => walk_back(&config.work_dir, num_blocks),
-        (None, None) => leech2::head::load(&config.work_dir),
+        (None, Some(num_blocks)) => walk_back(&config.work_dir, num_blocks, config.file_mode),
+        (None, None) => leech2::head::load(&config.work_dir, config.file_mode),
     }
 }
 
-fn walk_back(work_dir: &std::path::Path, num_blocks: u32) -> Result<String> {
-    let mut hash = leech2::head::load(work_dir)?;
+fn walk_back(work_dir: &std::path::Path, num_blocks: u32, mode: u32) -> Result<String> {
+    let mut hash = leech2::head::load(work_dir, mode)?;
     for i in 0..num_blocks {
         if hash == GENESIS_HASH {
             bail!(
@@ -135,7 +135,7 @@ fn walk_back(work_dir: &std::path::Path, num_blocks: u32) -> Result<String> {
                 i
             );
         }
-        hash = Block::load_header(work_dir, &hash)?.parent;
+        hash = Block::load_header(work_dir, &hash, mode)?.parent;
     }
     Ok(hash)
 }
@@ -179,7 +179,7 @@ fn cmd_patch_create(
     // (i.e. the hash the server already knows about) so the patch only contains
     // new blocks. Fall back to the genesis hash if nothing has been reported yet.
     let hash = if reference.is_none() && num_blocks.is_none() {
-        leech2::reported::load(&config.work_dir)?
+        leech2::reported::load(&config.work_dir, config.file_mode)?
             .unwrap_or_else(|| leech2::utils::GENESIS_HASH.to_string())
     } else {
         resolve_ref(config, reference, num_blocks)?
@@ -187,7 +187,7 @@ fn cmd_patch_create(
     let patch = leech2::patch::Patch::create(config, &hash)?;
 
     let encoded = leech2::wire::encode_patch(config, &patch)?;
-    leech2::storage::store(&config.work_dir, PATCH_FILE, &encoded)?;
+    leech2::storage::store(&config.work_dir, PATCH_FILE, &encoded, config.file_mode)?;
 
     println!("{}", patch);
     Ok(())
@@ -195,7 +195,7 @@ fn cmd_patch_create(
 
 fn cmd_block_log(config: &Config) -> Result<String> {
     let work_dir = &config.work_dir;
-    let mut hash = leech2::head::load(work_dir)?;
+    let mut hash = leech2::head::load(work_dir, config.file_mode)?;
 
     if hash == GENESIS_HASH {
         bail!("no blocks exist yet");
@@ -203,7 +203,7 @@ fn cmd_block_log(config: &Config) -> Result<String> {
 
     let mut output = String::new();
     loop {
-        let block = match Block::load(work_dir, &hash) {
+        let block = match Block::load(work_dir, &hash, config.file_mode) {
             Ok(block) => block,
             Err(_) => break, // block was truncated, end of reachable chain
         };
@@ -243,12 +243,12 @@ fn cmd_block_show(config: &Config, reference: Option<&str>, n: Option<u32>) -> R
     if hash == GENESIS_HASH {
         bail!("cannot show the genesis block");
     }
-    let block = Block::load(&config.work_dir, &hash)?;
+    let block = Block::load(&config.work_dir, &hash, config.file_mode)?;
     Ok(format!("block {}\n{}", hash, block))
 }
 
 fn load_patch(config: &Config) -> Result<leech2::patch::Patch> {
-    let data = leech2::storage::load(&config.work_dir, PATCH_FILE)?
+    let data = leech2::storage::load(&config.work_dir, PATCH_FILE, config.file_mode)?
         .context("no patch file found, run `lch patch create` first")?;
     leech2::wire::decode_patch(&data).context("failed to decode patch")
 }
@@ -274,7 +274,7 @@ fn cmd_patch_inject(config: &Config, name: &str, value: &str, kind: &str) -> Res
     patch.inject_field(name, cell)?;
 
     let encoded = leech2::wire::encode_patch(config, &patch)?;
-    leech2::storage::store(&config.work_dir, PATCH_FILE, &encoded)?;
+    leech2::storage::store(&config.work_dir, PATCH_FILE, &encoded, config.file_mode)?;
 
     println!("{}", patch);
     Ok(())
@@ -282,14 +282,14 @@ fn cmd_patch_inject(config: &Config, name: &str, value: &str, kind: &str) -> Res
 
 fn cmd_patch_applied(config: &Config) -> Result<()> {
     let patch = load_patch(config)?;
-    leech2::reported::save(&config.work_dir, &patch.head)?;
+    leech2::reported::save(&config.work_dir, &patch.head, config.file_mode)?;
 
     println!("{}", patch.head);
     Ok(())
 }
 
 fn cmd_patch_failed(config: &Config) -> Result<()> {
-    leech2::reported::remove(&config.work_dir)?;
+    leech2::reported::remove(&config.work_dir, config.file_mode)?;
     println!("REPORTED removed; next patch will be a full state");
     Ok(())
 }
@@ -414,6 +414,6 @@ mod tests {
             .as_ref()
             .expect("init template must place 'source'/'header' under [tables.products.csv]");
         assert_eq!(csv.source, "products.csv");
-        assert_eq!(csv.header, true);
+        assert!(csv.header);
     }
 }

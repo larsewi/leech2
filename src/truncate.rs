@@ -67,13 +67,13 @@ fn scan_work_dir(work_dir: &Path) -> Result<(HashSet<String>, Vec<String>)> {
 
 /// Walk the block chain from HEAD back toward GENESIS, returning an ordered
 /// list of chain entries and the set of reachable block hashes.
-fn walk_chain(work_dir: &Path, head_hash: &str) -> (Vec<ChainEntry>, HashSet<String>) {
+fn walk_chain(work_dir: &Path, head_hash: &str, mode: u32) -> (Vec<ChainEntry>, HashSet<String>) {
     let mut chain = Vec::new();
     let mut reachable = HashSet::new();
 
     let mut current_hash = head_hash.to_string();
     while current_hash != GENESIS_HASH {
-        let Ok(header) = Block::load_header(work_dir, &current_hash) else {
+        let Ok(header) = Block::load_header(work_dir, &current_hash, mode) else {
             // Reached end of chain
             log::trace!(
                 "Block '{:.7}...' not found (previously truncated), stopping chain walk",
@@ -114,6 +114,7 @@ fn remove_orphans(
     work_dir: &Path,
     config: &TruncateConfig,
     reachable: &HashSet<String>,
+    mode: u32,
 ) -> Result<()> {
     let (on_disk, stale_locks) = scan_work_dir(work_dir)?;
 
@@ -121,7 +122,7 @@ fn remove_orphans(
         for hash in &on_disk {
             if !reachable.contains(hash) {
                 log::info!("Removing orphaned block '{:.7}...'", hash);
-                storage::remove(work_dir, hash)?;
+                storage::remove(work_dir, hash, mode)?;
             }
         }
     }
@@ -142,9 +143,14 @@ fn remove_orphans(
 
 /// Truncate blocks from the chain according to the configured rules
 /// (max_blocks, max_age, truncate_reported). Never deletes HEAD.
-fn truncate_chain(work_dir: &Path, config: &TruncateConfig, chain: &[ChainEntry]) -> Result<()> {
+fn truncate_chain(
+    work_dir: &Path,
+    config: &TruncateConfig,
+    chain: &[ChainEntry],
+    mode: u32,
+) -> Result<()> {
     let reported_pos = if config.truncate_reported {
-        match reported::load(work_dir)? {
+        match reported::load(work_dir, mode)? {
             Some(hash) => chain
                 .iter()
                 .position(|chain_entry| chain_entry.hash == hash),
@@ -170,7 +176,7 @@ fn truncate_chain(work_dir: &Path, config: &TruncateConfig, chain: &[ChainEntry]
 
         if should_remove {
             log::info!("Truncating block '{:.7}...'", entry.hash);
-            storage::remove(work_dir, &entry.hash)?;
+            storage::remove(work_dir, &entry.hash, mode)?;
             removed += 1;
         }
     }
@@ -185,21 +191,21 @@ fn truncate_chain(work_dir: &Path, config: &TruncateConfig, chain: &[ChainEntry]
 /// Run a single truncation pass under the chain lock. Blocks until the
 /// chain lock is available; serializes against `Block::create` and any
 /// other in-progress truncation in the same work directory.
-pub fn run(work_dir: &Path, config: &TruncateConfig) -> Result<()> {
-    let _chain_lock = storage::acquire_lock(work_dir, CHAIN_LOCK_NAME, true)
+pub fn run(work_dir: &Path, config: &TruncateConfig, mode: u32) -> Result<()> {
+    let _chain_lock = storage::acquire_lock(work_dir, CHAIN_LOCK_NAME, true, mode)
         .context("failed to acquire chain lock for truncation")?;
 
-    let head_hash = head::load(work_dir)?;
-    let (chain, reachable) = walk_chain(work_dir, &head_hash);
-    remove_orphans(work_dir, config, &reachable)?;
-    truncate_chain(work_dir, config, &chain)?;
+    let head_hash = head::load(work_dir, mode)?;
+    let (chain, reachable) = walk_chain(work_dir, &head_hash, mode);
+    remove_orphans(work_dir, config, &reachable, mode)?;
+    truncate_chain(work_dir, config, &chain, mode)?;
 
     Ok(())
 }
 
 /// Spawn `run` on a background thread, taking an owned snapshot of
-/// `config.work_dir` and `config.truncate` so the thread is decoupled from
-/// the `Config`'s lifetime. The `JoinHandle` is parked in
+/// `config.work_dir`, `config.truncate`, and `config.file_mode` so the thread
+/// is decoupled from the `Config`'s lifetime. The `JoinHandle` is parked in
 /// `config.background_truncation`.
 ///
 /// If a previous background pass is still running, this is a no-op: that
@@ -228,8 +234,9 @@ pub fn spawn_background(config: &Config) {
 
     let work_dir = config.work_dir.clone();
     let truncate_config = config.truncate.clone();
+    let file_mode = config.file_mode;
     let handle = std::thread::spawn(move || {
-        if let Err(e) = run(&work_dir, &truncate_config) {
+        if let Err(e) = run(&work_dir, &truncate_config, file_mode) {
             log::warn!("Background truncation failed (non-fatal): {:#}", e);
         }
     });
