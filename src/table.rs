@@ -689,6 +689,7 @@ mod tests {
             name: name.to_string(),
             kind,
             primary_key,
+            ..Default::default()
         }
     }
 

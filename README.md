@@ -80,6 +80,9 @@ Config can be `config.toml` or `config.json`.
   database column types — your database may use any compatible type (e.g.
   `INTEGER`, `FLOAT`, `TIMESTAMP`). It is your responsibility to ensure the
   quoted literals are valid for your target database type.
+- A field may carry an optional `comment` describing what it is for. leech2
+  ignores it; it exists to document fields in `config.json`, which has no
+  comment syntax of its own.
 
 ```toml
 [tables.products]
