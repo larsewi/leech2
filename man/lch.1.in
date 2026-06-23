@@ -142,10 +142,15 @@ Every table must declare one or more fields, each with a
 .BR name ,
 .BR type ,
 and optionally
-.BR primary\-key .
+.BR primary\-key
+and a free-form
+.BR comment .
 At least one field must have
 .BR "primary\-key = true" .
-Field names within a table must be unique.
+Field names within a table must be unique. The
+.B comment
+is ignored by leech2 and exists to document fields in JSON config, which
+has no comment syntax of its own.
 .PP
 A table is CSV-backed when it has a
 .B [tables.\fIname\fR.csv]

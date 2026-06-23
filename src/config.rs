@@ -391,6 +391,11 @@ pub struct FieldConfig {
     /// When true, this field is part of the table's composite primary key.
     #[serde(rename = "primary-key")]
     pub primary_key: bool,
+    /// Free-form note describing what the field is for. Ignored by leech2;
+    /// useful for documenting fields in JSON config, which has no comment
+    /// syntax.
+    #[serde(default)]
+    pub comment: Option<String>,
 }
 
 impl Default for FieldConfig {
@@ -399,6 +404,7 @@ impl Default for FieldConfig {
             name: String::new(),
             kind: Kind::Text,
             primary_key: false,
+            comment: None,
         }
     }
 }
@@ -857,6 +863,26 @@ fields = [
         let config = Config::load(dir.path()).unwrap();
         let table = config.tables.get("users").unwrap();
         assert!(table.csv.is_none());
+    }
+
+    #[test]
+    fn test_field_comment_is_parsed() {
+        let dir = tempfile::tempdir().unwrap();
+        let json_input = r#"{
+  "tables": {
+    "users": {
+      "fields": [
+        { "name": "id", "type": "NUMBER", "primary-key": true, "comment": "user identifier" },
+        { "name": "name", "type": "TEXT" }
+      ]
+    }
+  }
+}"#;
+        fs::write(dir.path().join("config.json"), json_input).unwrap();
+        let config = Config::load(dir.path()).unwrap();
+        let fields = &config.tables.get("users").unwrap().fields;
+        assert_eq!(fields[0].comment.as_deref(), Some("user identifier"));
+        assert_eq!(fields[1].comment, None);
     }
 
     #[test]
