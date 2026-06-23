@@ -52,6 +52,8 @@ typedef struct {
   int events_begin_count;
   int events_end_count;
   int other_table_calls;
+  int read_cell_success_count;
+  int destroy_cell_count;
 } cb_state_t;
 
 static int test_table_begin(const char *table, void *usr_data) {
@@ -90,15 +92,33 @@ static int test_read_cell(const char *table, size_t row, size_t col,
   if (strcmp(field_name, "id") == 0) {
     out_cell->kind = LCH_VALUE_NUMBER;
     out_cell->number = r->id;
+    s->read_cell_success_count++;
     return LCH_SUCCESS;
   }
   if (strcmp(field_name, "event") == 0) {
+    /* Hand leech2 a freshly allocated copy; test_destroy_cell reclaims it
+     * after leech2 has copied the text into its own storage. */
+    char *owned = strdup(r->event);
+    if (owned == NULL) {
+      return LCH_FAILURE;
+    }
     out_cell->kind = LCH_VALUE_TEXT;
-    out_cell->text = r->event;
+    out_cell->text = owned;
+    s->read_cell_success_count++;
     return LCH_SUCCESS;
   }
   fprintf(stderr, "unexpected field '%s' for table '%s'\n", field_name, table);
   return LCH_FAILURE;
+}
+
+/* Releases memory allocated for a cell in test_read_cell. Fires once for each
+ * successful read_cell, for every kind; only TEXT cells own an allocation. */
+static void test_destroy_cell(lch_cell_t *cell, void *usr_data) {
+  cb_state_t *s = (cb_state_t *)usr_data;
+  s->destroy_cell_count++;
+  if (cell->kind == LCH_VALUE_TEXT) {
+    free((void *)cell->text);
+  }
 }
 
 int main(int argc, char *argv[]) {
@@ -128,6 +148,7 @@ int main(int argc, char *argv[]) {
   lch_callbacks_t callbacks = {
       .table_begin = test_table_begin,
       .read_cell = test_read_cell,
+      .destroy_cell = test_destroy_cell,
       .table_end = test_table_end,
       .usr_data = &cb_state,
   };
@@ -157,6 +178,20 @@ int main(int argc, char *argv[]) {
     fprintf(stderr,
             "callback hooks fired for a non-callback-backed table (%d calls)\n",
             cb_state.other_table_calls);
+    lch_deinit(cfg);
+    return EXIT_FAILURE;
+  }
+
+  /* destroy_cell fires exactly once for every successful read_cell, so each
+   * strdup'd text cell is reclaimed exactly once. */
+  if (cb_state.read_cell_success_count == 0) {
+    fprintf(stderr, "expected at least one successful read_cell\n");
+    lch_deinit(cfg);
+    return EXIT_FAILURE;
+  }
+  if (cb_state.destroy_cell_count != cb_state.read_cell_success_count) {
+    fprintf(stderr, "expected %d destroy_cell calls, got %d\n",
+            cb_state.read_cell_success_count, cb_state.destroy_cell_count);
     lch_deinit(cfg);
     return EXIT_FAILURE;
   }

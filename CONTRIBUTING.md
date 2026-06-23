@@ -46,6 +46,15 @@ Sentinels (`null` / `true` / `false`) and `filter` rules live under the table's
 `[csv]` block and apply only on the CSV path; callback-backed tables skip rows
 by returning `LCH_SKIP_RECORD`.
 
+The callback bundle has four hooks: `table_begin` (optional per-table setup),
+`read_cell` (required; produces one typed cell per call), `destroy_cell`
+(optional; invoked once after each successful `read_cell`, for every cell kind,
+so the implementation can free memory it allocated for the cell with its own
+allocator — leech2 never frees caller memory itself), and `table_end` (optional
+per-table teardown). Initialize `lch_callbacks_t` with designated initializers
+(e.g. `.read_cell = my_read_cell`) so optional fields added in later releases
+default to NULL without breaking the initializer.
+
 When starting a fresh chain (HEAD is genesis), the block is stored with an empty
 payload — delta computation and STATE file loading are skipped entirely. The
 first block's deltas would never be used: a genesis reference always produces a

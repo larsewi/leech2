@@ -142,7 +142,15 @@ For each callback-backed table the hook order is:
 .B table_begin
 returned
 .BR LCH_SUCCESS ,
-exactly once). CSV-backed tables do not trigger any hooks. Tables are
+exactly once). If set,
+.B destroy_cell
+is invoked once after each
+.B read_cell
+that returned
+.BR LCH_SUCCESS ,
+for every cell kind, so the implementation can release any memory it allocated
+for the cell (typically a TEXT pointer) with its own allocator; leech2 never
+frees that memory itself. CSV-backed tables do not trigger any hooks. Tables are
 processed one at a time; lifecycles do not overlap. All callbacks are invoked
 exclusively from the thread that called
 .BR lch_block_create ();
@@ -348,7 +356,9 @@ Released with
 .B lch_callbacks_t
 Callback bundle passed to
 .BR lch_block_create ()
-for callback-backed tables. Fields:
+for callback-backed tables. Initialize with designated initializers
+.RI "(e.g. " ".read_cell = my_read_cell" ")"
+so optional fields added in future releases default to NULL. Fields:
 .RS
 .IP \(bu
 .B table_begin
@@ -358,6 +368,12 @@ for callback-backed tables. Fields:
 .B read_cell
 .RI "(type " lch_read_cell_cb_t ")"
 \- per-cell hook; required when any table is callback-backed.
+.IP \(bu
+.B destroy_cell
+.RI "(type " lch_destroy_cell_cb_t ")"
+\- optional per-cell cleanup hook, invoked after every successful
+.B read_cell
+for every cell kind. May be NULL.
 .IP \(bu
 .B table_end
 .RI "(type " lch_table_end_cb_t ")"

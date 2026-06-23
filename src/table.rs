@@ -983,6 +983,7 @@ mod tests {
         Callbacks {
             table_begin: None,
             read_cell: Some(test_read_cell),
+            destroy_cell: None,
             table_end: None,
             usr_data: std::ptr::null_mut(),
         }
