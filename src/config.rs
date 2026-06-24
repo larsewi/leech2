@@ -13,6 +13,10 @@ use anyhow::{Context, Result, bail};
 use crate::cell::{Kind, parse_typed_cell};
 use crate::utils::{join_logging_panics, parse_duration, parse_file_mode, validate_field_name};
 
+/// Subdirectory of the work directory where state files live when `state-dir`
+/// is not set in the config.
+const STATE_SUBDIR: &str = "state";
+
 /// Post-deserialize semantic checks for config structs (cross-field
 /// invariants, value ranges, etc.) that serde can't express on its own.
 /// Implementors `bail!` on failure.
@@ -61,6 +65,12 @@ where
 /// Secure-by-default: only the owner can read or write.
 fn default_file_mode() -> u32 {
     0o600
+}
+
+/// Default Unix permission bits for the state directory when leech2 creates it.
+/// Secure-by-default: only the owner can read, write, or traverse it.
+fn default_dir_mode() -> u32 {
+    0o700
 }
 
 // Custom deserializer for `file-mode`: reads the field as a string and parses it
@@ -325,6 +335,13 @@ pub struct Config {
     /// deserialized.
     #[serde(skip)]
     pub work_dir: PathBuf,
+    /// Optional override for where state files (`HEAD`, `STATE`, `REPORTED`,
+    /// block files) live. Relative paths resolve against `work_dir`; absolute
+    /// paths are used as-is. When unset, state lives in a `state` subdirectory
+    /// of `work_dir`. Consumers should read the resolved directory via
+    /// `state_dir()`.
+    #[serde(default, rename = "state-dir")]
+    pub(crate) state_dir: Option<PathBuf>,
     /// Static fields added to every generated SQL row.
     #[serde(default, rename = "injected-fields")]
     pub injected_fields: Vec<InjectedFieldConfig>,
@@ -344,6 +361,15 @@ pub struct Config {
         deserialize_with = "deserialize_file_mode"
     )]
     pub file_mode: u32,
+    /// Unix permission bits for the state directory when leech2 creates it,
+    /// written as an octal string (e.g. `"0700"`). Ignored on non-Unix
+    /// platforms.
+    #[serde(
+        default = "default_dir_mode",
+        rename = "dir-mode",
+        deserialize_with = "deserialize_file_mode"
+    )]
+    pub dir_mode: u32,
     /// Handle of the background truncation thread most recently spawned for
     /// this config (if any). `truncate::spawn_background` only spawns a new
     /// thread when this slot is empty or holds a finished handle, so at most
@@ -496,6 +522,13 @@ impl Validate for Config {
             );
         }
 
+        if self.dir_mode > 0o777 {
+            bail!(
+                "dir-mode {:o} is out of range (must be <= 0o777)",
+                self.dir_mode
+            );
+        }
+
         self.truncate.validate()?;
         self.compression.validate()?;
 
@@ -612,6 +645,35 @@ fn resolve_includes(
 }
 
 impl Config {
+    /// Directory holding state files, resolved from the optional `state-dir`
+    /// config value: relative to `work_dir`, absolute as-is, or the `state`
+    /// subdirectory of `work_dir` when unset.
+    pub fn state_dir(&self) -> PathBuf {
+        match &self.state_dir {
+            Some(dir) if dir.is_absolute() => dir.clone(),
+            Some(dir) => self.work_dir.join(dir),
+            None => self.work_dir.join(STATE_SUBDIR),
+        }
+    }
+
+    /// Resolve the state directory (see [`Config::state_dir`]) and create it,
+    /// and any missing parents, with the configured `dir-mode`. Idempotent, so
+    /// callers can invoke it before any state I/O without checking first.
+    pub fn ensure_state_dir(&self) -> Result<PathBuf> {
+        let state_dir = self.state_dir();
+        let mut builder = fs::DirBuilder::new();
+        builder.recursive(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::DirBuilderExt;
+            builder.mode(self.dir_mode);
+        }
+        builder.create(&state_dir).with_context(|| {
+            format!("failed to create state directory '{}'", state_dir.display())
+        })?;
+        Ok(state_dir)
+    }
+
     pub fn load(work_dir: &Path) -> Result<Config> {
         let toml_path = work_dir.join("config.toml");
         let json_path = work_dir.join("config.json");
@@ -1197,6 +1259,79 @@ fields = [
             msg.contains("file-mode"),
             "expected error to mention 'file-mode', got: {msg}"
         );
+    }
+
+    #[test]
+    fn test_dir_mode_defaults_to_0700() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("config.toml"), minimal_config_with("")).unwrap();
+        let config = Config::load(dir.path()).unwrap();
+        assert_eq!(config.dir_mode, 0o700);
+    }
+
+    #[test]
+    fn test_dir_mode_parses_octal_string() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("config.toml"),
+            minimal_config_with("dir-mode = \"0750\""),
+        )
+        .unwrap();
+        let config = Config::load(dir.path()).unwrap();
+        assert_eq!(config.dir_mode, 0o750);
+    }
+
+    #[test]
+    fn test_dir_mode_out_of_range_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("config.toml"),
+            minimal_config_with("dir-mode = \"1000\""),
+        )
+        .unwrap();
+        let err = Config::load(dir.path()).expect_err("expected out-of-range error");
+        let msg = format!("{:#}", err);
+        assert!(
+            msg.contains("dir-mode"),
+            "expected error to mention 'dir-mode', got: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_state_dir_defaults_to_subdir() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("config.toml"), minimal_config_with("")).unwrap();
+        let config = Config::load(dir.path()).unwrap();
+        assert_eq!(config.state_dir(), dir.path().join("state"));
+    }
+
+    #[test]
+    fn test_state_dir_relative_resolves_against_work_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("config.toml"),
+            minimal_config_with("state-dir = \"db\""),
+        )
+        .unwrap();
+        let config = Config::load(dir.path()).unwrap();
+        assert_eq!(config.state_dir(), dir.path().join("db"));
+    }
+
+    #[test]
+    fn test_state_dir_absolute_used_as_is() {
+        let absolute = if cfg!(windows) {
+            "C:/var/lib/leech2"
+        } else {
+            "/var/lib/leech2"
+        };
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("config.toml"),
+            minimal_config_with(&format!("state-dir = \"{absolute}\"")),
+        )
+        .unwrap();
+        let config = Config::load(dir.path()).unwrap();
+        assert_eq!(config.state_dir(), PathBuf::from(absolute));
     }
 
     #[test]

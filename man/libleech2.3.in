@@ -43,7 +43,12 @@ or
 that defines tables, field schemas, filters, and other settings. The base config
 may pull in additional drop-in fragments via a top-level
 .B include
-key holding a list of glob patterns, merged last-wins. See
+key holding a list of glob patterns, merged last-wins. State files (HEAD, STATE,
+REPORTED, and block files) are kept in a separate state directory, by default a
+.B state
+subdirectory of the work directory and relocatable via the
+.B state\-dir
+config option. See
 .BR lch (1)
 for configuration details.
 .SH FUNCTIONS
@@ -432,7 +437,7 @@ and
 do not return a value.
 .SH CONCURRENCY
 .B libleech2
-serializes concurrent access to its own work-directory state files with
+serializes concurrent access to its own state files with
 advisory
 .BR flock (2)
 locks, so multiple processes may share a

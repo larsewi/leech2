@@ -61,6 +61,22 @@ lch patch failed
 
 Config can be `config.toml` or `config.json`.
 
+### State directory
+
+State files (`HEAD`, `STATE`, `REPORTED`, the `PATCH` file, and block files)
+live in a directory separate from the config and CSV inputs. By default this is
+a `state` subdirectory of the work directory; the optional top-level `state-dir`
+option points it elsewhere:
+
+```toml
+state-dir = "/var/lib/leech2"  # absolute path
+# state-dir = "db"             # relative paths resolve against the work directory
+```
+
+leech2 creates the state directory on demand. CSV `source` paths and `include`
+globs are unaffected -- they remain inputs resolved relative to the work
+directory.
+
 ### Drop-in fragments
 
 The base config may pull in additional config files via a top-level `include`
@@ -280,6 +296,15 @@ file-mode = "0600"  # owner read/write only (default)
 The value is an octal string (an optional `0o` prefix is accepted) and must be
 `<= 0o777`. It defaults to `"0600"`, so only the owner can read or write the
 work directory's files. The option is ignored on non-Unix platforms.
+
+The state directory itself, when leech2 creates it, is given the permission bits
+from the optional top-level `dir-mode` option:
+
+```toml
+dir-mode = "0700"  # owner read/write/traverse only (default)
+```
+
+It follows the same octal-string rules as `file-mode` and defaults to `"0700"`.
 
 ## C API
 

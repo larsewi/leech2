@@ -141,8 +141,15 @@ exist. The implicit parent of block #1.
 
 ### Work directory
 
-The on-disk directory holding `HEAD`, `STATE`, `REPORTED`, config, and block
-files.
+The on-disk directory holding the config and CSV inputs. State may live here too
+(in a `state` subdirectory by default) or elsewhere; see **state directory**.
+
+### State directory
+
+The on-disk directory holding `HEAD`, `STATE`, `REPORTED`, the `PATCH` file, and
+block files. Defaults to a `state` subdirectory of the **work directory**; set
+the `state-dir` config option to relocate it. Use **state directory** for where
+state lives and **work directory** for where the config lives.
 
 ### Fragment
 

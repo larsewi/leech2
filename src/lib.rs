@@ -154,8 +154,16 @@ pub unsafe extern "C" fn lch_patch_create(
 
         let config = unsafe { &*config };
 
+        let state_dir = match config.ensure_state_dir() {
+            Ok(dir) => dir,
+            Err(e) => {
+                log::error!("lch_patch_create(): {:#}", e);
+                return FAILURE;
+            }
+        };
+
         let hash = if last_known.is_null() {
-            match reported::load(&config.work_dir, config.file_mode) {
+            match reported::load(&state_dir, config.file_mode) {
                 Ok(Some(hash)) => hash,
                 Ok(None) => utils::GENESIS_HASH.to_string(),
                 Err(e) => {
@@ -428,7 +436,15 @@ pub unsafe extern "C" fn lch_patch_applied(
             }
         };
 
-        if let Err(e) = self::reported::save(&config.work_dir, &patch.head, config.file_mode) {
+        let state_dir = match config.ensure_state_dir() {
+            Ok(dir) => dir,
+            Err(e) => {
+                log::error!("lch_patch_applied(): {:#}", e);
+                return FAILURE;
+            }
+        };
+
+        if let Err(e) = self::reported::save(&state_dir, &patch.head, config.file_mode) {
             log::error!("lch_patch_applied(): Failed to save REPORTED: {:#}", e);
             return FAILURE;
         }
@@ -448,7 +464,15 @@ pub unsafe extern "C" fn lch_patch_failed(config: *const config::Config) -> i32 
 
         let config = unsafe { &*config };
 
-        if let Err(e) = reported::remove(&config.work_dir, config.file_mode) {
+        let state_dir = match config.ensure_state_dir() {
+            Ok(dir) => dir,
+            Err(e) => {
+                log::error!("lch_patch_failed(): {:#}", e);
+                return FAILURE;
+            }
+        };
+
+        if let Err(e) = reported::remove(&state_dir, config.file_mode) {
             log::error!("lch_patch_failed(): Failed to remove REPORTED: {:#}", e);
             return FAILURE;
         }
