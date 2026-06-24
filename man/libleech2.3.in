@@ -40,7 +40,10 @@ The library operates on a work directory containing a configuration file
 .RB ( config.toml
 or
 .BR config.json )
-that defines tables, field schemas, filters, and other settings. See
+that defines tables, field schemas, filters, and other settings. The base config
+may pull in additional drop-in fragments via a top-level
+.B include
+key holding a list of glob patterns, merged last-wins. See
 .BR lch (1)
 for configuration details.
 .SH FUNCTIONS

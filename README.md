@@ -61,6 +61,35 @@ lch patch failed
 
 Config can be `config.toml` or `config.json`.
 
+### Drop-in fragments
+
+The base config may pull in additional config files via a top-level `include`
+key holding a list of glob patterns. This lets a package that bundles leech2
+ship a read-only base config while still letting users extend the reporting
+system -- adding tables or injected fields -- by dropping fragment files into an
+included directory, without editing the bundled file.
+
+```toml
+include = ["conf.d/*.toml", "conf.d/*.json"]
+```
+
+- Relative patterns resolve against the work directory; absolute patterns are
+  used as-is. A pattern that matches nothing is not an error.
+- Fragments use the same schema as the base config and may be `.toml` or `.json`
+  regardless of the base file's format. Every section is optional, so a fragment
+  can contribute just the tables (or injected fields) it adds.
+- Fragments are deep-merged in order: the base first, then each `include`
+  pattern in the order listed, with each pattern's matches sorted by filename.
+- Merging is **last-wins** and recurses into sections: the `tables` map unions by
+  table name, and sections like `[compression]` and `[truncate]` merge field by
+  field, so a fragment can override just the keys it sets. Lists are replaced
+  wholesale, so a later fragment that sets a table's `fields` or the
+  `injected-fields` list overrides the earlier one entirely. A drop-in fragment
+  can therefore override values from the bundled base config.
+- A base `config.toml`/`config.json` is required, and only the base may declare
+  `include`; a fragment that sets `include` is rejected (nested includes are not
+  supported).
+
 ### Tables
 
 - Each table must have at least one field marked `primary-key = true`

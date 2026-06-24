@@ -320,7 +320,7 @@ src/
                 callback-backed tables
   logger.rs     Callback-based log dispatch for FFI consumers
   main.rs       CLI (lch binary)
-  config.rs     TOML/JSON config parsing
+  config.rs     TOML/JSON config parsing, drop-in fragment merging (include)
   table.rs      Table loading (CSV path + callback path) and the in-memory
                 table type (HashMap<Vec<Cell>, Vec<Cell>>)
   state.rs      Snapshot of all tables, protobuf persistence
@@ -355,7 +355,7 @@ or any path passed to `lch_init()`). It contains:
 
 | File                 | Description                                                          |
 | -------------------- | -------------------------------------------------------------------- |
-| `config.{toml,json}` | Table definitions and field schemas                                  |
+| `config.{toml,json}` | Table definitions and field schemas (may pull in drop-in fragments via `include`) |
 | `HEAD`               | Current block hash (40-character hex string)                         |
 | `REPORTED`           | Hash of last successfully reported patch head (used by truncation)   |
 | `STATE`              | Protobuf-encoded snapshot of all tables                              |

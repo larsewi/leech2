@@ -144,6 +144,12 @@ exist. The implicit parent of block #1.
 The on-disk directory holding `HEAD`, `STATE`, `REPORTED`, config, and block
 files.
 
+### Fragment
+
+A drop-in config file pulled in by the base config's `include` globs and merged
+into it last-wins. Use **fragment** for an included file and **base config** for
+the required `config.toml`/`config.json`; only the base may declare `include`.
+
 ### Hash
 
 The content-addressed identifier of a block. Logs render the short form (first
