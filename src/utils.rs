@@ -102,6 +102,15 @@ pub fn validate_field_name(name: &str) -> Result<()> {
     Ok(())
 }
 
+/// Parse a `file-mode` string as octal (e.g. `"0600"`). An optional `0o` prefix
+/// is allowed. The returned value is range checked by the caller.
+pub fn parse_file_mode(raw: &str) -> Result<u32> {
+    let trimmed = raw.trim();
+    let digits = trimmed.strip_prefix("0o").unwrap_or(trimmed);
+    u32::from_str_radix(digits, 8)
+        .map_err(|e| anyhow::anyhow!("invalid octal file-mode '{}': {}", raw, e))
+}
+
 /// Join `handle` and surface any panic payload as a warning under `context`
 /// (e.g. `"Background truncation thread"`). Without this, `let _ = handle.join();`
 /// silently discards worker-thread panics.
@@ -216,5 +225,13 @@ mod tests {
     #[test]
     fn test_parse_duration_trailing_digits() {
         assert!(parse_duration("30").is_err());
+    }
+
+    #[test]
+    fn test_parse_file_mode() {
+        assert_eq!(parse_file_mode("0600").unwrap(), 0o600);
+        assert_eq!(parse_file_mode("0o644").unwrap(), 0o644);
+        assert_eq!(parse_file_mode(" 640 ").unwrap(), 0o640);
+        assert!(parse_file_mode("99").is_err());
     }
 }

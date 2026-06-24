@@ -135,6 +135,36 @@ or
 inside the
 .B .leech2
 work directory.
+.SS Drop-in fragments
+The base config may pull in additional config files via a top-level
+.B include
+key holding a list of glob patterns. Relative patterns resolve against the work
+directory; a pattern that matches nothing is not an error. Fragments use the
+same schema as the base config, may be
+.B .toml
+or
+.B .json
+regardless of the base file's format, and have every section optional so a
+fragment can contribute just the tables or injected fields it adds.
+.PP
+Fragments are deep-merged in order: the base first, then each
+.B include
+pattern in the order listed, with each pattern's matches sorted by filename.
+Merging is last-wins and recurses into sections: the
+.B tables
+map unions by table name, and sections such as
+.B [compression]
+and
+.B [truncate]
+merge field by field. Lists are replaced wholesale, so a later fragment that
+sets a table's
+.B fields
+or the
+.B injected\-fields
+list overrides the earlier one entirely. A base config is required, and only the
+base may declare
+.BR include ;
+a fragment that sets it is rejected.
 .SS Tables
 Each table is defined under
 .BR [tables.\fIname\fR] .

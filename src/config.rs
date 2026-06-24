@@ -1,5 +1,6 @@
 use regex::Regex;
 use serde::{Deserialize, Deserializer};
+use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -10,7 +11,7 @@ use std::time::Duration;
 use anyhow::{Context, Result, bail};
 
 use crate::cell::{Kind, parse_typed_cell};
-use crate::utils::{join_logging_panics, parse_duration, validate_field_name};
+use crate::utils::{join_logging_panics, parse_duration, parse_file_mode, validate_field_name};
 
 /// Post-deserialize semantic checks for config structs (cross-field
 /// invariants, value ranges, etc.) that serde can't express on its own.
@@ -62,26 +63,14 @@ fn default_file_mode() -> u32 {
     0o600
 }
 
-// Custom deserializer for `file-mode`: reads the field as a string and parses
-// it as octal. JSON has no octal integer literal, so accepting a string lets
-// both TOML and JSON express the mode the way Unix users write it (e.g.
-// `"0600"`). An optional `0o` prefix is allowed. The parsed value is range
-// checked in `Config::validate`.
+// Custom deserializer for `file-mode`: reads the field as a string and parses it
+// via `parse_file_mode`. The parsed value is range checked in `Config::validate`.
 fn deserialize_file_mode<'de, D>(deserializer: D) -> Result<u32, D::Error>
 where
     D: Deserializer<'de>,
 {
     let raw = String::deserialize(deserializer)?;
-    let trimmed = raw.trim();
-    let digits = trimmed.strip_prefix("0o").unwrap_or(trimmed);
-    u32::from_str_radix(digits, 8)
-        .map_err(|e| serde::de::Error::custom(format!("invalid octal file-mode '{}': {}", raw, e)))
-}
-
-// Config file formats we accept.
-enum ConfigFormat {
-    Toml,
-    Json,
+    parse_file_mode(&raw).map_err(serde::de::Error::custom)
 }
 
 /// Controls block cleanup / truncation of the block chain.
@@ -327,8 +316,8 @@ fn find_field_value<'a>(
     values.get(position).copied()
 }
 
-/// Top-level configuration loaded from `config.toml` or `config.json` in the
-/// work directory.
+/// Validated configuration: the base `config.toml`/`config.json` in the work
+/// directory deep-merged with any drop-in fragments it pulls in via `include`.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
@@ -514,34 +503,152 @@ impl Validate for Config {
     }
 }
 
+/// Parse a single config file into an untyped value tree, selecting the parser
+/// by file extension (`.toml` or `.json`). Parsing into [`serde_json::Value`]
+/// rather than [`Config`] gives a common representation that fragments of either
+/// format can be deep-merged into before a single final deserialization.
+fn parse_fragment(path: &Path) -> Result<Value> {
+    let content = fs::read_to_string(path)
+        .with_context(|| format!("failed to read config file '{}'", path.display()))?;
+    let extension = path.extension().and_then(|extension| extension.to_str());
+    match extension {
+        Some("toml") => toml::from_str(&content)
+            .with_context(|| format!("failed to parse config TOML file '{}'", path.display())),
+        Some("json") => serde_json::from_str(&content)
+            .with_context(|| format!("failed to parse config JSON file '{}'", path.display())),
+        _ => bail!(
+            "config file '{}' must have a '.toml' or '.json' extension",
+            path.display()
+        ),
+    }
+}
+
+/// Deep-merge `overlay` into `base` (last writer wins). Objects are merged
+/// key-by-key, recursing into shared keys, so the `tables` map unions by table
+/// name and sections like `compression` merge field-by-field. Any other value
+/// (array or scalar) replaces what's in `base`, so a later fragment's table
+/// `fields` or `injected-fields` list overrides the earlier one wholesale.
+fn deep_merge(base: &mut Value, overlay: Value) {
+    match (base, overlay) {
+        (Value::Object(base_map), Value::Object(overlay_map)) => {
+            for (key, overlay_value) in overlay_map {
+                match base_map.get_mut(&key) {
+                    Some(base_value) => deep_merge(base_value, overlay_value),
+                    None => {
+                        base_map.insert(key, overlay_value);
+                    }
+                }
+            }
+        }
+        (base_slot, overlay_value) => *base_slot = overlay_value,
+    }
+}
+
+/// Take the base config's `include` glob patterns out of its value tree. Removing
+/// the key keeps it out of the final `Config` deserialization, which would
+/// otherwise reject it under `deny_unknown_fields`.
+fn take_include_patterns(base: &mut Value, base_path: &Path) -> Result<Vec<String>> {
+    let Some(map) = base.as_object_mut() else {
+        return Ok(Vec::new());
+    };
+    let Some(value) = map.remove("include") else {
+        return Ok(Vec::new());
+    };
+    serde_json::from_value(value).with_context(|| {
+        format!(
+            "'include' in '{}' must be a list of strings",
+            base_path.display()
+        )
+    })
+}
+
+/// Expand the base config's `include` glob patterns into an ordered list of
+/// fragment paths. Relative patterns resolve against `work_dir`. Patterns are
+/// processed in order; each pattern's matches are sorted lexicographically.
+/// The base file and already-seen paths are skipped so every fragment loads at
+/// most once. A pattern that matches nothing is not an error.
+fn resolve_includes(
+    work_dir: &Path,
+    patterns: &[String],
+    base_path: &Path,
+) -> Result<Vec<PathBuf>> {
+    let mut paths = Vec::new();
+    let mut seen = HashSet::new();
+    seen.insert(base_path.to_path_buf());
+
+    for pattern in patterns {
+        let joined = if Path::new(pattern).is_absolute() {
+            PathBuf::from(pattern)
+        } else {
+            work_dir.join(pattern)
+        };
+        let joined = joined
+            .to_str()
+            .ok_or_else(|| anyhow::anyhow!("include pattern '{}' is not valid UTF-8", pattern))?;
+
+        let mut matches = Vec::new();
+        for entry in
+            glob::glob(joined).with_context(|| format!("invalid include pattern '{}'", pattern))?
+        {
+            matches.push(
+                entry.with_context(|| format!("failed to read match for include '{}'", pattern))?,
+            );
+        }
+
+        if matches.is_empty() {
+            log::debug!("Include pattern '{}' matched no files", pattern);
+            continue;
+        }
+
+        matches.sort();
+        for path in matches {
+            if seen.insert(path.clone()) {
+                paths.push(path);
+            }
+        }
+    }
+
+    Ok(paths)
+}
+
 impl Config {
     pub fn load(work_dir: &Path) -> Result<Config> {
         let toml_path = work_dir.join("config.toml");
         let json_path = work_dir.join("config.json");
 
-        let (path, format) = match (toml_path.exists(), json_path.exists()) {
+        let base_path = match (toml_path.exists(), json_path.exists()) {
             (true, true) => {
                 bail!("found both config.toml and config.json (don't know which one to pick)")
             }
-            (true, false) => (toml_path, ConfigFormat::Toml),
-            (false, true) => (json_path, ConfigFormat::Json),
+            (true, false) => toml_path,
+            (false, true) => json_path,
             (false, false) => bail!(
                 "no config file found in '{}' (expected config.toml or config.json)",
                 work_dir.display()
             ),
         };
 
-        log::debug!("Parsing config from file '{}'...", path.display());
-        let content = fs::read_to_string(&path)
-            .with_context(|| format!("failed to read config file '{}'", path.display()))?;
-        let mut config: Config = match format {
-            ConfigFormat::Toml => toml::from_str(&content).with_context(|| {
-                format!("failed to parse config TOML file '{}'", path.display())
-            })?,
-            ConfigFormat::Json => serde_json::from_str(&content).with_context(|| {
-                format!("failed to parse config JSON file '{}'", path.display())
-            })?,
-        };
+        log::debug!("Parsing config from file '{}'...", base_path.display());
+        let mut merged = parse_fragment(&base_path)?;
+        let include_patterns = take_include_patterns(&mut merged, &base_path)?;
+
+        for path in resolve_includes(work_dir, &include_patterns, &base_path)? {
+            log::debug!("Merging config fragment '{}'...", path.display());
+            let fragment = parse_fragment(&path)?;
+            if fragment.get("include").is_some() {
+                bail!(
+                    "config fragment '{}' may not declare 'include' (nested includes are not supported)",
+                    path.display()
+                );
+            }
+            deep_merge(&mut merged, fragment);
+        }
+
+        // `serde_path_to_error` prefixes the offending key path (e.g.
+        // `truncate.max-age`) onto deserialization errors, which a plain
+        // `serde_json::from_value` would otherwise drop.
+        let mut config: Config = serde_path_to_error::deserialize(merged)
+            .context("failed to build config from merged files")?;
         config.work_dir = work_dir.to_path_buf();
 
         config.validate()?;
@@ -1090,5 +1197,244 @@ fields = [
             msg.contains("file-mode"),
             "expected error to mention 'file-mode', got: {msg}"
         );
+    }
+
+    #[test]
+    fn test_include_merges_fragment_tables() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = r#"
+include = ["drop-in/*.toml"]
+
+[tables.users]
+fields = [
+    { name = "id", type = "NUMBER", primary-key = true },
+]
+"#;
+        let fragment = r#"
+[tables.products]
+fields = [
+    { name = "sku", type = "TEXT", primary-key = true },
+]
+"#;
+        fs::write(dir.path().join("config.toml"), base).unwrap();
+        fs::create_dir(dir.path().join("drop-in")).unwrap();
+        fs::write(dir.path().join("drop-in/extra.toml"), fragment).unwrap();
+
+        let config = Config::load(dir.path()).unwrap();
+        assert!(config.tables.contains_key("users"));
+        assert!(config.tables.contains_key("products"));
+    }
+
+    #[test]
+    fn test_include_duplicate_table_last_wins() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = r#"
+include = ["drop-in/*.toml"]
+
+[tables.users]
+fields = [
+    { name = "id", type = "NUMBER", primary-key = true },
+    { name = "name", type = "TEXT" },
+]
+"#;
+        // The fragment redefines `users` with a single field; last-wins means
+        // the merged table has only that field.
+        let fragment = r#"
+[tables.users]
+fields = [
+    { name = "uuid", type = "TEXT", primary-key = true },
+]
+"#;
+        fs::write(dir.path().join("config.toml"), base).unwrap();
+        fs::create_dir(dir.path().join("drop-in")).unwrap();
+        fs::write(dir.path().join("drop-in/override.toml"), fragment).unwrap();
+
+        let config = Config::load(dir.path()).unwrap();
+        let fields = &config.tables.get("users").unwrap().fields;
+        assert_eq!(fields.len(), 1);
+        assert_eq!(fields[0].name, "uuid");
+    }
+
+    #[test]
+    fn test_include_duplicate_injected_field_last_wins() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = r#"
+include = ["drop-in/*.toml"]
+
+[[injected-fields]]
+name = "host"
+type = "TEXT"
+value = "base"
+
+[tables.users]
+fields = [
+    { name = "id", type = "NUMBER", primary-key = true },
+]
+"#;
+        let fragment = r#"
+[[injected-fields]]
+name = "host"
+type = "TEXT"
+value = "fragment"
+"#;
+        fs::write(dir.path().join("config.toml"), base).unwrap();
+        fs::create_dir(dir.path().join("drop-in")).unwrap();
+        fs::write(dir.path().join("drop-in/override.toml"), fragment).unwrap();
+
+        let config = Config::load(dir.path()).unwrap();
+        assert_eq!(config.injected_fields.len(), 1);
+        assert_eq!(config.injected_fields[0].value, "fragment");
+    }
+
+    #[test]
+    fn test_include_deep_merges_section_subkeys() {
+        // The fragment sets only `csv.source`; deep-merge keeps the base table's
+        // fields and the rest of its csv block.
+        let dir = tempfile::tempdir().unwrap();
+        let base = r#"
+include = ["drop-in/*.toml"]
+
+[tables.users]
+fields = [
+    { name = "id", type = "NUMBER", primary-key = true },
+]
+
+[tables.users.csv]
+source = "base.csv"
+header = true
+"#;
+        let fragment = r#"
+[tables.users.csv]
+source = "override.csv"
+"#;
+        fs::write(dir.path().join("config.toml"), base).unwrap();
+        fs::create_dir(dir.path().join("drop-in")).unwrap();
+        fs::write(dir.path().join("drop-in/source.toml"), fragment).unwrap();
+
+        let config = Config::load(dir.path()).unwrap();
+        let csv = config.tables.get("users").unwrap().csv.as_ref().unwrap();
+        assert_eq!(csv.source, "override.csv");
+        // Untouched sub-keys survive the merge.
+        assert!(csv.header);
+        assert_eq!(config.tables.get("users").unwrap().fields.len(), 1);
+    }
+
+    #[test]
+    fn test_include_global_section_fragment_overrides_base() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = r#"
+include = ["drop-in/*.toml"]
+file-mode = "0600"
+
+[tables.users]
+fields = [
+    { name = "id", type = "NUMBER", primary-key = true },
+]
+"#;
+        let fragment = "file-mode = \"0640\"\n";
+        fs::write(dir.path().join("config.toml"), base).unwrap();
+        fs::create_dir(dir.path().join("drop-in")).unwrap();
+        fs::write(dir.path().join("drop-in/mode.toml"), fragment).unwrap();
+
+        let config = Config::load(dir.path()).unwrap();
+        assert_eq!(config.file_mode, 0o640);
+    }
+
+    #[test]
+    fn test_fragment_declaring_include_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = r#"
+include = ["drop-in/*.toml"]
+
+[tables.users]
+fields = [
+    { name = "id", type = "NUMBER", primary-key = true },
+]
+"#;
+        let fragment = r#"
+include = ["other/*.toml"]
+
+[tables.products]
+fields = [
+    { name = "sku", type = "TEXT", primary-key = true },
+]
+"#;
+        fs::write(dir.path().join("config.toml"), base).unwrap();
+        fs::create_dir(dir.path().join("drop-in")).unwrap();
+        fs::write(dir.path().join("drop-in/nested.toml"), fragment).unwrap();
+
+        let err = Config::load(dir.path()).expect_err("expected nested-include error");
+        let msg = format!("{:#}", err);
+        assert!(
+            msg.contains("may not declare 'include'"),
+            "expected error about nested includes, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_fragment_unknown_extension_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = r#"
+include = ["drop-in/*"]
+
+[tables.users]
+fields = [
+    { name = "id", type = "NUMBER", primary-key = true },
+]
+"#;
+        fs::write(dir.path().join("config.toml"), base).unwrap();
+        fs::create_dir(dir.path().join("drop-in")).unwrap();
+        fs::write(dir.path().join("drop-in/extra.yaml"), "tables: {}").unwrap();
+
+        let err = Config::load(dir.path()).expect_err("expected unknown-extension error");
+        let msg = format!("{:#}", err);
+        assert!(
+            msg.contains("'.toml' or '.json' extension"),
+            "expected error about the extension, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_include_mixes_toml_base_and_json_fragment() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = r#"
+include = ["drop-in/*.json"]
+
+[tables.users]
+fields = [
+    { name = "id", type = "NUMBER", primary-key = true },
+]
+"#;
+        let fragment = r#"{
+  "tables": {
+    "products": {
+      "fields": [{ "name": "sku", "type": "TEXT", "primary-key": true }]
+    }
+  }
+}"#;
+        fs::write(dir.path().join("config.toml"), base).unwrap();
+        fs::create_dir(dir.path().join("drop-in")).unwrap();
+        fs::write(dir.path().join("drop-in/extra.json"), fragment).unwrap();
+
+        let config = Config::load(dir.path()).unwrap();
+        assert!(config.tables.contains_key("users"));
+        assert!(config.tables.contains_key("products"));
+    }
+
+    #[test]
+    fn test_include_pattern_matching_nothing_is_ok() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = r#"
+include = ["drop-in/*.toml"]
+
+[tables.users]
+fields = [
+    { name = "id", type = "NUMBER", primary-key = true },
+]
+"#;
+        fs::write(dir.path().join("config.toml"), base).unwrap();
+
+        let config = Config::load(dir.path()).unwrap();
+        assert!(config.tables.contains_key("users"));
     }
 }
