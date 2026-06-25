@@ -57,6 +57,15 @@ lch patch applied
 lch patch failed
 ```
 
+Pass `--dry-run` to any create or mutate command (`block create`, `patch
+create`, `patch inject`, `patch applied`, `patch failed`) to compute the change
+and print what it `Would have ...` done without writing anything to disk:
+
+```sh
+lch block create --dry-run
+lch patch create --dry-run
+```
+
 ## Configuration
 
 Config can be `config.toml` or `config.json`.
