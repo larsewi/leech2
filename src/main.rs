@@ -37,6 +37,10 @@ struct Cli {
     #[arg(short = 'C', global = true)]
     directory: Option<PathBuf>,
 
+    /// Skip all disk writes; log "Would have ..." instead
+    #[arg(long, global = true)]
+    dry_run: bool,
+
     #[command(subcommand)]
     command: Cmd,
 }
@@ -196,7 +200,14 @@ fn cmd_patch_create(
 
     let encoded = leech2::wire::encode_patch(config, &patch)?;
     let state_dir = config.ensure_state_dir()?;
-    leech2::storage::store(&state_dir, PATCH_FILE, &encoded, config.file_mode)?;
+    if config.dry_run {
+        eprintln!(
+            "Would have written patch to '{}'",
+            state_dir.join(PATCH_FILE).display()
+        );
+    } else {
+        leech2::storage::store(&state_dir, PATCH_FILE, &encoded, config.file_mode)?;
+    }
 
     println!("{}", patch);
     Ok(())
@@ -286,7 +297,14 @@ fn cmd_patch_inject(config: &Config, name: &str, value: &str, kind: &str) -> Res
 
     let encoded = leech2::wire::encode_patch(config, &patch)?;
     let state_dir = config.ensure_state_dir()?;
-    leech2::storage::store(&state_dir, PATCH_FILE, &encoded, config.file_mode)?;
+    if config.dry_run {
+        eprintln!(
+            "Would have written patch to '{}'",
+            state_dir.join(PATCH_FILE).display()
+        );
+    } else {
+        leech2::storage::store(&state_dir, PATCH_FILE, &encoded, config.file_mode)?;
+    }
 
     println!("{}", patch);
     Ok(())
@@ -295,7 +313,11 @@ fn cmd_patch_inject(config: &Config, name: &str, value: &str, kind: &str) -> Res
 fn cmd_patch_applied(config: &Config) -> Result<()> {
     let patch = load_patch(config)?;
     let state_dir = config.ensure_state_dir()?;
-    leech2::reported::save(&state_dir, &patch.head, config.file_mode)?;
+    if config.dry_run {
+        eprintln!("Would have updated REPORTED to '{:.7}...'", patch.head);
+    } else {
+        leech2::reported::save(&state_dir, &patch.head, config.file_mode)?;
+    }
 
     println!("{}", patch.head);
     Ok(())
@@ -303,8 +325,12 @@ fn cmd_patch_applied(config: &Config) -> Result<()> {
 
 fn cmd_patch_failed(config: &Config) -> Result<()> {
     let state_dir = config.ensure_state_dir()?;
-    leech2::reported::remove(&state_dir, config.file_mode)?;
-    println!("REPORTED removed; next patch will be a full state");
+    if config.dry_run {
+        eprintln!("Would have removed REPORTED");
+    } else {
+        leech2::reported::remove(&state_dir, config.file_mode)?;
+        println!("REPORTED removed; next patch will be a full state");
+    }
     Ok(())
 }
 
@@ -350,7 +376,8 @@ fn run(cli: Cli) -> Result<()> {
     match &cli.command {
         Cmd::Init => cmd_init(&work_dir)?,
         Cmd::Block { command } => {
-            let config = Config::load(&work_dir)?;
+            let mut config = Config::load(&work_dir)?;
+            config.dry_run = cli.dry_run;
             match command {
                 BlockCmd::Create => cmd_block_create(&config)?,
                 BlockCmd::Show { reference, n } => {
@@ -364,7 +391,8 @@ fn run(cli: Cli) -> Result<()> {
             }
         }
         Cmd::Patch { command } => {
-            let config = Config::load(&work_dir)?;
+            let mut config = Config::load(&work_dir)?;
+            config.dry_run = cli.dry_run;
             match command {
                 PatchCmd::Create { reference, n } => {
                     cmd_patch_create(&config, reference.as_deref(), *n)?;

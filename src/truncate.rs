@@ -115,12 +115,17 @@ fn remove_orphans(
     config: &TruncateConfig,
     reachable: &HashSet<String>,
     mode: u32,
+    dry_run: bool,
 ) -> Result<()> {
     let (on_disk, stale_locks) = scan_work_dir(work_dir)?;
 
     if config.remove_orphans {
         for hash in &on_disk {
             if !reachable.contains(hash) {
+                if dry_run {
+                    eprintln!("Would have removed orphaned block '{:.7}...'", hash);
+                    continue;
+                }
                 log::info!("Removing orphaned block '{:.7}...'", hash);
                 storage::remove(work_dir, hash, mode)?;
             }
@@ -128,6 +133,10 @@ fn remove_orphans(
     }
 
     for lock_file in &stale_locks {
+        if dry_run {
+            eprintln!("Would have removed stale lock file '{}'", lock_file);
+            continue;
+        }
         log::info!("Removing stale lock file '{}'", lock_file);
         if let Err(error) = std::fs::remove_file(work_dir.join(lock_file)) {
             log::warn!(
@@ -148,6 +157,7 @@ fn truncate_chain(
     config: &TruncateConfig,
     chain: &[ChainEntry],
     mode: u32,
+    dry_run: bool,
 ) -> Result<()> {
     let reported_pos = if config.truncate_reported {
         match reported::load(work_dir, mode)? {
@@ -175,14 +185,22 @@ fn truncate_chain(
         let should_remove = past_reported || past_max_blocks || past_max_age;
 
         if should_remove {
-            log::info!("Truncating block '{:.7}...'", entry.hash);
-            storage::remove(work_dir, &entry.hash, mode)?;
+            if dry_run {
+                eprintln!("Would have truncated block '{:.7}...'", entry.hash);
+            } else {
+                log::info!("Truncating block '{:.7}...'", entry.hash);
+                storage::remove(work_dir, &entry.hash, mode)?;
+            }
             removed += 1;
         }
     }
 
     if removed > 0 {
-        log::info!("Truncated {} block(s)", removed);
+        if dry_run {
+            eprintln!("Would have truncated {} block(s)", removed);
+        } else {
+            log::info!("Truncated {} block(s)", removed);
+        }
     }
 
     Ok(())
@@ -191,14 +209,17 @@ fn truncate_chain(
 /// Run a single truncation pass under the chain lock. Blocks until the
 /// chain lock is available; serializes against `Block::create` and any
 /// other in-progress truncation in the same work directory.
-pub fn run(work_dir: &Path, config: &TruncateConfig, mode: u32) -> Result<()> {
+pub fn run(work_dir: &Path, config: &TruncateConfig, mode: u32, dry_run: bool) -> Result<()> {
+    // Grab the chain lock even in dry-run so the reported preview reflects a
+    // consistent chain and cannot race a concurrent block creation or
+    // truncation pass.
     let _chain_lock = storage::acquire_lock(work_dir, CHAIN_LOCK_NAME, true, mode)
         .context("failed to acquire chain lock for truncation")?;
 
     let head_hash = head::load(work_dir, mode)?;
     let (chain, reachable) = walk_chain(work_dir, &head_hash, mode);
-    remove_orphans(work_dir, config, &reachable, mode)?;
-    truncate_chain(work_dir, config, &chain, mode)?;
+    remove_orphans(work_dir, config, &reachable, mode, dry_run)?;
+    truncate_chain(work_dir, config, &chain, mode, dry_run)?;
 
     Ok(())
 }
@@ -235,8 +256,9 @@ pub fn spawn_background(config: &Config) {
     let state_dir = config.state_dir();
     let truncate_config = config.truncate.clone();
     let file_mode = config.file_mode;
+    let dry_run = config.dry_run;
     let handle = std::thread::spawn(move || {
-        if let Err(e) = run(&state_dir, &truncate_config, file_mode) {
+        if let Err(e) = run(&state_dir, &truncate_config, file_mode, dry_run) {
             log::warn!("Background truncation failed (non-fatal): {:#}", e);
         }
     });

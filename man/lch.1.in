@@ -5,6 +5,7 @@ lch \- track CSV changes and produce SQL patches
 .B lch
 .RB [ \-C
 .IR path ]
+.RB [ \-\-dry\-run ]
 .I command
 .RI [ args ]
 .SH DESCRIPTION
@@ -42,6 +43,19 @@ Run as if started in
 instead of the current directory. This affects where the
 .B .leech2
 work directory is located.
+.TP
+.B \-\-dry\-run
+Compute the requested change but skip every write to disk, printing
+.RB \(dq "Would have ..." \(dq
+to standard error instead. Applies to
+.BR "lch block create" ,
+.BR "lch patch create" ,
+.BR "lch patch inject" ,
+.BR "lch patch applied" ,
+and
+.BR "lch patch failed" ,
+including the chain truncation that follows block creation. A no-op on
+read-only commands.
 .TP
 .B \-V\fR, \fB\-\-version
 Print version information and exit.

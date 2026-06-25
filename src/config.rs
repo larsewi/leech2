@@ -378,6 +378,28 @@ pub struct Config {
     /// the CLI) cleanly waits for truncation before tearing down.
     #[serde(skip)]
     pub(crate) background_truncation: Mutex<Option<JoinHandle<()>>>,
+    /// When true, CLI create/mutate operations skip all disk writes and print
+    /// "Would have ..." messages instead. CLI-only; set by `lch --dry-run`,
+    /// never deserialized.
+    #[serde(skip)]
+    pub dry_run: bool,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Config {
+            work_dir: PathBuf::new(),
+            state_dir: None,
+            injected_fields: Vec::new(),
+            compression: CompressionConfig::default(),
+            tables: HashMap::new(),
+            truncate: TruncateConfig::default(),
+            file_mode: default_file_mode(),
+            dir_mode: default_dir_mode(),
+            background_truncation: Default::default(),
+            dry_run: false,
+        }
+    }
 }
 
 impl Drop for Config {
