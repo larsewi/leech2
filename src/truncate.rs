@@ -204,9 +204,9 @@ pub fn run(work_dir: &Path, config: &TruncateConfig, mode: u32) -> Result<()> {
 }
 
 /// Spawn `run` on a background thread, taking an owned snapshot of
-/// `config.work_dir`, `config.truncate`, and `config.file_mode` so the thread
-/// is decoupled from the `Config`'s lifetime. The `JoinHandle` is parked in
-/// `config.background_truncation`.
+/// `config.state_dir()`, `config.truncate`, and `config.file_mode` so the
+/// thread is decoupled from the `Config`'s lifetime. The `JoinHandle` is parked
+/// in `config.background_truncation`.
 ///
 /// If a previous background pass is still running, this is a no-op: that
 /// pass is either holding or waiting on the chain lock and will observe
@@ -225,18 +225,18 @@ pub fn spawn_background(config: &Config) {
         } else {
             log::debug!(
                 "Skipping background truncation for '{}': previous pass still in flight",
-                config.work_dir.display()
+                config.state_dir().display()
             );
             *slot = Some(handle);
             return;
         }
     }
 
-    let work_dir = config.work_dir.clone();
+    let state_dir = config.state_dir();
     let truncate_config = config.truncate.clone();
     let file_mode = config.file_mode;
     let handle = std::thread::spawn(move || {
-        if let Err(e) = run(&work_dir, &truncate_config, file_mode) {
+        if let Err(e) = run(&state_dir, &truncate_config, file_mode) {
             log::warn!("Background truncation failed (non-fatal): {:#}", e);
         }
     });

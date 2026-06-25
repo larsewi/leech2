@@ -88,13 +88,13 @@ impl Block {
     /// advances, truncation is kicked off on a background thread; use
     /// [`truncate::wait_for_pending`] to observe its completion.
     pub fn create(config: &Config, callbacks: Option<&Callbacks>) -> Result<String> {
-        let work_dir = &config.work_dir;
+        let state_dir = config.ensure_state_dir()?;
         let file_mode = config.file_mode;
         let current_state =
             state::State::compute(config, callbacks).context("failed to compute current state")?;
 
         let parent_hash =
-            head::load(work_dir, file_mode).context("failed to load head of chain")?;
+            head::load(&state_dir, file_mode).context("failed to load head of chain")?;
 
         let created = Some(SystemTime::now().into());
 
@@ -106,8 +106,8 @@ impl Block {
         let payload = if parent_hash == utils::GENESIS_HASH {
             HashMap::new()
         } else {
-            let previous_state =
-                state::State::load(work_dir, file_mode).context("failed to load previous state")?;
+            let previous_state = state::State::load(&state_dir, file_mode)
+                .context("failed to load previous state")?;
 
             delta::Delta::compute(previous_state, &current_state)
                 .into_iter()
@@ -126,18 +126,18 @@ impl Block {
             .context("failed to encode block")?;
         let hash = utils::compute_hash(&encoded);
 
-        let chain_lock = storage::acquire_lock(work_dir, "chain", true, file_mode)
+        let chain_lock = storage::acquire_lock(&state_dir, "chain", true, file_mode)
             .context("failed to acquire chain lock")?;
 
-        storage::store(work_dir, &hash, &encoded, file_mode)
+        storage::store(&state_dir, &hash, &encoded, file_mode)
             .with_context(|| format!("failed to store block {:.7}", hash))?;
 
         log::info!("Created block '{:.7}...': {}", hash, block);
 
         current_state
-            .store(work_dir, file_mode)
+            .store(&state_dir, file_mode)
             .context("failed to store current state")?;
-        head::store(work_dir, &hash, file_mode).context("failed to update head of state")?;
+        head::store(&state_dir, &hash, file_mode).context("failed to update head of state")?;
 
         drop(chain_lock);
 

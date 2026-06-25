@@ -350,22 +350,30 @@ tests/          Acceptance tests (`accept_*.rs`), the round-trip
 
 ## Work directory layout
 
-All leech2 state lives in a single directory (`.leech2/` when using the CLI,
-or any path passed to `lch_init()`). It contains:
+The work directory (`.leech2/` when using the CLI, or any path passed to
+`lch_init()`) holds the config and CSV inputs:
 
-| File                 | Description                                                          |
-| -------------------- | -------------------------------------------------------------------- |
+| File                 | Description                                                                       |
+| -------------------- | --------------------------------------------------------------------------------- |
 | `config.{toml,json}` | Table definitions and field schemas (may pull in drop-in fragments via `include`) |
-| `HEAD`               | Current block hash (40-character hex string)                         |
-| `REPORTED`           | Hash of last successfully reported patch head (used by truncation)   |
-| `STATE`              | Protobuf-encoded snapshot of all tables                              |
-| `PATCH`              | Last generated patch (CLI only)                                      |
-| `<sha1>`             | Protobuf-encoded block files, named by their hash                    |
-| `*.lock`             | Lock files for inter-process synchronization (created automatically) |
-| `*.tmp`              | Temporary files used during atomic writes (should not persist)       |
+| CSV sources          | Referenced by each table's `source` field (relative to the work dir, or absolute) |
 
-CSV source files are referenced by the config's `source` field. The path is
-resolved relative to the work directory but can also be an absolute path.
+State files live in a separate state directory, by default a `state`
+subdirectory of the work directory (configurable via the `state-dir` config
+option):
+
+| File       | Description                                                          |
+| ---------- | -------------------------------------------------------------------- |
+| `HEAD`     | Current block hash (40-character hex string)                         |
+| `REPORTED` | Hash of last successfully reported patch head (used by truncation)   |
+| `STATE`    | Protobuf-encoded snapshot of all tables                              |
+| `PATCH`    | Last generated patch (CLI only)                                      |
+| `<sha1>`   | Protobuf-encoded block files, named by their hash                    |
+| `*.lock`   | Lock files for inter-process synchronization (created automatically) |
+| `*.tmp`    | Temporary files used during atomic writes (should not persist)       |
+
+leech2 creates the state directory on demand, with permission bits from the
+`dir-mode` config option (default `0700`).
 
 ## Protobuf
 

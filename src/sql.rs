@@ -504,11 +504,13 @@ mod tests {
     fn dummy_config(tables: HashMap<String, crate::config::TableConfig>) -> Config {
         Config {
             work_dir: std::path::PathBuf::from("/tmp"),
+            state_dir: None,
             injected_fields: Vec::new(),
             compression: crate::config::CompressionConfig::default(),
             tables,
             truncate: TruncateConfig::default(),
             file_mode: 0o600,
+            dir_mode: 0o700,
             background_truncation: Default::default(),
         }
     }

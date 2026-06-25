@@ -314,12 +314,12 @@ fn full_state_patch(
 
 impl Patch {
     pub fn create(config: &Config, last_known: &str) -> Result<Patch> {
-        let work_dir = &config.work_dir;
+        let state_dir = config.ensure_state_dir()?;
         let file_mode = config.file_mode;
 
-        let resolved = crate::storage::resolve_hash_prefix(work_dir, last_known);
+        let resolved = crate::storage::resolve_hash_prefix(&state_dir, last_known);
 
-        let head = head::load(work_dir, file_mode)?;
+        let head = head::load(&state_dir, file_mode)?;
 
         let mut injected_fields: Vec<Field> = Vec::with_capacity(config.injected_fields.len());
         for field_config in &config.injected_fields {
@@ -346,23 +346,23 @@ impl Patch {
             Ok(hash) if hash != GENESIS_HASH => hash,
             Ok(_) => {
                 log::info!("Reference is genesis, producing full state patch");
-                return full_state_patch(work_dir, &head, injected_fields, file_mode);
+                return full_state_patch(&state_dir, &head, injected_fields, file_mode);
             }
             Err(e) => {
                 log::warn!(
                     "Reference block not found, producing full state patch: {}",
                     e
                 );
-                return full_state_patch(work_dir, &head, injected_fields, file_mode);
+                return full_state_patch(&state_dir, &head, injected_fields, file_mode);
             }
         };
 
         let (created, num_blocks, deltas, states) =
-            match try_consolidate(work_dir, &head, &last_known, file_mode) {
+            match try_consolidate(&state_dir, &head, &last_known, file_mode) {
                 Ok(result) => result,
                 Err(e) => {
                     log::warn!("Consolidation failed, falling back to full state: {}", e);
-                    return full_state_patch(work_dir, &head, injected_fields, file_mode);
+                    return full_state_patch(&state_dir, &head, injected_fields, file_mode);
                 }
             };
 

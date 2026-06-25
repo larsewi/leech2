@@ -33,7 +33,7 @@ source = "users.csv"
 
     // Before any blocks: HEAD is genesis, patch should be empty
     assert_eq!(
-        head::load(work_dir, config.file_mode).unwrap(),
+        head::load(&config.ensure_state_dir().unwrap(), config.file_mode).unwrap(),
         GENESIS_HASH
     );
     let patch = Patch::create(&config, GENESIS_HASH).unwrap();
@@ -68,7 +68,10 @@ source = "users.csv"
     let hash = Block::create(&config, None).unwrap();
 
     assert_ne!(hash, GENESIS_HASH);
-    assert_eq!(head::load(work_dir, config.file_mode).unwrap(), hash);
+    assert_eq!(
+        head::load(&config.state_dir(), config.file_mode).unwrap(),
+        hash
+    );
 }
 
 #[test]

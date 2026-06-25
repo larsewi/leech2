@@ -77,7 +77,7 @@ timestamp, and table names.
 Create a patch from
 .I REF
 to HEAD and write it to
-.BR .leech2/PATCH .
+.BR .leech2/state/PATCH .
 .TP
 .I REF
 Block hash or unambiguous hash prefix. Defaults to the REPORTED hash (the last
@@ -90,12 +90,12 @@ blocks. Cannot be combined with
 .IR REF .
 .SS lch patch show
 Show the contents of the
-.B .leech2/PATCH
+.B .leech2/state/PATCH
 file. Requires a prior
 .BR "lch patch create" .
 .SS lch patch sql
 Convert the
-.B .leech2/PATCH
+.B .leech2/state/PATCH
 file to SQL statements. Delta payloads generate DELETE, INSERT, and UPDATE
 statements. State payloads generate TRUNCATE followed by INSERT statements.
 The output is not wrapped in a transaction; callers that need atomicity
@@ -103,7 +103,7 @@ should issue their own BEGIN / COMMIT. Requires a prior
 .BR "lch patch create" .
 .SS lch patch inject \fINAME\fR \fIVALUE\fR [\fITYPE\fR]
 Add or overwrite an injected field on the
-.B .leech2/PATCH
+.B .leech2/state/PATCH
 file. The patch is decoded, the field is inserted, and the patch is
 re-encoded in place. Repeat the command to inject multiple fields. If a
 field with the same
@@ -135,6 +135,14 @@ or
 inside the
 .B .leech2
 work directory.
+.SS State directory
+State files (HEAD, STATE, REPORTED, the PATCH file, and block files) live in a
+directory separate from the config and CSV inputs, by default a
+.B state
+subdirectory of the work directory. The optional top-level
+.B state\-dir
+option relocates it; a relative path resolves against the work directory and an
+absolute path is used as-is. The directory is created on demand.
 .SS Drop-in fragments
 The base config may pull in additional config files via a top-level
 .B include
@@ -373,12 +381,20 @@ Remove blocks older than the last reported position (default: true).
 .SS File permissions
 .TP
 .BI file\-mode " = 0600"
-Unix permission bits for files created in the work directory (HEAD, STATE,
+Unix permission bits for files created in the state directory (HEAD, STATE,
 REPORTED, block files, and their lock files), written as an octal string. An
 optional
 .B 0o
 prefix is accepted and the value must be <= 0o777. Defaults to
 .BR 0600 .
+Ignored on non-Unix platforms.
+.TP
+.BI dir\-mode " = 0700"
+Unix permission bits for the state directory when leech2 creates it, written as
+an octal string. Follows the same rules as
+.BR file\-mode .
+Defaults to
+.BR 0700 .
 Ignored on non-Unix platforms.
 .SH ENVIRONMENT
 .TP
@@ -403,31 +419,36 @@ on Windows.
 .B .leech2/
 Work directory created by
 .BR "lch init" .
-Contains all configuration, state, and block files.
+Contains the configuration and CSV inputs; state lives in a subdirectory (see
+below).
 .TP
 .B .leech2/config.toml
 Table definitions, field schemas, filters, compression settings, and history
 truncation configuration. May also be
 .BR config.json .
 .TP
-.B .leech2/HEAD
+.B .leech2/state/
+State directory holding the files below. Configurable via
+.BR state\-dir .
+.TP
+.B .leech2/state/HEAD
 Current block hash (the tip of the chain).
 .TP
-.B .leech2/REPORTED
+.B .leech2/state/REPORTED
 Hash of the last successfully applied patch. Used as the default starting point
 for
 .BR "lch patch create" .
 Removed by
 .BR "lch patch failed" .
 .TP
-.B .leech2/STATE
+.B .leech2/state/STATE
 Protobuf-encoded snapshot of all table states.
 .TP
-.B .leech2/PATCH
+.B .leech2/state/PATCH
 Last generated patch, written by
 .BR "lch patch create" .
 .TP
-.BI .leech2/ hash
+.BI .leech2/state/ hash
 Block files, named by their SHA-1 content hash.
 .SH CONCURRENCY
 See
