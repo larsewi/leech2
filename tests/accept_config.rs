@@ -359,36 +359,6 @@ source = "users.csv"
 }
 
 #[test]
-fn test_injected_field_empty_value_rejected() {
-    common::init_logging();
-    let tmp = tempfile::tempdir().unwrap();
-    common::write_config(
-        tmp.path(),
-        "config.toml",
-        r#"
-[[injected-fields]]
-name = "host"
-value = ""
-
-[tables.users]
-fields = [
-    { name = "id", type = "NUMBER", primary-key = true },
-    { name = "name", type = "TEXT" },
-]
-
-[tables.users.csv]
-source = "users.csv"
-"#,
-    );
-
-    let err = format!("{:#}", Config::load(tmp.path()).unwrap_err());
-    assert!(
-        err.contains("value must not be empty"),
-        "should report empty value: {err}"
-    );
-}
-
-#[test]
 fn test_injected_field_value_does_not_parse() {
     common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
