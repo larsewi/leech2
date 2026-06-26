@@ -119,10 +119,15 @@ impl<'a> TableSchema<'a> {
 }
 
 /// Validate that a wire cell's variant agrees with the field's declared
-/// type. `Null` is accepted on any non-primary-key field; primary-key fields
-/// reject `Null` upstream during state computation.
+/// type. `Null` is accepted on any non-primary-key field; a primary-key cell
+/// with the value `NULL` is rejected here, since a patch decoded from an
+/// untrusted peer can carry a NULL key cell that the producing agent's load
+/// path would have rejected.
 fn check_value_matches_field(value: &Cell, field: &FieldConfig) -> Result<()> {
     if value.kind() == Kind::Null {
+        if field.primary_key {
+            bail!("field '{}': primary-key value must not be NULL", field.name);
+        }
         return Ok(());
     }
 
@@ -734,9 +739,26 @@ mod tests {
 
     #[test]
     fn test_check_value_matches_field_accepts_null() {
-        // NULL is allowed on any non-primary-key field. Primary-key NULLs are
-        // rejected upstream during state computation.
+        // NULL is allowed on any non-primary-key field.
         check_value_matches_field(&Cell::Null, &make_field("name", Kind::Text)).unwrap();
+    }
+
+    #[test]
+    fn test_check_value_matches_field_rejects_null_primary_key() {
+        // A patch decoded from an untrusted peer can carry a NULL primary-key
+        // cell. Reject it here rather than emitting `... = NULL` SQL.
+        let field = FieldConfig {
+            name: "id".to_string(),
+            kind: Kind::Number,
+            primary_key: true,
+            ..Default::default()
+        };
+        let err = check_value_matches_field(&Cell::Null, &field).unwrap_err();
+        let msg = format!("{:#}", err);
+        assert!(
+            msg.contains("primary-key value must not be NULL"),
+            "got: {msg}"
+        );
     }
 
     #[test]
