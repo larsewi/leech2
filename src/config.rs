@@ -184,9 +184,6 @@ impl Default for InjectedFieldConfig {
 impl Validate for InjectedFieldConfig {
     fn validate(&self) -> Result<()> {
         validate_field_name(&self.name)?;
-        if self.value.is_empty() {
-            bail!("'{}': value must not be empty", self.name);
-        }
         parse_typed_cell(&self.value, self.kind).with_context(|| format!("'{}'", self.name))?;
         Ok(())
     }
@@ -1210,6 +1207,24 @@ fields = [
             msg.contains("control character"),
             "expected error to mention the control character, got: {msg}"
         );
+    }
+
+    #[test]
+    fn test_injected_field_accepts_empty_text_value() {
+        let dir = tempfile::tempdir().unwrap();
+        let extra = "[[injected-fields]]\nname = \"note\"\ntype = \"TEXT\"\nvalue = \"\"\n";
+        fs::write(dir.path().join("config.toml"), minimal_config_with(extra)).unwrap();
+        let config = Config::load(dir.path()).unwrap();
+        assert_eq!(config.injected_fields[0].value, "");
+    }
+
+    #[test]
+    fn test_injected_field_rejects_empty_number_value() {
+        let dir = tempfile::tempdir().unwrap();
+        let extra = "[[injected-fields]]\nname = \"seq\"\ntype = \"NUMBER\"\nvalue = \"\"\n";
+        fs::write(dir.path().join("config.toml"), minimal_config_with(extra)).unwrap();
+        let err = Config::load(dir.path()).expect_err("expected validation error");
+        assert!(format!("{:#}", err).contains("invalid number"));
     }
 
     fn minimal_config_with(extra: &str) -> String {
