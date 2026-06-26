@@ -1,7 +1,9 @@
 use std::ffi::{CString, c_char, c_void};
 use std::sync::{Once, RwLock};
 
-use log::{LevelFilter, Log, Metadata, Record};
+use log::{Level, LevelFilter, Log, Metadata, Record};
+
+use crate::ffi::{LOG_DEBUG, LOG_ERROR, LOG_INFO, LOG_TRACE, LOG_WARN};
 
 type LogCallback = unsafe extern "C" fn(i32, *const c_char, *mut c_void);
 
@@ -32,7 +34,16 @@ impl Log for CallbackLogger {
         if let Some(ref state) = *guard {
             let message = format!("{}", record.args());
             if let Ok(cstr) = CString::new(message) {
-                let level = record.level() as i32;
+                // Map explicitly to the LCH_LOG_* values rather than casting
+                // the log crate's Level discriminant, which is not a stable
+                // ABI contract.
+                let level = match record.level() {
+                    Level::Error => LOG_ERROR,
+                    Level::Warn => LOG_WARN,
+                    Level::Info => LOG_INFO,
+                    Level::Debug => LOG_DEBUG,
+                    Level::Trace => LOG_TRACE,
+                };
                 unsafe {
                     (state.callback)(level, cstr.as_ptr(), state.user_data);
                 }

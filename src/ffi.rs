@@ -30,6 +30,17 @@ const VALUE_NUMBER: c_int = 2;
 /// `LCH_VALUE_BOOLEAN` from `leech2.h`. Cell kind tag.
 const VALUE_BOOLEAN: c_int = 3;
 
+/// `LCH_LOG_ERROR` from `leech2.h`. Log level passed to `lch_log_callback_t`.
+pub const LOG_ERROR: i32 = 1;
+/// `LCH_LOG_WARN` from `leech2.h`. Log level passed to `lch_log_callback_t`.
+pub const LOG_WARN: i32 = 2;
+/// `LCH_LOG_INFO` from `leech2.h`. Log level passed to `lch_log_callback_t`.
+pub const LOG_INFO: i32 = 3;
+/// `LCH_LOG_DEBUG` from `leech2.h`. Log level passed to `lch_log_callback_t`.
+pub const LOG_DEBUG: i32 = 4;
+/// `LCH_LOG_TRACE` from `leech2.h`. Log level passed to `lch_log_callback_t`.
+pub const LOG_TRACE: i32 = 5;
+
 /// Run an FFI body inside `catch_unwind`, returning `default` if a panic is caught.
 /// Panicking across an `extern "C"` boundary is undefined behavior, so every FFI
 /// entry point routes its body through this guard as a last line of defense.
