@@ -158,6 +158,16 @@ impl TryFrom<&ProtoInjectedField> for InjectedField {
             .with_context(|| format!("injected field '{}': missing value", proto.name))?;
         let value = Cell::try_from(proto_value)
             .with_context(|| format!("injected field '{}'", proto.name))?;
+        // A patch decoded from an untrusted peer can carry a NULL injected
+        // value, which would render `WHERE <field> = NULL` (matching no rows)
+        // and silently turn a state replacement into an append. The
+        // `inject_field` API rejects NULL too; reject it here for the wire path.
+        if value == Cell::Null {
+            bail!(
+                "injected field '{}': NULL values are not supported",
+                proto.name
+            );
+        }
         Ok(InjectedField {
             name: proto.name.clone(),
             value,
@@ -759,6 +769,27 @@ mod tests {
             msg.contains("primary-key value must not be NULL"),
             "got: {msg}"
         );
+    }
+
+    #[test]
+    fn test_injected_field_rejects_null_value() {
+        let proto = ProtoInjectedField {
+            name: "host".to_string(),
+            value: Some(ProtoCell::from(Cell::Null)),
+        };
+        let err = InjectedField::try_from(&proto).err().unwrap();
+        let msg = format!("{:#}", err);
+        assert!(msg.contains("NULL values are not supported"), "got: {msg}");
+    }
+
+    #[test]
+    fn test_injected_field_accepts_non_null_value() {
+        let proto = ProtoInjectedField {
+            name: "host".to_string(),
+            value: Some(ProtoCell::from(Cell::Text("agent-1".into()))),
+        };
+        let injected = InjectedField::try_from(&proto).unwrap();
+        assert_eq!(injected.value, Cell::Text("agent-1".into()));
     }
 
     #[test]
