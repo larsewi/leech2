@@ -11,6 +11,7 @@ use crate::proto::patch::Patch as ProtoPatch;
 use crate::proto::record::Record as ProtoRecord;
 use crate::proto::table::Table as ProtoTable;
 use crate::proto::update::Update as ProtoUpdate;
+use crate::utils::validate_field_name;
 
 /// Schema information for a single table, derived from the wire-declared
 /// field lists. Column ordering follows the wire (i.e. the agent's
@@ -152,6 +153,13 @@ impl TryFrom<&ProtoInjectedField> for InjectedField {
     type Error = anyhow::Error;
 
     fn try_from(proto: &ProtoInjectedField) -> Result<Self> {
+        // A patch decoded from an untrusted peer can carry an injected-field
+        // name with control characters that quote_identifier does not reject
+        // (e.g. a NUL would terminate the resulting CString, and newlines
+        // corrupt log/audit output). The config and inject_field paths both
+        // validate the name; do the same for the wire path.
+        validate_field_name(&proto.name)
+            .with_context(|| format!("injected field '{}'", proto.name))?;
         let proto_value = proto
             .value
             .as_ref()
@@ -751,6 +759,17 @@ mod tests {
     fn test_check_value_matches_field_accepts_null() {
         // NULL is allowed on any non-primary-key field.
         check_value_matches_field(&Cell::Null, &make_field("name", Kind::Text)).unwrap();
+    }
+
+    #[test]
+    fn test_injected_field_rejects_control_character_name() {
+        let proto = ProtoInjectedField {
+            name: "ho\0st".to_string(),
+            value: Some(ProtoCell::from(Cell::Text("agent-1".into()))),
+        };
+        let err = InjectedField::try_from(&proto).err().unwrap();
+        let msg = format!("{:#}", err);
+        assert!(msg.contains("control character"), "got: {msg}");
     }
 
     #[test]
