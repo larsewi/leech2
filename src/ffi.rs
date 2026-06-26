@@ -56,19 +56,22 @@ pub fn null_arg<T>(fn_name: &str, arg_name: &str, ptr: *const T) -> bool {
     false
 }
 
-/// Validate a required C string FFI argument and convert it to `&str`.
+/// Validate a required C string FFI argument and copy it into an owned `String`.
 ///
 /// Logs an error and returns `None` if `ptr` is null or the bytes are not UTF-8.
+/// Returns an owned `String` rather than a borrow: the caller's pointer is only
+/// guaranteed valid for the duration of the FFI call, so handing back a `&str`
+/// tied to it would invite a use-after-free if the value were ever stashed.
 ///
 /// # Safety
 /// If `ptr` is non-null, it must point to a valid, null-terminated C string.
-pub unsafe fn cstr_arg<'a>(fn_name: &str, arg_name: &str, ptr: *const c_char) -> Option<&'a str> {
+pub unsafe fn cstr_arg(fn_name: &str, arg_name: &str, ptr: *const c_char) -> Option<String> {
     if ptr.is_null() {
         log::error!("{}(): Bad argument: {} cannot be NULL", fn_name, arg_name);
         return None;
     }
     match unsafe { CStr::from_ptr(ptr) }.to_str() {
-        Ok(s) => Some(s),
+        Ok(s) => Some(s.to_owned()),
         Err(e) => {
             log::error!("{}(): Bad argument: {}: {}", fn_name, arg_name, e);
             None
@@ -122,7 +125,7 @@ pub unsafe fn cell_from_ffi(fn_name: &str, cell: &FfiCell) -> Option<Cell> {
         VALUE_TEXT => {
             let ptr = unsafe { cell.payload.text };
             let s = unsafe { cstr_arg(fn_name, "cell.text", ptr) }?;
-            Some(Cell::Text(s.to_string()))
+            Some(Cell::Text(s))
         }
         VALUE_NUMBER => match Cell::number(unsafe { cell.payload.number }) {
             Ok(cell) => Some(cell),

@@ -323,7 +323,7 @@ pub unsafe extern "C" fn lch_patch_inject(
             }
         };
 
-        if let Err(e) = patch.inject_field(name, cell) {
+        if let Err(e) = patch.inject_field(&name, cell) {
             log::error!("lch_patch_inject(): {:#}", e);
             return FAILURE;
         }
