@@ -253,8 +253,8 @@ pub struct CsvConfig {
     /// strict default literal `"false"` is required. Unanchored by default.
     #[serde(rename = "false", deserialize_with = "deserialize_optional_regex")]
     pub false_pattern: Option<Regex>,
-    /// Drop records where any field value exceeds this character length.
-    /// `None` disables the limit.
+    /// Drop records where any field value exceeds this length in bytes
+    /// (UTF-8 encoded). `None` disables the limit.
     #[serde(rename = "max-field-length")]
     pub max_field_length: Option<usize>,
     /// Optional include/exclude filter applied at CSV load time.

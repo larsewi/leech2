@@ -233,7 +233,7 @@ exclude = '^DROP$'              # then drop records whose listed fields match
 ```
 
 - `max-field-length`: Optional. Any record where any field value exceeds this
-  character length is dropped.
+  length in bytes (UTF-8 encoded) is dropped.
 - `csv.filter` is an optional single-block-per-table section with three keys:
   - `fields`: list of field names this filter examines. Every name must appear
     in the table's `fields` (validated at config-load time).
