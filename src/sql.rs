@@ -116,6 +116,28 @@ impl<'a> TableSchema<'a> {
             .copied()
             .with_context(|| format!("internal error: no hub field config for '{}'", name))
     }
+
+    /// Reject injected fields whose name collides with a real column of this
+    /// table. The config loader rejects such collisions for config-declared
+    /// injected fields; this covers the wire path, where an injected name
+    /// duplicating a column would splice the column in twice and produce an
+    /// INSERT with a duplicate column that every database rejects.
+    fn reject_injected_collisions(
+        &self,
+        injected_fields: &[InjectedField],
+        table_name: &str,
+    ) -> Result<()> {
+        for injected in injected_fields {
+            if self.field_configs.contains_key(injected.name.as_str()) {
+                bail!(
+                    "injected field '{}' collides with a column of table '{}'",
+                    injected.name,
+                    table_name
+                );
+            }
+        }
+        Ok(())
+    }
 }
 
 /// Validate that a wire cell's variant agrees with the field's declared
@@ -417,6 +439,7 @@ fn delta_to_sql(
         config,
         table_name,
     )?;
+    schema.reject_injected_collisions(injected_fields, table_name)?;
     let table = quote_identifier(table_name);
 
     emit_deletes(&delta.deletes, &schema, injected_fields, &table, out)
@@ -443,6 +466,7 @@ fn state_table_to_sql(
         config,
         table_name,
     )?;
+    schema.reject_injected_collisions(injected_fields, table_name)?;
     let quoted_table = quote_identifier(table_name);
 
     if injected_fields.is_empty() {
@@ -602,6 +626,30 @@ mod tests {
 
         let result = patch_to_sql(&config, &patch).unwrap().unwrap();
         assert!(result.contains("INSERT INTO"));
+    }
+
+    #[test]
+    fn test_patch_to_sql_rejects_injected_field_colliding_with_column() {
+        // A wire-injected field whose name matches a real column would splice
+        // the column in twice, producing an INSERT with a duplicate column.
+        let table_config = dummy_table(&[("id", true), ("name", false)]);
+        let mut config = Config::default();
+        config.tables = HashMap::from([("test_table".to_string(), table_config)]);
+
+        let mut delta = dummy_delta(&["id"], &["name"]);
+        delta.inserts.push(ProtoRecord {
+            key: text_proto_cells(&["1"]),
+            value: text_proto_cells(&["Alice"]),
+        });
+        let mut patch = dummy_patch(HashMap::from([("test_table".to_string(), delta)]));
+        patch.injected_fields.push(ProtoInjectedField {
+            name: "name".to_string(),
+            value: Some(ProtoCell::from(Cell::Text("agent-1".into()))),
+        });
+
+        let err = patch_to_sql(&config, &patch).unwrap_err();
+        let msg = format!("{:#}", err);
+        assert!(msg.contains("collides with a column"), "got: {msg}");
     }
 
     #[test]
