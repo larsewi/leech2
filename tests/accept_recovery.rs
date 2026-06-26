@@ -243,3 +243,58 @@ fn test_state_file_deleted_with_valid_chain() {
 
     common::assert_wire_roundtrip(&config, &patch);
 }
+
+/// A layout change forces a table to full state, which is sourced from the
+/// STATE file. If STATE is also missing, the full state cannot be
+/// reconstructed, so patch creation must fail loudly rather than silently
+/// emit a patch that omits the changed table.
+#[test]
+fn test_layout_change_with_missing_state_fails() {
+    common::init_logging();
+    let tmp = tempfile::tempdir().unwrap();
+    let work_dir = tmp.path();
+
+    common::write_config(
+        work_dir,
+        "config.toml",
+        r#"
+[tables.users]
+fields = [
+    { name = "id", type = "NUMBER", primary-key = true },
+    { name = "name", type = "TEXT" },
+]
+
+[tables.users.csv]
+source = "users.csv"
+"#,
+    );
+    common::write_csv(work_dir, "users.csv", "1,Alice\n");
+    let config = Config::load(work_dir).unwrap();
+    let hash1 = Block::create(&config, None).unwrap();
+
+    // Add a field: the next block records a layout change for users.
+    common::write_config(
+        work_dir,
+        "config.toml",
+        r#"
+[tables.users]
+fields = [
+    { name = "id", type = "NUMBER", primary-key = true },
+    { name = "name", type = "TEXT" },
+    { name = "email", type = "TEXT" },
+]
+
+[tables.users.csv]
+source = "users.csv"
+"#,
+    );
+    common::write_csv(work_dir, "users.csv", "1,Alice,alice@example.com\n");
+    let config = Config::load(work_dir).unwrap();
+    let _hash2 = Block::create(&config, None).unwrap();
+
+    // Delete STATE: the layout-changed table can no longer be sourced.
+    storage::remove(&config.state_dir(), "STATE", config.file_mode).unwrap();
+
+    // Must error rather than silently drop the changed table from the patch.
+    assert!(Patch::create(&config, &hash1).is_err());
+}

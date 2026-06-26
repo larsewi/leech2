@@ -237,14 +237,19 @@ fn try_consolidate(
     let mut result_deltas = HashMap::new();
     let mut result_states = HashMap::new();
 
-    // Skipped tables fall back to full state.
+    // Skipped tables fall back to full state. If the STATE file can't satisfy
+    // one (e.g. STATE was deleted), bail so the caller falls back to a
+    // full-state patch for the whole set, rather than emitting a patch that
+    // silently omits a table whose layout changed.
     for table_name in &skipped_tables {
-        if let Some(state_table) = state_tables.get(table_name) {
-            log::info!("Table '{}': using full state (layout changed)", table_name);
-            result_states.insert(table_name.clone(), state_table.clone());
-        } else {
-            log::warn!("Table '{}' not in STATE file, skipping", table_name);
-        }
+        let state_table = state_tables.get(table_name).with_context(|| {
+            format!(
+                "table '{}' needs full state (layout changed) but is not in the STATE file",
+                table_name
+            )
+        })?;
+        log::info!("Table '{}': using full state (layout changed)", table_name);
+        result_states.insert(table_name.clone(), state_table.clone());
     }
 
     for (table_name, merged) in merged_deltas {
