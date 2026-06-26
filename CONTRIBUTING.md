@@ -245,8 +245,13 @@ even when the block chain or metadata is incomplete.
   ignored), and the STATE file is overwritten with the current snapshot
 - **Block chain broken:** (middle block deleted) | Delta consolidation fails →
   falls back to full state
-- **STATE file deleted:** (chain intact) | Delta consolidation still succeeds
-  via block chain; STATE is not needed
+- **STATE file deleted:** (chain intact, no layout change) | Delta
+  consolidation still succeeds via block chain; STATE is not needed
+- **STATE file deleted:** (chain intact, layout change in range) | A
+  layout-changed table can only be sent as full state, which is sourced from
+  STATE. With STATE gone the full state cannot be reconstructed, so
+  `Patch::create` fails loudly rather than emitting a patch that silently omits
+  the changed table
 
 The key invariant: when the reference point is unknown or unreliable (genesis,
 unresolvable hash, broken chain), the patch always uses **full state** for all
