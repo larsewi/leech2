@@ -136,28 +136,54 @@ fn append(config: &Config, run: RunStats) -> Result<()> {
     Ok(())
 }
 
-/// Aggregated view of all runs in the stats file: per stage, the total and
-/// most-recent value for time and bytes saved. Averages are derived in
-/// `Display`.
+/// Median, mean, and most-recent value of one metric across all runs.
+pub struct Aggregate {
+    /// Median across runs.
+    pub median: f64,
+    /// Mean (average) across runs.
+    pub mean: f64,
+    /// Value from the most recent run.
+    pub last: f64,
+}
+
+impl Aggregate {
+    /// Compute the aggregate from per-run values, ordered oldest to newest.
+    fn from_runs(values: &[f64]) -> Aggregate {
+        let last = values.last().copied().unwrap_or(0.0);
+        let mean = if values.is_empty() {
+            0.0
+        } else {
+            values.iter().sum::<f64>() / values.len() as f64
+        };
+
+        let mut sorted = values.to_vec();
+        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let n = sorted.len();
+        let median = if n == 0 {
+            0.0
+        } else if n % 2 == 1 {
+            sorted[n / 2]
+        } else {
+            (sorted[n / 2 - 1] + sorted[n / 2]) / 2.0
+        };
+
+        Aggregate { median, mean, last }
+    }
+}
+
+/// Aggregated view of all runs in the stats file: per stage, the median, mean,
+/// and most-recent value for time and bytes saved.
 pub struct Summary {
     /// Number of recorded runs.
     pub runs: usize,
-    /// Total delta-merging time across all runs, in milliseconds.
-    pub delta_total_ms: f64,
-    /// Delta-merging time of the most recent run, in milliseconds.
-    pub delta_last_ms: f64,
-    /// Total bytes saved by delta merging across all runs.
-    pub delta_saved_bytes: i64,
-    /// Bytes saved by delta merging in the most recent run.
-    pub delta_last_saved_bytes: i64,
-    /// Total compression time across all runs, in milliseconds.
-    pub compression_total_ms: f64,
-    /// Compression time of the most recent run, in milliseconds.
-    pub compression_last_ms: f64,
-    /// Total bytes saved by compression across all runs.
-    pub compression_saved_bytes: i64,
-    /// Bytes saved by compression in the most recent run.
-    pub compression_last_saved_bytes: i64,
+    /// Delta-merging time (milliseconds) across runs.
+    pub delta_time: Aggregate,
+    /// Bytes saved by delta merging across runs.
+    pub delta_bytes: Aggregate,
+    /// Compression time (milliseconds) across runs.
+    pub compression_time: Aggregate,
+    /// Bytes saved by compression across runs.
+    pub compression_bytes: Aggregate,
 }
 
 /// Write a two-space-indented table: the first column is left-aligned, the rest
@@ -184,46 +210,48 @@ fn write_table(f: &mut fmt::Formatter<'_>, rows: &[[String; 4]]) -> fmt::Result 
 
 impl fmt::Display for Summary {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let runs = self.runs as f64;
         let ms = |value: f64| format!("{:.2} ms", value);
-        let avg_ms = |total: f64| ms(total / runs);
-        let bytes = |value: i64| format!("{} bytes", value);
-        let avg_bytes = |total: i64| bytes((total as f64 / runs).round() as i64);
+        let bytes = |value: f64| format!("{} bytes", value.round() as i64);
 
         let time_rows = [
-            ["Time".into(), "Total".into(), "Avg".into(), "Last".into()],
+            [
+                "Time".into(),
+                "Median".into(),
+                "Average".into(),
+                "Last".into(),
+            ],
             [
                 "Delta merging".into(),
-                ms(self.delta_total_ms),
-                avg_ms(self.delta_total_ms),
-                ms(self.delta_last_ms),
+                ms(self.delta_time.median),
+                ms(self.delta_time.mean),
+                ms(self.delta_time.last),
             ],
             [
                 "Compression".into(),
-                ms(self.compression_total_ms),
-                avg_ms(self.compression_total_ms),
-                ms(self.compression_last_ms),
+                ms(self.compression_time.median),
+                ms(self.compression_time.mean),
+                ms(self.compression_time.last),
             ],
         ];
 
         let bytes_rows = [
             [
                 "Bytes saved".into(),
-                "Total".into(),
-                "Avg".into(),
+                "Median".into(),
+                "Average".into(),
                 "Last".into(),
             ],
             [
                 "Delta merging".into(),
-                bytes(self.delta_saved_bytes),
-                avg_bytes(self.delta_saved_bytes),
-                bytes(self.delta_last_saved_bytes),
+                bytes(self.delta_bytes.median),
+                bytes(self.delta_bytes.mean),
+                bytes(self.delta_bytes.last),
             ],
             [
                 "Compression".into(),
-                bytes(self.compression_saved_bytes),
-                avg_bytes(self.compression_saved_bytes),
-                bytes(self.compression_last_saved_bytes),
+                bytes(self.compression_bytes.median),
+                bytes(self.compression_bytes.mean),
+                bytes(self.compression_bytes.last),
             ],
         ];
 
@@ -248,28 +276,28 @@ pub fn summarize(config: &Config) -> Result<Option<Summary>> {
     };
     let runs: Vec<RunStats> =
         serde_json::from_slice(&bytes).context("failed to parse STATS file")?;
-    let Some(last) = runs.last() else {
+    if runs.is_empty() {
         return Ok(None);
-    };
-
-    let mut summary = Summary {
-        runs: runs.len(),
-        delta_total_ms: 0.0,
-        delta_last_ms: last.delta_merging.duration_ms,
-        delta_saved_bytes: 0,
-        delta_last_saved_bytes: last.delta_merging.saved(),
-        compression_total_ms: 0.0,
-        compression_last_ms: last.compression.duration_ms,
-        compression_saved_bytes: 0,
-        compression_last_saved_bytes: last.compression.saved(),
-    };
-    for run in &runs {
-        summary.delta_total_ms += run.delta_merging.duration_ms;
-        summary.delta_saved_bytes += run.delta_merging.saved();
-        summary.compression_total_ms += run.compression.duration_ms;
-        summary.compression_saved_bytes += run.compression.saved();
     }
-    Ok(Some(summary))
+
+    let mut delta_times = Vec::with_capacity(runs.len());
+    let mut delta_saved = Vec::with_capacity(runs.len());
+    let mut compression_times = Vec::with_capacity(runs.len());
+    let mut compression_saved = Vec::with_capacity(runs.len());
+    for run in &runs {
+        delta_times.push(run.delta_merging.duration_ms);
+        delta_saved.push(run.delta_merging.saved() as f64);
+        compression_times.push(run.compression.duration_ms);
+        compression_saved.push(run.compression.saved() as f64);
+    }
+
+    Ok(Some(Summary {
+        runs: runs.len(),
+        delta_time: Aggregate::from_runs(&delta_times),
+        delta_bytes: Aggregate::from_runs(&delta_saved),
+        compression_time: Aggregate::from_runs(&compression_times),
+        compression_bytes: Aggregate::from_runs(&compression_saved),
+    }))
 }
 
 #[cfg(test)]

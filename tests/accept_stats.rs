@@ -115,8 +115,7 @@ fn sum_saved(entries: &[Value], stage: &str) -> i64 {
     entries
         .iter()
         .map(|run| {
-            run[stage]["bytes_in"].as_i64().unwrap()
-                - run[stage]["bytes_out"].as_i64().unwrap()
+            run[stage]["bytes_in"].as_i64().unwrap() - run[stage]["bytes_out"].as_i64().unwrap()
         })
         .sum()
 }
@@ -139,20 +138,27 @@ fn test_summarize_aggregates_runs() {
     let summary = stats::summarize(&config).unwrap().expect("summary");
 
     assert_eq!(summary.runs, 2);
+    // Mean = total / runs.
     assert_eq!(
-        summary.delta_saved_bytes,
-        sum_saved(&entries, "delta_merging")
+        summary.delta_bytes.mean,
+        sum_saved(&entries, "delta_merging") as f64 / 2.0
     );
     assert_eq!(
-        summary.compression_saved_bytes,
-        sum_saved(&entries, "compression")
+        summary.compression_bytes.mean,
+        sum_saved(&entries, "compression") as f64 / 2.0
     );
-    // The `last` fields reflect the final recorded run.
+    // With two runs the median equals the mean.
+    assert_eq!(
+        summary.compression_bytes.median,
+        summary.compression_bytes.mean
+    );
+    // `last` reflects the final recorded run.
     let last = entries.last().unwrap();
+    let last_compression_saved = last["compression"]["bytes_in"].as_i64().unwrap()
+        - last["compression"]["bytes_out"].as_i64().unwrap();
     assert_eq!(
-        summary.compression_last_saved_bytes,
-        last["compression"]["bytes_in"].as_i64().unwrap()
-            - last["compression"]["bytes_out"].as_i64().unwrap()
+        summary.compression_bytes.last,
+        last_compression_saved as f64
     );
 }
 
