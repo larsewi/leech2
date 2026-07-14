@@ -63,13 +63,13 @@ fn test_stats_enabled_writes_cumulative_records() {
     assert!(run["timestamp"].is_string());
     for stage in ["delta_merging", "compression"] {
         assert!(run[stage]["duration_ms"].as_f64().unwrap() >= 0.0);
-        assert!(run[stage]["bytes_before"].is_u64());
-        assert!(run[stage]["bytes_after"].is_u64());
+        assert!(run[stage]["bytes_in"].is_u64());
+        assert!(run[stage]["bytes_out"].is_u64());
     }
     // Pipeline invariant: the consolidated patch is what compression receives.
     assert_eq!(
-        run["delta_merging"]["bytes_after"],
-        run["compression"]["bytes_before"]
+        run["delta_merging"]["bytes_out"],
+        run["compression"]["bytes_in"]
     );
 
     // A second run appends rather than overwriting.
@@ -115,8 +115,8 @@ fn sum_saved(entries: &[Value], stage: &str) -> i64 {
     entries
         .iter()
         .map(|run| {
-            run[stage]["bytes_before"].as_i64().unwrap()
-                - run[stage]["bytes_after"].as_i64().unwrap()
+            run[stage]["bytes_in"].as_i64().unwrap()
+                - run[stage]["bytes_out"].as_i64().unwrap()
         })
         .sum()
 }
@@ -151,8 +151,8 @@ fn test_summarize_aggregates_runs() {
     let last = entries.last().unwrap();
     assert_eq!(
         summary.compression_last_saved_bytes,
-        last["compression"]["bytes_before"].as_i64().unwrap()
-            - last["compression"]["bytes_after"].as_i64().unwrap()
+        last["compression"]["bytes_in"].as_i64().unwrap()
+            - last["compression"]["bytes_out"].as_i64().unwrap()
     );
 }
 

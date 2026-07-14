@@ -22,7 +22,7 @@ const MAX_DECOMPRESSED_PATCH_SIZE: u64 = 1 << 30; // 1 GiB
 pub fn encode_patch(config: &Config, patch: &Patch) -> Result<Vec<u8>> {
     let mut buf = Vec::new();
     patch.encode(&mut buf)?;
-    let bytes_before = buf.len() as u64;
+    let bytes_in = buf.len() as u64;
 
     if !config.compression.enable {
         log::info!(
@@ -35,8 +35,8 @@ pub fn encode_patch(config: &Config, patch: &Patch) -> Result<Vec<u8>> {
                 Stage::Compression,
                 StageStats {
                     duration_ms: 0.0,
-                    bytes_before,
-                    bytes_after: bytes_before,
+                    bytes_in,
+                    bytes_out: bytes_in,
                 },
             );
         }
@@ -78,8 +78,8 @@ pub fn encode_patch(config: &Config, patch: &Patch) -> Result<Vec<u8>> {
             Stage::Compression,
             StageStats {
                 duration_ms,
-                bytes_before,
-                bytes_after: output.len() as u64,
+                bytes_in,
+                bytes_out: output.len() as u64,
             },
         );
     }

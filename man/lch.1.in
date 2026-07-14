@@ -390,7 +390,7 @@ JSON file in the state directory.
 .TP
 .BI enable " = false"
 Record patch-creation stats (default: false). Each entry stores the
-.IR duration_ms ", " bytes_before ", and " bytes_after
+.IR duration_ms ", " bytes_in ", and " bytes_out
 of the delta-merging and compression stages.
 .SS History truncation
 An optional

@@ -12,22 +12,22 @@ pub const STATS_FILE: &str = "STATS";
 
 /// Elapsed time and wire sizes for one size-reducing stage (delta merging or
 /// compression). Only the primitive, non-derivable values are stored; the
-/// reader computes bytes saved as `bytes_before - bytes_after`.
+/// reader computes bytes saved as `bytes_in - bytes_out`.
 #[derive(Debug, Serialize, Deserialize)]
 pub(crate) struct StageStats {
     /// Time the stage took, in milliseconds.
     pub duration_ms: f64,
     /// Wire size entering the stage.
-    pub bytes_before: u64,
+    pub bytes_in: u64,
     /// Wire size leaving the stage.
-    pub bytes_after: u64,
+    pub bytes_out: u64,
 }
 
 impl StageStats {
     /// Bytes saved on the wire by this stage. Signed because compression can
     /// grow a tiny payload.
     fn saved(&self) -> i64 {
-        self.bytes_before as i64 - self.bytes_after as i64
+        self.bytes_in as i64 - self.bytes_out as i64
     }
 }
 
@@ -287,13 +287,13 @@ mod tests {
             timestamp: "2026-07-14T10:32:05.123Z".to_string(),
             delta_merging: StageStats {
                 duration_ms: 4.12,
-                bytes_before: 48213,
-                bytes_after: 3120,
+                bytes_in: 48213,
+                bytes_out: 3120,
             },
             compression: StageStats {
                 duration_ms: 1.87,
-                bytes_before: 3120,
-                bytes_after: 1042,
+                bytes_in: 3120,
+                bytes_out: 1042,
             },
         }
     }
@@ -315,8 +315,8 @@ mod tests {
 
         let entries = load_entries(&config);
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0]["delta_merging"]["bytes_before"], 48213);
-        assert_eq!(entries[0]["compression"]["bytes_after"], 1042);
+        assert_eq!(entries[0]["delta_merging"]["bytes_in"], 48213);
+        assert_eq!(entries[0]["compression"]["bytes_out"], 1042);
     }
 
     #[test]
