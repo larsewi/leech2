@@ -72,7 +72,10 @@ configuration already exists.
 Create a new block from the current CSV state. Reads the configured CSV sources,
 computes the new state and the delta against the previous state, and writes a
 new block. History truncation is performed afterwards. Prints the new block's
-SHA-1 hash to stdout.
+SHA-1 hash to stdout. With
+.BR \-\-dry\-run ,
+nothing is written and the block that would have been created is printed
+instead.
 .SS lch block show \fR[\fIREF\fR] [\fB\-n \fIN\fR]
 Show the full contents of a block.
 .TP
