@@ -146,8 +146,9 @@ The on-disk directory holding the config and CSV inputs. State may live here too
 
 ### State directory
 
-The on-disk directory holding `HEAD`, `STATE`, `REPORTED`, the `PATCH` file, and
-block files. Defaults to a `state` subdirectory of the **work directory**; set
+The on-disk directory holding `HEAD`, `STATE`, `REPORTED`, the `PATCH` file, the
+optional `STATS` file, and block files. Defaults to a `state` subdirectory of
+the **work directory**; set
 the `state-dir` config option to relocate it. Use **state directory** for where
 state lives and **work directory** for where the config lives.
 
@@ -156,6 +157,12 @@ state lives and **work directory** for where the config lives.
 A drop-in config file pulled in by the base config's `include` globs and merged
 into it last-wins. Use **fragment** for an included file and **base config** for
 the required `config.toml`/`config.json`; only the base may declare `include`.
+
+### Stats file
+
+The opt-in `STATS` JSON file in the **state directory** recording per-run
+elapsed time and wire sizes for delta merging and compression. Use **stats
+file** for this artifact; enable it via the `[stats]` config section.
 
 ### Hash
 

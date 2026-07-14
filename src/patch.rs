@@ -294,6 +294,27 @@ fn try_consolidate(
     Ok((created, num_blocks, result_deltas, result_states))
 }
 
+/// Build the injected-field list from config, converting each entry to its
+/// proto `Field`. Shared by `Patch::create` and `full_state_size` so the
+/// baseline and the real patch carry the same injected fields.
+fn build_injected_fields(config: &Config) -> Result<Vec<Field>> {
+    let mut injected_fields = Vec::with_capacity(config.injected_fields.len());
+    for field_config in &config.injected_fields {
+        injected_fields.push(Field::try_from(field_config)?);
+    }
+    Ok(injected_fields)
+}
+
+/// Encoded protobuf size of a full-state patch for the current HEAD. Used as
+/// the baseline for measuring how many bytes delta merging saved on the wire.
+pub fn full_state_size(config: &Config) -> Result<u64> {
+    let state_dir = config.ensure_state_dir()?;
+    let head = head::load(&state_dir, config.file_mode)?;
+    let injected_fields = build_injected_fields(config)?;
+    let patch = full_state_patch(&state_dir, &head, injected_fields, config.file_mode)?;
+    Ok(patch.encoded_len() as u64)
+}
+
 fn full_state_patch(
     work_dir: &Path,
     head: &str,
@@ -326,10 +347,7 @@ impl Patch {
 
         let head = head::load(&state_dir, file_mode)?;
 
-        let mut injected_fields: Vec<Field> = Vec::with_capacity(config.injected_fields.len());
-        for field_config in &config.injected_fields {
-            injected_fields.push(Field::try_from(field_config)?);
-        }
+        let injected_fields = build_injected_fields(config)?;
 
         if head == GENESIS_HASH {
             let patch = Patch {

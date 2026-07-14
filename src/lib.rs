@@ -1,5 +1,6 @@
 use std::ffi::{CStr, CString, c_char, c_void};
 use std::path::PathBuf;
+use std::time::Instant;
 
 use crate::ffi::{
     FAILURE, FfiBuffer, FfiCell, SUCCESS, cell_from_ffi, cstr_arg, ffi_guard, null_arg,
@@ -19,6 +20,7 @@ pub mod record;
 pub mod reported;
 pub mod sql;
 pub mod state;
+pub mod stats;
 pub mod storage;
 pub mod table;
 pub mod truncate;
@@ -181,6 +183,7 @@ pub unsafe extern "C" fn lch_patch_create(
             }
         };
 
+        let merge_start = Instant::now();
         let patch = match patch::Patch::create(config, &hash) {
             Ok(patch) => patch,
             Err(e) => {
@@ -188,14 +191,17 @@ pub unsafe extern "C" fn lch_patch_create(
                 return FAILURE;
             }
         };
+        let merge_duration = merge_start.elapsed();
 
-        let buf = match wire::encode_patch(config, &patch) {
-            Ok(buf) => buf,
+        let (buf, compression_stats) = match wire::encode_patch(config, &patch) {
+            Ok(result) => result,
             Err(e) => {
                 log::error!("lch_patch_create(): Failed to encode patch: {:#}", e);
                 return FAILURE;
             }
         };
+
+        stats::record_patch_create(config, merge_duration, compression_stats);
 
         unsafe { *out = buf.into() };
 
@@ -328,8 +334,8 @@ pub unsafe extern "C" fn lch_patch_inject(
             return FAILURE;
         }
 
-        let buf = match wire::encode_patch(config, &patch) {
-            Ok(buf) => buf,
+        let (buf, _) = match wire::encode_patch(config, &patch) {
+            Ok(result) => result,
             Err(e) => {
                 log::error!("lch_patch_inject(): Failed to encode patch: {:#}", e);
                 return FAILURE;

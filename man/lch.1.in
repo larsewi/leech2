@@ -362,6 +362,19 @@ Enable or disable zstd compression (default: true).
 .TP
 .BI level " = 3"
 Compression level (defaults to zstd default).
+.SS Stats
+An optional
+.B [stats]
+section makes each
+.B lch patch create
+append a run record to a cumulative
+.B STATS
+JSON file in the state directory.
+.TP
+.BI enable " = false"
+Record patch-creation stats (default: false). Each entry stores the
+.IR duration_ms ", " bytes_before ", and " bytes_after
+of the delta-merging and compression stages.
 .SS History truncation
 An optional
 .B [truncate]
@@ -461,6 +474,13 @@ Protobuf-encoded snapshot of all table states.
 .B .leech2/state/PATCH
 Last generated patch, written by
 .BR "lch patch create" .
+.TP
+.B .leech2/state/STATS
+Cumulative JSON patch-creation stats. Written by
+.B lch patch create
+only when
+.B [stats]
+is enabled.
 .TP
 .BI .leech2/state/ hash
 Block files, named by their SHA-1 content hash.
