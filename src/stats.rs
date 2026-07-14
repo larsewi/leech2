@@ -187,7 +187,8 @@ impl fmt::Display for Summary {
         let runs = self.runs as f64;
         let ms = |value: f64| format!("{:.2} ms", value);
         let avg_ms = |total: f64| ms(total / runs);
-        let avg_bytes = |total: i64| ((total as f64 / runs).round() as i64).to_string();
+        let bytes = |value: i64| format!("{} bytes", value);
+        let avg_bytes = |total: i64| bytes((total as f64 / runs).round() as i64);
 
         let time_rows = [
             ["Time".into(), "Total".into(), "Avg".into(), "Last".into()],
@@ -214,15 +215,15 @@ impl fmt::Display for Summary {
             ],
             [
                 "Delta merging".into(),
-                self.delta_saved_bytes.to_string(),
+                bytes(self.delta_saved_bytes),
                 avg_bytes(self.delta_saved_bytes),
-                self.delta_last_saved_bytes.to_string(),
+                bytes(self.delta_last_saved_bytes),
             ],
             [
                 "Compression".into(),
-                self.compression_saved_bytes.to_string(),
+                bytes(self.compression_saved_bytes),
                 avg_bytes(self.compression_saved_bytes),
-                self.compression_last_saved_bytes.to_string(),
+                bytes(self.compression_last_saved_bytes),
             ],
         ];
 
