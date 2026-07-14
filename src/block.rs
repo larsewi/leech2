@@ -126,6 +126,14 @@ impl Block {
             .context("failed to encode block")?;
         let hash = utils::compute_hash(&encoded);
 
+        if !config.dry_run {
+            log::info!("Created block '{:.7}...': {}", hash, block);
+        } else {
+            // `dry_run` is only ever set by the CLI, so this stdout print never
+            // reaches FFI consumers. Show the block that would have been created.
+            println!("Would have created block '{:.7}...'\n{}", hash, block);
+        }
+
         let chain_lock = storage::acquire_lock(&state_dir, "chain", true, file_mode)
             .context("failed to acquire chain lock")?;
 
@@ -139,14 +147,6 @@ impl Block {
             .context("failed to update head of state")?;
 
         drop(chain_lock);
-
-        if !config.dry_run {
-            log::info!("Created block '{:.7}...': {}", hash, block);
-        } else {
-            // `dry_run` is only ever set by the CLI, so this stdout print never
-            // reaches FFI consumers. Show the block that would have been created.
-            println!("Would have created block '{:.7}...'\n{}", hash, block);
-        }
 
         // In dry-run this reports what truncation would remove; otherwise it
         // kicks off the real cleanup on a background thread.
