@@ -39,7 +39,7 @@ fn block_create_dry_run_writes_nothing() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("Would have created block"),
+        stderr.contains("Would have written") && stderr.contains("HEAD"),
         "stderr was: {stderr}"
     );
 
@@ -60,7 +60,7 @@ fn patch_create_dry_run_writes_no_patch_file() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("Would have written patch"),
+        stderr.contains("Would have written") && stderr.contains("PATCH"),
         "stderr was: {stderr}"
     );
 

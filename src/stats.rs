@@ -111,14 +111,6 @@ pub fn finalize_patch_create(config: &Config) {
 /// file if absent and replacing it wholesale if the existing content is not a
 /// valid JSON array.
 fn append(config: &Config, run: RunStats) -> Result<()> {
-    if config.dry_run {
-        log::info!(
-            "Would have appended stats to '{}'",
-            config.state_dir().join(STATS_FILE).display()
-        );
-        return Ok(());
-    }
-
     let state_dir = config.ensure_state_dir()?;
 
     let mut entries: Vec<Value> = match storage::load(&state_dir, STATS_FILE, config.file_mode)? {
@@ -134,7 +126,13 @@ fn append(config: &Config, run: RunStats) -> Result<()> {
 
     entries.push(serde_json::to_value(&run)?);
     let bytes = serde_json::to_vec_pretty(&entries)?;
-    storage::store(&state_dir, STATS_FILE, &bytes, config.file_mode)?;
+    storage::store(
+        &state_dir,
+        STATS_FILE,
+        &bytes,
+        config.file_mode,
+        config.dry_run,
+    )?;
     Ok(())
 }
 
@@ -336,7 +334,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let config = test_config(dir.path());
         let state_dir = config.ensure_state_dir().unwrap();
-        storage::store(&state_dir, STATS_FILE, b"not json", config.file_mode).unwrap();
+        storage::store(&state_dir, STATS_FILE, b"not json", config.file_mode, false).unwrap();
 
         append(&config, sample_run()).unwrap();
 

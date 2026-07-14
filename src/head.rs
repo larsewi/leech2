@@ -22,8 +22,8 @@ pub fn load(work_dir: &Path, mode: u32) -> Result<String> {
     Ok(hash)
 }
 
-pub fn store(work_dir: &Path, hash: &str, mode: u32) -> Result<()> {
-    storage::store(work_dir, HEAD_FILE, hash.as_bytes(), mode)?;
+pub fn store(work_dir: &Path, hash: &str, mode: u32, dry_run: bool) -> Result<()> {
+    storage::store(work_dir, HEAD_FILE, hash.as_bytes(), mode, dry_run)?;
     log::debug!("Updated head to '{:.7}...'", hash);
     Ok(())
 }

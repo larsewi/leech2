@@ -110,11 +110,11 @@ impl State {
         Ok(state)
     }
 
-    pub fn store(&self, work_dir: &Path, mode: u32) -> Result<()> {
+    pub fn store(&self, work_dir: &Path, mode: u32, dry_run: bool) -> Result<()> {
         let proto_state = ProtoState::from(self.clone());
         let mut buf = Vec::new();
         proto_state.encode(&mut buf)?;
-        storage::store(work_dir, STATE_FILE, &buf, mode)?;
+        storage::store(work_dir, STATE_FILE, &buf, mode, dry_run)?;
         log::debug!(
             "Updated previous state to current state with {} tables",
             self.tables.len()

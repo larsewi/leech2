@@ -45,10 +45,10 @@ fn test_reported_block_truncated() {
     let hash2 = Block::create(&config, None).unwrap();
 
     // Mark block 1 as reported (simulates: database has data up to hash1)
-    reported::save(&config.state_dir(), &hash1, config.file_mode).unwrap();
+    reported::save(&config.state_dir(), &hash1, config.file_mode, false).unwrap();
 
     // Delete block 1 from disk (simulates truncation)
-    storage::remove(&config.state_dir(), &hash1, config.file_mode).unwrap();
+    storage::remove(&config.state_dir(), &hash1, config.file_mode, false).unwrap();
     assert!(!config.state_dir().join(&hash1).exists());
 
     // Patch from REPORTED should fall back to STATE (TRUNCATE + INSERT)
@@ -79,8 +79,8 @@ fn test_reported_file_deleted() {
     let hash1 = Block::create(&config, None).unwrap();
 
     // Mark as reported, then delete the REPORTED file
-    reported::save(&config.state_dir(), &hash1, config.file_mode).unwrap();
-    storage::remove(&config.state_dir(), "REPORTED", config.file_mode).unwrap();
+    reported::save(&config.state_dir(), &hash1, config.file_mode, false).unwrap();
+    storage::remove(&config.state_dir(), "REPORTED", config.file_mode, false).unwrap();
     assert!(
         reported::load(&config.state_dir(), config.file_mode)
             .unwrap()
@@ -113,7 +113,7 @@ fn test_head_file_deleted() {
     Block::create(&config, None).unwrap();
 
     // Delete HEAD — load should return GENESIS
-    storage::remove(&config.state_dir(), "HEAD", config.file_mode).unwrap();
+    storage::remove(&config.state_dir(), "HEAD", config.file_mode, false).unwrap();
     assert_eq!(
         head::load(&config.state_dir(), config.file_mode).unwrap(),
         GENESIS_HASH
@@ -155,7 +155,7 @@ fn test_block_chain_broken() {
     let hash3 = Block::create(&config, None).unwrap();
 
     // Delete the middle block — chain is: hash3 -> hash2 (missing) -> hash1
-    storage::remove(&config.state_dir(), &hash2, config.file_mode).unwrap();
+    storage::remove(&config.state_dir(), &hash2, config.file_mode, false).unwrap();
     assert!(!config.state_dir().join(&hash2).exists());
 
     // Patch from hash1: consolidation walks hash3 -> tries hash2 -> fails -> STATE
@@ -184,14 +184,14 @@ fn test_patch_failed_forces_full_state() {
     // Create initial data and mark as reported
     common::write_csv(work_dir, "users.csv", "1,Alice\n");
     let hash1 = Block::create(&config, None).unwrap();
-    reported::save(&config.state_dir(), &hash1, config.file_mode).unwrap();
+    reported::save(&config.state_dir(), &hash1, config.file_mode, false).unwrap();
 
     // Add more data
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
     let hash2 = Block::create(&config, None).unwrap();
 
     // Simulate patch failure: remove REPORTED
-    reported::remove(&config.state_dir(), config.file_mode).unwrap();
+    reported::remove(&config.state_dir(), config.file_mode, false).unwrap();
     assert!(
         reported::load(&config.state_dir(), config.file_mode)
             .unwrap()
@@ -229,7 +229,7 @@ fn test_state_file_deleted_with_valid_chain() {
     let hash2 = Block::create(&config, None).unwrap();
 
     // Delete STATE — consolidation should still work via block chain
-    storage::remove(&config.state_dir(), "STATE", config.file_mode).unwrap();
+    storage::remove(&config.state_dir(), "STATE", config.file_mode, false).unwrap();
 
     let patch = Patch::create(&config, &hash1).unwrap();
     assert_eq!(patch.head, hash2);
@@ -293,7 +293,7 @@ source = "users.csv"
     let _hash2 = Block::create(&config, None).unwrap();
 
     // Delete STATE: the layout-changed table can no longer be sourced.
-    storage::remove(&config.state_dir(), "STATE", config.file_mode).unwrap();
+    storage::remove(&config.state_dir(), "STATE", config.file_mode, false).unwrap();
 
     // Must error rather than silently drop the changed table from the patch.
     assert!(Patch::create(&config, &hash1).is_err());

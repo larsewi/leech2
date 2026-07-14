@@ -195,7 +195,7 @@ source = "users.csv"
 
     // --- Test orphan from old HEAD ---
     // Manually reset HEAD to GENESIS, making all current blocks orphans
-    head::store(&state_dir, GENESIS_HASH, config.file_mode).unwrap();
+    head::store(&state_dir, GENESIS_HASH, config.file_mode, false).unwrap();
 
     // Create a new block — truncation should remove the now-orphaned blocks
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n3,Charlie\n");
@@ -253,7 +253,7 @@ source = "users.csv"
     assert!(state_dir.join(&hash3).exists());
 
     // Mark B2 as reported — blocks older than B2 should be removed on next create
-    reported::save(&state_dir, &hash2, config.file_mode).unwrap();
+    reported::save(&state_dir, &hash2, config.file_mode, false).unwrap();
 
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n3,Charlie\n4,Dave\n");
     let hash4 = create_block(&config);
@@ -349,7 +349,7 @@ source = "users.csv"
     let hash3 = create_block(&config);
 
     // Mark B2 as reported
-    reported::save(&state_dir, &hash2, config.file_mode).unwrap();
+    reported::save(&state_dir, &hash2, config.file_mode, false).unwrap();
 
     // Create another block — B1 should survive because truncate-reported is false
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n3,Charlie\n4,Dave\n");

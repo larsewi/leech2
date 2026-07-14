@@ -211,14 +211,13 @@ fn cmd_patch_create(
 
     let encoded = leech2::wire::encode_patch(config, &patch)?;
     let state_dir = config.ensure_state_dir()?;
-    if config.dry_run {
-        eprintln!(
-            "Would have written patch to '{}'",
-            state_dir.join(PATCH_FILE).display()
-        );
-    } else {
-        leech2::storage::store(&state_dir, PATCH_FILE, &encoded, config.file_mode)?;
-    }
+    leech2::storage::store(
+        &state_dir,
+        PATCH_FILE,
+        &encoded,
+        config.file_mode,
+        config.dry_run,
+    )?;
 
     leech2::stats::finalize_patch_create(config);
 
@@ -310,14 +309,13 @@ fn cmd_patch_inject(config: &Config, name: &str, value: &str, kind: &str) -> Res
 
     let encoded = leech2::wire::encode_patch(config, &patch)?;
     let state_dir = config.ensure_state_dir()?;
-    if config.dry_run {
-        eprintln!(
-            "Would have written patch to '{}'",
-            state_dir.join(PATCH_FILE).display()
-        );
-    } else {
-        leech2::storage::store(&state_dir, PATCH_FILE, &encoded, config.file_mode)?;
-    }
+    leech2::storage::store(
+        &state_dir,
+        PATCH_FILE,
+        &encoded,
+        config.file_mode,
+        config.dry_run,
+    )?;
 
     println!("{}", patch);
     Ok(())
@@ -326,11 +324,7 @@ fn cmd_patch_inject(config: &Config, name: &str, value: &str, kind: &str) -> Res
 fn cmd_patch_applied(config: &Config) -> Result<()> {
     let patch = load_patch(config)?;
     let state_dir = config.ensure_state_dir()?;
-    if config.dry_run {
-        eprintln!("Would have updated REPORTED to '{:.7}...'", patch.head);
-    } else {
-        leech2::reported::save(&state_dir, &patch.head, config.file_mode)?;
-    }
+    leech2::reported::save(&state_dir, &patch.head, config.file_mode, config.dry_run)?;
 
     println!("{}", patch.head);
     Ok(())
@@ -346,10 +340,8 @@ fn cmd_stats_show(config: &Config) -> Result<()> {
 
 fn cmd_patch_failed(config: &Config) -> Result<()> {
     let state_dir = config.ensure_state_dir()?;
-    if config.dry_run {
-        eprintln!("Would have removed REPORTED");
-    } else {
-        leech2::reported::remove(&state_dir, config.file_mode)?;
+    leech2::reported::remove(&state_dir, config.file_mode, config.dry_run)?;
+    if !config.dry_run {
         println!("REPORTED removed; next patch will be a full state");
     }
     Ok(())

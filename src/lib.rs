@@ -447,7 +447,9 @@ pub unsafe extern "C" fn lch_patch_applied(
             }
         };
 
-        if let Err(e) = self::reported::save(&state_dir, &patch.head, config.file_mode) {
+        if let Err(e) =
+            self::reported::save(&state_dir, &patch.head, config.file_mode, config.dry_run)
+        {
             log::error!("lch_patch_applied(): Failed to save REPORTED: {:#}", e);
             return FAILURE;
         }
@@ -475,7 +477,7 @@ pub unsafe extern "C" fn lch_patch_failed(config: *const config::Config) -> i32 
             }
         };
 
-        if let Err(e) = reported::remove(&state_dir, config.file_mode) {
+        if let Err(e) = reported::remove(&state_dir, config.file_mode, config.dry_run) {
             log::error!("lch_patch_failed(): Failed to remove REPORTED: {:#}", e);
             return FAILURE;
         }
