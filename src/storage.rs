@@ -72,8 +72,18 @@ impl Drop for TmpCleanup<'_> {
 
 /// Saves data to a file in the work directory using a separate lock file and
 /// atomic rename. `mode` sets the Unix permission bits of the files created
-/// (the data file and its lock file).
-pub fn store(work_dir: &Path, name: &str, data: &[u8], mode: u32) -> Result<()> {
+/// (the data file and its lock file). When `dry_run` is set, no write happens;
+/// the intended write is reported instead.
+pub fn store(work_dir: &Path, name: &str, data: &[u8], mode: u32, dry_run: bool) -> Result<()> {
+    if dry_run {
+        eprintln!(
+            "Would have written {} bytes to '{}'",
+            data.len(),
+            work_dir.join(name).display()
+        );
+        return Ok(());
+    }
+
     fs::create_dir_all(work_dir)
         .with_context(|| format!("failed to create work directory '{}'", work_dir.display()))?;
 
@@ -128,9 +138,16 @@ pub fn store(work_dir: &Path, name: &str, data: &[u8], mode: u32) -> Result<()> 
 }
 
 /// Removes a file from the work directory using an exclusive lock. `mode`
-/// sets the Unix permission bits of the lock file if it must be created.
-pub fn remove(work_dir: &Path, name: &str, mode: u32) -> Result<()> {
+/// sets the Unix permission bits of the lock file if it must be created. When
+/// `dry_run` is set, nothing is removed; the intended removal is reported
+/// instead.
+pub fn remove(work_dir: &Path, name: &str, mode: u32, dry_run: bool) -> Result<()> {
     let path = work_dir.join(name);
+
+    if dry_run {
+        eprintln!("Would have removed '{}'", path.display());
+        return Ok(());
+    }
 
     let _lock = acquire_lock(work_dir, name, true, mode)?;
 
@@ -230,7 +247,7 @@ mod tests {
     fn test_store_applies_file_mode() {
         use std::os::unix::fs::PermissionsExt;
         let dir = tempdir().unwrap();
-        store(dir.path(), "HEAD", b"abc", 0o600).unwrap();
+        store(dir.path(), "HEAD", b"abc", 0o600, false).unwrap();
 
         // Both the data file and its lock file get the requested mode. 0o600
         // has no group/other bits, so the result is independent of the umask.

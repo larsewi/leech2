@@ -122,12 +122,10 @@ fn remove_orphans(
     if config.remove_orphans {
         for hash in &on_disk {
             if !reachable.contains(hash) {
-                if dry_run {
-                    eprintln!("Would have removed orphaned block '{:.7}...'", hash);
-                    continue;
+                if !dry_run {
+                    log::info!("Removing orphaned block '{:.7}...'", hash);
                 }
-                log::info!("Removing orphaned block '{:.7}...'", hash);
-                storage::remove(work_dir, hash, mode)?;
+                storage::remove(work_dir, hash, mode, dry_run)?;
             }
         }
     }
@@ -185,12 +183,10 @@ fn truncate_chain(
         let should_remove = past_reported || past_max_blocks || past_max_age;
 
         if should_remove {
-            if dry_run {
-                eprintln!("Would have truncated block '{:.7}...'", entry.hash);
-            } else {
+            if !dry_run {
                 log::info!("Truncating block '{:.7}...'", entry.hash);
-                storage::remove(work_dir, &entry.hash, mode)?;
             }
+            storage::remove(work_dir, &entry.hash, mode, dry_run)?;
             removed += 1;
         }
     }

@@ -126,23 +126,22 @@ impl Block {
             .context("failed to encode block")?;
         let hash = utils::compute_hash(&encoded);
 
-        if config.dry_run {
-            eprintln!("Would have created block '{:.7}...': {}", hash, block);
-        } else {
-            let chain_lock = storage::acquire_lock(&state_dir, "chain", true, file_mode)
-                .context("failed to acquire chain lock")?;
+        let chain_lock = storage::acquire_lock(&state_dir, "chain", true, file_mode)
+            .context("failed to acquire chain lock")?;
 
-            storage::store(&state_dir, &hash, &encoded, file_mode)
-                .with_context(|| format!("failed to store block {:.7}", hash))?;
+        storage::store(&state_dir, &hash, &encoded, file_mode, config.dry_run)
+            .with_context(|| format!("failed to store block {:.7}", hash))?;
 
+        current_state
+            .store(&state_dir, file_mode, config.dry_run)
+            .context("failed to store current state")?;
+        head::store(&state_dir, &hash, file_mode, config.dry_run)
+            .context("failed to update head of state")?;
+
+        drop(chain_lock);
+
+        if !config.dry_run {
             log::info!("Created block '{:.7}...': {}", hash, block);
-
-            current_state
-                .store(&state_dir, file_mode)
-                .context("failed to store current state")?;
-            head::store(&state_dir, &hash, file_mode).context("failed to update head of state")?;
-
-            drop(chain_lock);
         }
 
         // In dry-run this reports what truncation would remove; otherwise it
