@@ -142,6 +142,10 @@ impl Block {
 
         if !config.dry_run {
             log::info!("Created block '{:.7}...': {}", hash, block);
+        } else {
+            // `dry_run` is only ever set by the CLI, so this stdout print never
+            // reaches FFI consumers. Show the block that would have been created.
+            println!("Would have created block '{:.7}...'\n{}", hash, block);
         }
 
         // In dry-run this reports what truncation would remove; otherwise it

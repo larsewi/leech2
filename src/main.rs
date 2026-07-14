@@ -188,7 +188,11 @@ fn cmd_init(work_dir: &std::path::Path) -> Result<()> {
 
 fn cmd_block_create(config: &Config) -> Result<()> {
     let hash = Block::create(config, None)?;
-    println!("{}", hash);
+    // In a dry run, `Block::create` prints the block that would have been
+    // created; otherwise report the new block's hash.
+    if !config.dry_run {
+        println!("{}", hash);
+    }
     Ok(())
 }
 
