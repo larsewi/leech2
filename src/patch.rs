@@ -307,13 +307,16 @@ fn build_injected_fields(config: &Config) -> Result<Vec<Field>> {
     Ok(injected_fields)
 }
 
-/// Encoded protobuf size of a full-state patch for the current HEAD. Used as
-/// the baseline for measuring how many bytes delta merging saved on the wire.
-fn full_state_size(config: &Config) -> Result<u64> {
+/// Encoded protobuf size of a full-state patch for the current HEAD, carrying
+/// `num_blocks` so it matches the framing of the actual patch. Used as the
+/// baseline for measuring how many bytes delta merging saved on the wire; when
+/// the actual patch is itself full state, this makes the saving exactly zero.
+fn full_state_size(config: &Config, num_blocks: u32) -> Result<u64> {
     let state_dir = config.ensure_state_dir()?;
     let head = head::load(&state_dir, config.file_mode)?;
     let injected_fields = build_injected_fields(config)?;
-    let patch = full_state_patch(&state_dir, &head, injected_fields, config.file_mode)?;
+    let mut patch = full_state_patch(&state_dir, &head, injected_fields, config.file_mode)?;
+    patch.num_blocks = num_blocks;
     Ok(patch.encoded_len() as u64)
 }
 
@@ -353,7 +356,7 @@ impl Patch {
             let bytes_out = patch.encoded_len() as u64;
             // Baseline is a full-state patch; if it can't be computed (e.g. no
             // STATE file), treat merging as saving nothing rather than failing.
-            let bytes_in = full_state_size(config).unwrap_or_else(|e| {
+            let bytes_in = full_state_size(config, patch.num_blocks).unwrap_or_else(|e| {
                 log::warn!(
                     "Stats: could not compute full-state baseline, recording zero delta savings: {:#}",
                     e
