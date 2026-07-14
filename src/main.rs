@@ -12,7 +12,10 @@ use leech2::utils::{GENESIS_HASH, format_timestamp};
 const LEECH2_DIR: &str = ".leech2";
 const PATCH_FILE: &str = "PATCH";
 
-const INIT_CONFIG_TEMPLATE: &str = r#"[tables.products.csv]
+const INIT_CONFIG_TEMPLATE: &str = r#"[stats]
+enable = true
+
+[tables.products.csv]
 source = "products.csv"
 header = true
 
@@ -484,5 +487,6 @@ mod tests {
             .expect("init template must place 'source'/'header' under [tables.products.csv]");
         assert_eq!(csv.source, "products.csv");
         assert!(csv.header);
+        assert!(config.stats.enable, "init template must enable stats");
     }
 }
