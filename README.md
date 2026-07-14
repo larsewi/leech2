@@ -269,6 +269,19 @@ enable = true  # enable zstd compression (default: true)
 level = 3      # compression level (defaults to zstd default)
 ```
 
+### Stats
+
+An optional `[stats]` section makes each `patch create` append a run record to a
+cumulative `STATS` JSON file in the state directory. Disabled by default:
+
+```toml
+[stats]
+enable = true  # record stats (default: false)
+```
+
+Each entry stores the `duration_ms`, `bytes_before`, and `bytes_after` of the
+delta-merging and compression stages.
+
 ### History truncation
 
 An optional `[truncate]` section controls automatic pruning of old block files

@@ -157,6 +157,15 @@ impl Validate for CompressionConfig {
     }
 }
 
+/// Controls the opt-in cumulative stats file written after patch creation.
+#[derive(Debug, Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct StatsConfig {
+    /// When true, `patch create` appends a run record to the `STATS` JSON file
+    /// in the state directory.
+    pub enable: bool,
+}
+
 /// A static field added to every generated SQL row (e.g. a `host` column
 /// identifying which agent produced the data).
 #[derive(Debug, Deserialize)]
@@ -345,6 +354,9 @@ pub struct Config {
     /// Zstd compression settings for patch payloads.
     #[serde(default)]
     pub compression: CompressionConfig,
+    /// Cumulative patch-creation stats file settings.
+    #[serde(default)]
+    pub stats: StatsConfig,
     /// Per-table source-file and field schemas, keyed by table name.
     pub tables: HashMap<String, TableConfig>,
     /// Block chain truncation policy.
@@ -389,6 +401,7 @@ impl Default for Config {
             state_dir: None,
             injected_fields: Vec::new(),
             compression: CompressionConfig::default(),
+            stats: StatsConfig::default(),
             tables: HashMap::new(),
             truncate: TruncateConfig::default(),
             file_mode: default_file_mode(),

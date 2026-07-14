@@ -62,7 +62,7 @@ pub fn count_sql(sql: &str, keyword: &str) -> usize {
 /// Assert that a patch survives wire encoding/decoding (protobuf + optional
 /// zstd compression) and produces identical SQL output.
 pub fn assert_wire_roundtrip(config: &Config, patch: &Patch) {
-    let encoded = wire::encode_patch(config, patch).unwrap();
+    let (encoded, _) = wire::encode_patch(config, patch).unwrap();
     let decoded = wire::decode_patch(&encoded).unwrap();
 
     assert_eq!(patch.head, decoded.head);

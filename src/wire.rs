@@ -1,10 +1,12 @@
 use std::io::Read;
+use std::time::Instant;
 
 use anyhow::{Context, Result, bail};
 use prost::Message;
 
 use crate::config::Config;
 use crate::proto::patch::Patch;
+use crate::stats::StageStats;
 
 /// Zstd frame magic number (little-endian).
 const ZSTD_MAGIC: [u8; 4] = [0x28, 0xB5, 0x2F, 0xFD];
@@ -15,20 +17,29 @@ const ZSTD_MAGIC: [u8; 4] = [0x28, 0xB5, 0x2F, 0xFD];
 /// allocate more than this; the ceiling is far above any realistic patch.
 const MAX_DECOMPRESSED_PATCH_SIZE: u64 = 1 << 30; // 1 GiB
 
-/// Encode a Patch to protobuf, optionally compressing with zstd.
-pub fn encode_patch(config: &Config, patch: &Patch) -> Result<Vec<u8>> {
+/// Encode a Patch to protobuf, optionally compressing with zstd. Returns the
+/// encoded bytes alongside timing and size stats for the compression stage.
+pub fn encode_patch(config: &Config, patch: &Patch) -> Result<(Vec<u8>, StageStats)> {
     let mut buf = Vec::new();
     patch.encode(&mut buf)?;
+    let bytes_before = buf.len() as u64;
 
     if !config.compression.enable {
         log::info!(
             "Patch encoded: {} bytes protobuf (compression disabled)",
             buf.len()
         );
-        return Ok(buf);
+        let stats = StageStats {
+            duration_ms: 0.0,
+            bytes_before,
+            bytes_after: bytes_before,
+        };
+        return Ok((buf, stats));
     }
 
+    let start = Instant::now();
     let compressed = zstd::encode_all(buf.as_slice(), config.compression.level)?;
+    let duration_ms = start.elapsed().as_secs_f64() * 1000.0;
     log::info!(
         "Patch encoded: {} bytes protobuf, {} bytes compressed ({:.0}% reduction)",
         buf.len(),
@@ -39,7 +50,12 @@ pub fn encode_patch(config: &Config, patch: &Patch) -> Result<Vec<u8>> {
             (1.0 - compressed.len() as f64 / buf.len() as f64) * 100.0
         }
     );
-    Ok(compressed)
+    let stats = StageStats {
+        duration_ms,
+        bytes_before,
+        bytes_after: compressed.len() as u64,
+    };
+    Ok((compressed, stats))
 }
 
 /// Decode a Patch from protobuf, auto-detecting zstd compression.

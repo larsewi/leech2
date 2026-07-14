@@ -373,6 +373,7 @@ option):
 | `REPORTED` | Hash of last successfully reported patch head (used by truncation)   |
 | `STATE`    | Protobuf-encoded snapshot of all tables                              |
 | `PATCH`    | Last generated patch (CLI only)                                      |
+| `STATS`    | Cumulative JSON patch-creation stats (opt-in via `[stats]`)          |
 | `<sha1>`   | Protobuf-encoded block files, named by their hash                    |
 | `*.lock`   | Lock files for inter-process synchronization (created automatically) |
 | `*.tmp`    | Temporary files used during atomic writes (should not persist)       |

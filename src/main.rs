@@ -1,6 +1,7 @@
 use std::io::{IsTerminal, Write};
 use std::path::PathBuf;
 use std::process::{Command as ProcessCommand, ExitCode, Stdio};
+use std::time::Instant;
 
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
@@ -196,9 +197,11 @@ fn cmd_patch_create(
     } else {
         resolve_ref(config, reference, num_blocks)?
     };
+    let merge_start = Instant::now();
     let patch = leech2::patch::Patch::create(config, &hash)?;
+    let merge_duration = merge_start.elapsed();
 
-    let encoded = leech2::wire::encode_patch(config, &patch)?;
+    let (encoded, compression_stats) = leech2::wire::encode_patch(config, &patch)?;
     let state_dir = config.ensure_state_dir()?;
     if config.dry_run {
         eprintln!(
@@ -208,6 +211,8 @@ fn cmd_patch_create(
     } else {
         leech2::storage::store(&state_dir, PATCH_FILE, &encoded, config.file_mode)?;
     }
+
+    leech2::stats::record_patch_create(config, merge_duration, compression_stats);
 
     println!("{}", patch);
     Ok(())
@@ -295,7 +300,7 @@ fn cmd_patch_inject(config: &Config, name: &str, value: &str, kind: &str) -> Res
     let mut patch = load_patch(config)?;
     patch.inject_field(name, cell)?;
 
-    let encoded = leech2::wire::encode_patch(config, &patch)?;
+    let (encoded, _) = leech2::wire::encode_patch(config, &patch)?;
     let state_dir = config.ensure_state_dir()?;
     if config.dry_run {
         eprintln!(
