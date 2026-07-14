@@ -269,6 +269,9 @@ enable = true  # enable zstd compression (default: true)
 level = 3      # compression level (defaults to zstd default)
 ```
 
+When compression would enlarge a small payload, the raw protobuf is sent
+instead; the receiver auto-detects which form it received.
+
 ### Stats
 
 An optional `[stats]` section makes each `patch create` append a run record to a

@@ -46,16 +46,32 @@ pub fn encode_patch(config: &Config, patch: &Patch) -> Result<Vec<u8>> {
     let start = Instant::now();
     let compressed = zstd::encode_all(buf.as_slice(), config.compression.level)?;
     let duration_ms = start.elapsed().as_secs_f64() * 1000.0;
-    log::info!(
-        "Patch encoded: {} bytes protobuf, {} bytes compressed ({:.0}% reduction)",
-        buf.len(),
-        compressed.len(),
-        if buf.is_empty() {
-            0.0
-        } else {
-            (1.0 - compressed.len() as f64 / buf.len() as f64) * 100.0
-        }
-    );
+    // Compressing a tiny payload can make it larger. When it doesn't shrink,
+    // ship the raw protobuf instead; `decode_patch` auto-detects the missing
+    // zstd magic. A Patch protobuf never begins with the magic (its first byte
+    // is a field tag, never 0x28), the same invariant the compression-disabled
+    // path relies on.
+    let output = if compressed.len() < buf.len() {
+        log::info!(
+            "Patch encoded: {} bytes protobuf, {} bytes compressed ({:.0}% reduction)",
+            buf.len(),
+            compressed.len(),
+            if buf.is_empty() {
+                0.0
+            } else {
+                (1.0 - compressed.len() as f64 / buf.len() as f64) * 100.0
+            }
+        );
+        compressed
+    } else {
+        log::info!(
+            "Patch encoded: {} bytes protobuf, {} bytes compressed; keeping raw protobuf",
+            buf.len(),
+            compressed.len(),
+        );
+        buf
+    };
+
     if config.stats.enable {
         stats::record_stage(
             config,
@@ -63,11 +79,11 @@ pub fn encode_patch(config: &Config, patch: &Patch) -> Result<Vec<u8>> {
             StageStats {
                 duration_ms,
                 bytes_before,
-                bytes_after: compressed.len() as u64,
+                bytes_after: output.len() as u64,
             },
         );
     }
-    Ok(compressed)
+    Ok(output)
 }
 
 /// Decode a Patch from protobuf, auto-detecting zstd compression.

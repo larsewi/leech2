@@ -364,6 +364,8 @@ and have no filter configuration.
 An optional
 .B [compression]
 section controls patch compression. Patches are compressed with zstd by default.
+When compression would enlarge a small payload, the raw protobuf is sent
+instead; the receiver auto-detects which form it received.
 .TP
 .BI enable " = true"
 Enable or disable zstd compression (default: true).
