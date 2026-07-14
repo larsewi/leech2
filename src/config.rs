@@ -387,6 +387,11 @@ pub struct Config {
     /// the CLI) cleanly waits for truncation before tearing down.
     #[serde(skip)]
     pub(crate) background_truncation: Mutex<Option<JoinHandle<()>>>,
+    /// Stage stats for the patch-creation run currently in flight. Operations
+    /// record into this as they run; `stats::finalize_patch_create` drains it
+    /// to the `STATS` file. Not deserialized.
+    #[serde(skip)]
+    pub(crate) pending_stats: Mutex<crate::stats::PendingStats>,
     /// When true, CLI create/mutate operations skip all disk writes and print
     /// "Would have ..." messages instead. CLI-only; set by `lch --dry-run`,
     /// never deserialized.
@@ -407,6 +412,7 @@ impl Default for Config {
             file_mode: default_file_mode(),
             dir_mode: default_dir_mode(),
             background_truncation: Default::default(),
+            pending_stats: Default::default(),
             dry_run: false,
         }
     }

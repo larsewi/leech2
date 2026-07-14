@@ -39,7 +39,7 @@ source = "users.csv"
     Block::create(&config, None).unwrap();
 
     let patch = Patch::create(&config, GENESIS_HASH).unwrap();
-    let (encoded, _) = wire::encode_patch(&config, &patch).unwrap();
+    let encoded = wire::encode_patch(&config, &patch).unwrap();
 
     // Encoded bytes should NOT start with zstd magic (compression disabled)
     assert!(

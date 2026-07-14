@@ -1,7 +1,5 @@
 mod common;
 
-use std::time::Instant;
-
 use leech2::block::Block;
 use leech2::config::Config;
 use leech2::patch::Patch;
@@ -28,13 +26,12 @@ source = "users.csv"
     )
 }
 
-/// Mirror the front-end patch-create sequence: time the merge, encode, record.
+/// Mirror the front-end patch-create sequence: create, encode, finalize. The
+/// stages record into the config as they run; finalize drains them to STATS.
 fn create_patch_with_stats(config: &Config, reference: &str) {
-    let merge_start = Instant::now();
     let patch = Patch::create(config, reference).unwrap();
-    let merge_duration = merge_start.elapsed();
-    let (_encoded, compression_stats) = wire::encode_patch(config, &patch).unwrap();
-    stats::record_patch_create(config, merge_duration, compression_stats);
+    let _encoded = wire::encode_patch(config, &patch).unwrap();
+    stats::finalize_patch_create(config);
 }
 
 fn stats_path(config: &Config) -> std::path::PathBuf {
