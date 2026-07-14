@@ -52,6 +52,24 @@ struct RunStats {
     compression: StageStats,
 }
 
+impl RunStats {
+    /// Total bytes saved end to end (delta merging then compression). The
+    /// stages telescope: delta's output is compression's input, so the sum is
+    /// the full-state size minus the final wire size.
+    fn total_saved(&self) -> i64 {
+        self.delta_merging.saved() + self.compression.saved()
+    }
+
+    /// Percentage of the full-state size saved end to end.
+    fn total_percent_saved(&self) -> f64 {
+        if self.delta_merging.bytes_in == 0 {
+            0.0
+        } else {
+            self.total_saved() as f64 / self.delta_merging.bytes_in as f64 * 100.0
+        }
+    }
+}
+
 /// A size-reducing stage whose stats can be recorded into a [`Config`]'s
 /// in-flight run.
 pub(crate) enum Stage {
@@ -198,6 +216,10 @@ pub struct Summary {
     pub compression_bytes: Aggregate,
     /// Percentage of input saved by compression across runs.
     pub compression_percent: Aggregate,
+    /// Total bytes saved end to end (delta merging then compression).
+    pub total_bytes: Aggregate,
+    /// Percentage of the full-state size saved end to end.
+    pub total_percent: Aggregate,
 }
 
 /// Write a two-space-indented table: the first column is left-aligned, the rest
@@ -271,6 +293,12 @@ impl fmt::Display for Summary {
                 bytes(self.compression_bytes.mean, self.compression_percent.mean),
                 bytes(self.compression_bytes.last, self.compression_percent.last),
             ],
+            [
+                "Total".into(),
+                bytes(self.total_bytes.median, self.total_percent.median),
+                bytes(self.total_bytes.mean, self.total_percent.mean),
+                bytes(self.total_bytes.last, self.total_percent.last),
+            ],
         ];
 
         write!(f, "Stats summary ({} runs)\n\n", self.runs)?;
@@ -304,6 +332,8 @@ pub fn summarize(config: &Config) -> Result<Option<Summary>> {
     let mut compression_times = Vec::with_capacity(runs.len());
     let mut compression_saved = Vec::with_capacity(runs.len());
     let mut compression_percent = Vec::with_capacity(runs.len());
+    let mut total_saved = Vec::with_capacity(runs.len());
+    let mut total_percent = Vec::with_capacity(runs.len());
     for run in &runs {
         delta_times.push(run.delta_merging.duration_ms);
         delta_saved.push(run.delta_merging.saved() as f64);
@@ -311,6 +341,8 @@ pub fn summarize(config: &Config) -> Result<Option<Summary>> {
         compression_times.push(run.compression.duration_ms);
         compression_saved.push(run.compression.saved() as f64);
         compression_percent.push(run.compression.percent_saved());
+        total_saved.push(run.total_saved() as f64);
+        total_percent.push(run.total_percent_saved());
     }
 
     Ok(Some(Summary {
@@ -321,6 +353,8 @@ pub fn summarize(config: &Config) -> Result<Option<Summary>> {
         compression_time: Aggregate::from_runs(&compression_times),
         compression_bytes: Aggregate::from_runs(&compression_saved),
         compression_percent: Aggregate::from_runs(&compression_percent),
+        total_bytes: Aggregate::from_runs(&total_saved),
+        total_percent: Aggregate::from_runs(&total_percent),
     }))
 }
 

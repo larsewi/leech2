@@ -160,6 +160,11 @@ fn test_summarize_aggregates_runs() {
         summary.compression_bytes.last,
         last_compression_saved as f64
     );
+    // Total is the two stages combined.
+    assert_eq!(
+        summary.total_bytes.last,
+        summary.delta_bytes.last + summary.compression_bytes.last
+    );
 }
 
 #[test]
