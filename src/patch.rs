@@ -3,6 +3,7 @@ pub use crate::proto::patch::Patch;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::path::Path;
+use std::time::Instant;
 
 use anyhow::{Context, Result, bail};
 use prost::Message;
@@ -17,6 +18,7 @@ use crate::proto::delta::Delta as ProtoDelta;
 use crate::proto::injected::Field;
 use crate::proto::state::State as ProtoState;
 use crate::proto::table::Table as ProtoTable;
+use crate::stats::{self, Stage, StageStats};
 use crate::utils;
 use crate::utils::{GENESIS_HASH, validate_field_name};
 
@@ -307,7 +309,7 @@ fn build_injected_fields(config: &Config) -> Result<Vec<Field>> {
 
 /// Encoded protobuf size of a full-state patch for the current HEAD. Used as
 /// the baseline for measuring how many bytes delta merging saved on the wire.
-pub fn full_state_size(config: &Config) -> Result<u64> {
+fn full_state_size(config: &Config) -> Result<u64> {
     let state_dir = config.ensure_state_dir()?;
     let head = head::load(&state_dir, config.file_mode)?;
     let injected_fields = build_injected_fields(config)?;
@@ -339,7 +341,40 @@ fn full_state_patch(
 }
 
 impl Patch {
+    /// Consolidate the chain from `last_known` to HEAD into a patch. When stats
+    /// are enabled, times the consolidation and records the delta-merging stage
+    /// (full-state size vs consolidated size) into the config's in-flight run.
     pub fn create(config: &Config, last_known: &str) -> Result<Patch> {
+        let start = Instant::now();
+        let patch = Self::create_consolidated(config, last_known)?;
+
+        if config.stats.enable {
+            let duration_ms = start.elapsed().as_secs_f64() * 1000.0;
+            let bytes_after = patch.encoded_len() as u64;
+            // Baseline is a full-state patch; if it can't be computed (e.g. no
+            // STATE file), treat merging as saving nothing rather than failing.
+            let bytes_before = full_state_size(config).unwrap_or_else(|e| {
+                log::warn!(
+                    "Stats: could not compute full-state baseline, recording zero delta savings: {:#}",
+                    e
+                );
+                bytes_after
+            });
+            stats::record_stage(
+                config,
+                Stage::DeltaMerging,
+                StageStats {
+                    duration_ms,
+                    bytes_before,
+                    bytes_after,
+                },
+            );
+        }
+
+        Ok(patch)
+    }
+
+    fn create_consolidated(config: &Config, last_known: &str) -> Result<Patch> {
         let state_dir = config.ensure_state_dir()?;
         let file_mode = config.file_mode;
 
