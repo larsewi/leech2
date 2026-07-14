@@ -151,8 +151,9 @@ will produce a full state patch (TRUNCATE + INSERT for all tables).
 .SS lch stats show
 Print an aggregated summary of the
 .B STATS
-file: per-stage (delta merging and compression) totals, per-run averages, and
-the most recent run's values for elapsed time and bytes saved. Requires
+file: per-stage (delta merging and compression) median, average, and most
+recent run's values for elapsed time and bytes saved (also shown as a
+percentage, with a combined total row). Requires
 .B [stats]
 to be enabled (see
 .BR CONFIGURATION ).
@@ -390,7 +391,7 @@ JSON file in the state directory.
 .TP
 .BI enable " = false"
 Record patch-creation stats (default: false). Each entry stores the
-.IR duration_ms ", " bytes_before ", and " bytes_after
+.IR duration_ms ", " bytes_in ", and " bytes_out
 of the delta-merging and compression stages.
 .SS History truncation
 An optional

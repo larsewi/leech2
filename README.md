@@ -282,9 +282,10 @@ cumulative `STATS` JSON file in the state directory. Disabled by default:
 enable = true  # record stats (default: false)
 ```
 
-Each entry stores the `duration_ms`, `bytes_before`, and `bytes_after` of the
+Each entry stores the `duration_ms`, `bytes_in`, and `bytes_out` of the
 delta-merging and compression stages. Run `lch stats show` to print an
-aggregated summary (per-stage totals, averages, and the most recent run).
+aggregated summary (per-stage median, average, and most recent run; bytes
+saved also as a percentage, with a combined total row).
 
 ### History truncation
 

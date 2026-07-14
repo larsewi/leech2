@@ -350,23 +350,23 @@ impl Patch {
 
         if config.stats.enable {
             let duration_ms = start.elapsed().as_secs_f64() * 1000.0;
-            let bytes_after = patch.encoded_len() as u64;
+            let bytes_out = patch.encoded_len() as u64;
             // Baseline is a full-state patch; if it can't be computed (e.g. no
             // STATE file), treat merging as saving nothing rather than failing.
-            let bytes_before = full_state_size(config).unwrap_or_else(|e| {
+            let bytes_in = full_state_size(config).unwrap_or_else(|e| {
                 log::warn!(
                     "Stats: could not compute full-state baseline, recording zero delta savings: {:#}",
                     e
                 );
-                bytes_after
+                bytes_out
             });
             stats::record_stage(
                 config,
                 Stage::DeltaMerging,
                 StageStats {
                     duration_ms,
-                    bytes_before,
-                    bytes_after,
+                    bytes_in,
+                    bytes_out,
                 },
             );
         }
