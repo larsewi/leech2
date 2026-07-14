@@ -225,7 +225,11 @@ fn cmd_patch_create(
 
     leech2::stats::finalize_patch_create(config);
 
-    println!("{}", patch);
+    // In a dry run, `Patch::create` prints the patch that would have been
+    // created; otherwise report the head the patch was built against.
+    if !config.dry_run {
+        println!("{}", patch.head);
+    }
     Ok(())
 }
 
