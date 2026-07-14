@@ -27,7 +27,9 @@ use leech2::cell::Cell;
 use leech2::config::Config;
 use leech2::patch::Patch;
 use leech2::sql::{self, quote_identifier};
+use leech2::stats;
 use leech2::utils::GENESIS_HASH;
+use leech2::wire;
 use rand::rngs::StdRng;
 use rand::seq::{IndexedRandom, IteratorRandom};
 use rand::{Rng, SeedableRng};
@@ -89,6 +91,7 @@ fields = [
     s.push_str("[tables.users.csv]\n");
     s.push_str("source = \"users.csv\"\n");
     s.push_str(&format!("null = \"^{EMAIL_NULL_SENTINEL}$\"\n"));
+    s.push_str("\n[stats]\nenable = true\n");
     s
 }
 
@@ -572,6 +575,11 @@ fn run_round_for_agent(
     );
     let mut patch = Patch::create(&config, &run.last_known).unwrap();
 
+    // Exercise the full ship pipeline (encode) so the compression stage is
+    // recorded, then finalize the run into the STATS file.
+    let _encoded = wire::encode_patch(&config, &patch).unwrap();
+    stats::finalize_patch_create(&config);
+
     let agent_sql = sql::patch_to_sql(&config, &patch).unwrap();
     ship_and_verify(&run.agent_schema, agent_sql.as_deref(), &run.agent, None).unwrap_or_else(
         |e| {
@@ -625,6 +633,15 @@ fn round_trip_multi_agent() {
     for round in 0..ROUNDS {
         for run in &mut agents {
             run_round_for_agent(&mut rng, run, &hub, round, seed);
+        }
+    }
+
+    for run in &agents {
+        let config = Config::load(&run.agent.work_dir).unwrap();
+        match stats::summarize(&config) {
+            Ok(Some(summary)) => println!("\n=== stats for agent '{}' ===\n{summary}", run.name),
+            Ok(None) => println!("no stats recorded for agent '{}'", run.name),
+            Err(e) => println!("failed to summarize stats for agent '{}': {e:#}", run.name),
         }
     }
 
