@@ -280,7 +280,8 @@ enable = true  # record stats (default: false)
 ```
 
 Each entry stores the `duration_ms`, `bytes_before`, and `bytes_after` of the
-delta-merging and compression stages.
+delta-merging and compression stages. Run `lch stats show` to print an
+aggregated summary (per-stage totals, averages, and the most recent run).
 
 ### History truncation
 

@@ -141,6 +141,14 @@ Future patches will start from this point. Requires a prior
 Mark the current patch as failed by removing the REPORTED file. The next
 .B lch patch create
 will produce a full state patch (TRUNCATE + INSERT for all tables).
+.SS lch stats show
+Print an aggregated summary of the
+.B STATS
+file: per-stage (delta merging and compression) totals, per-run averages, and
+the most recent run's values for elapsed time and bytes saved. Requires
+.B [stats]
+to be enabled (see
+.BR CONFIGURATION ).
 .SH CONFIGURATION
 Configuration is read from
 .B config.toml
