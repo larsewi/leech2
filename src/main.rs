@@ -60,6 +60,11 @@ enum Cmd {
         #[command(subcommand)]
         command: PatchCmd,
     },
+    /// Operate on the stats file
+    Stats {
+        #[command(subcommand)]
+        command: StatsCmd,
+    },
 }
 
 #[derive(Subcommand)]
@@ -108,6 +113,12 @@ enum PatchCmd {
     Applied,
     /// Mark the current patch as failed (removes REPORTED to force full state)
     Failed,
+}
+
+#[derive(Subcommand)]
+enum StatsCmd {
+    /// Summarize the stats file
+    Show,
 }
 
 fn work_dir(cli: &Cli) -> PathBuf {
@@ -328,6 +339,14 @@ fn cmd_patch_applied(config: &Config) -> Result<()> {
     Ok(())
 }
 
+fn cmd_stats_show(config: &Config) -> Result<()> {
+    match leech2::stats::summarize(config)? {
+        Some(summary) => println!("{}", summary),
+        None => println!("No stats recorded yet"),
+    }
+    Ok(())
+}
+
 fn cmd_patch_failed(config: &Config) -> Result<()> {
     let state_dir = config.ensure_state_dir()?;
     if config.dry_run {
@@ -419,6 +438,12 @@ fn run(cli: Cli) -> Result<()> {
                 PatchCmd::Failed => {
                     cmd_patch_failed(&config)?;
                 }
+            }
+        }
+        Cmd::Stats { command } => {
+            let config = Config::load(&work_dir)?;
+            match command {
+                StatsCmd::Show => cmd_stats_show(&config)?,
             }
         }
     }
