@@ -371,6 +371,12 @@ impl Patch {
             );
         }
 
+        if config.dry_run {
+            // `dry_run` is only ever set by the CLI, so this stdout print never
+            // reaches FFI consumers. Show the patch that would have been created.
+            println!("Would have created patch '{:.7}...'\n{}", patch.head, patch);
+        }
+
         Ok(patch)
     }
 

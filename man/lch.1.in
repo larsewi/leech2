@@ -95,6 +95,10 @@ Create a patch from
 .I REF
 to HEAD and write it to
 .BR .leech2/state/PATCH .
+Prints the patch's head hash to stdout. With
+.BR \-\-dry\-run ,
+nothing is written and the patch that would have been created is printed
+instead.
 .TP
 .I REF
 Block hash or unambiguous hash prefix. Defaults to the REPORTED hash (the last
