@@ -29,6 +29,16 @@ impl StageStats {
     fn saved(&self) -> i64 {
         self.bytes_in as i64 - self.bytes_out as i64
     }
+
+    /// Percentage of the input saved by this stage. Zero when there was no
+    /// input; negative when the stage grew the payload.
+    fn percent_saved(&self) -> f64 {
+        if self.bytes_in == 0 {
+            0.0
+        } else {
+            self.saved() as f64 / self.bytes_in as f64 * 100.0
+        }
+    }
 }
 
 /// A single patch-creation run appended to the `STATS` file.
@@ -180,10 +190,14 @@ pub struct Summary {
     pub delta_time: Aggregate,
     /// Bytes saved by delta merging across runs.
     pub delta_bytes: Aggregate,
+    /// Percentage of input saved by delta merging across runs.
+    pub delta_percent: Aggregate,
     /// Compression time (milliseconds) across runs.
     pub compression_time: Aggregate,
     /// Bytes saved by compression across runs.
     pub compression_bytes: Aggregate,
+    /// Percentage of input saved by compression across runs.
+    pub compression_percent: Aggregate,
 }
 
 /// Write a two-space-indented table: the first column is left-aligned, the rest
@@ -211,7 +225,8 @@ fn write_table(f: &mut fmt::Formatter<'_>, rows: &[[String; 4]]) -> fmt::Result 
 impl fmt::Display for Summary {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let ms = |value: f64| format!("{:.2} ms", value);
-        let bytes = |value: f64| format!("{} bytes", value.round() as i64);
+        let bytes =
+            |value: f64, percent: f64| format!("{} bytes ({:.0}%)", value.round() as i64, percent);
 
         let time_rows = [
             [
@@ -243,15 +258,18 @@ impl fmt::Display for Summary {
             ],
             [
                 "Delta merging".into(),
-                bytes(self.delta_bytes.median),
-                bytes(self.delta_bytes.mean),
-                bytes(self.delta_bytes.last),
+                bytes(self.delta_bytes.median, self.delta_percent.median),
+                bytes(self.delta_bytes.mean, self.delta_percent.mean),
+                bytes(self.delta_bytes.last, self.delta_percent.last),
             ],
             [
                 "Compression".into(),
-                bytes(self.compression_bytes.median),
-                bytes(self.compression_bytes.mean),
-                bytes(self.compression_bytes.last),
+                bytes(
+                    self.compression_bytes.median,
+                    self.compression_percent.median,
+                ),
+                bytes(self.compression_bytes.mean, self.compression_percent.mean),
+                bytes(self.compression_bytes.last, self.compression_percent.last),
             ],
         ];
 
@@ -282,21 +300,27 @@ pub fn summarize(config: &Config) -> Result<Option<Summary>> {
 
     let mut delta_times = Vec::with_capacity(runs.len());
     let mut delta_saved = Vec::with_capacity(runs.len());
+    let mut delta_percent = Vec::with_capacity(runs.len());
     let mut compression_times = Vec::with_capacity(runs.len());
     let mut compression_saved = Vec::with_capacity(runs.len());
+    let mut compression_percent = Vec::with_capacity(runs.len());
     for run in &runs {
         delta_times.push(run.delta_merging.duration_ms);
         delta_saved.push(run.delta_merging.saved() as f64);
+        delta_percent.push(run.delta_merging.percent_saved());
         compression_times.push(run.compression.duration_ms);
         compression_saved.push(run.compression.saved() as f64);
+        compression_percent.push(run.compression.percent_saved());
     }
 
     Ok(Some(Summary {
         runs: runs.len(),
         delta_time: Aggregate::from_runs(&delta_times),
         delta_bytes: Aggregate::from_runs(&delta_saved),
+        delta_percent: Aggregate::from_runs(&delta_percent),
         compression_time: Aggregate::from_runs(&compression_times),
         compression_bytes: Aggregate::from_runs(&compression_saved),
+        compression_percent: Aggregate::from_runs(&compression_percent),
     }))
 }
 

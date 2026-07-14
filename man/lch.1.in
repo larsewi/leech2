@@ -152,7 +152,8 @@ will produce a full state patch (TRUNCATE + INSERT for all tables).
 Print an aggregated summary of the
 .B STATS
 file: per-stage (delta merging and compression) median, average, and most
-recent run's values for elapsed time and bytes saved. Requires
+recent run's values for elapsed time and bytes saved (also shown as a
+percentage). Requires
 .B [stats]
 to be enabled (see
 .BR CONFIGURATION ).
