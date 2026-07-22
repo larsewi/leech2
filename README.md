@@ -4,13 +4,12 @@
   <img src="logo.svg" alt="Leech Logo" width="100"/>
 </p>
 
-leech2 tracks changes to tables using a git-like content-addressable block
-chain. It computes deltas between table snapshots, stores them as linked blocks,
-and can produce consolidated patches that convert into SQL statements for
-replaying changes on a target database.
+leech2 tracks changes to tables. It computes deltas between table snapshots,
+stores them as linked blocks, and can produce consolidated patches that convert
+into SQL statements for replaying changes on a target database.
 
-leech2 ships as both a Rust library with a C-compatible FFI (`libleech2.so`)
-and a CLI tool (`lch`).
+leech2 ships as both a Rust library with a C-compatible FFI (`libleech2.so`) and
+a CLI tool (`lch`).
 
 ## Build dependencies
 
@@ -57,42 +56,35 @@ lch patch applied
 lch patch failed
 ```
 
-Pass `--dry-run` to any create or mutate command (`block create`, `patch
-create`, `patch inject`, `patch applied`, `patch failed`) to compute the change
-and print what it `Would have ...` done without writing anything to disk:
-
-```sh
-lch block create --dry-run
-lch patch create --dry-run
-```
+Pass `--dry-run` to any command to compute the changes and print what it `Would
+have ...` done without changing anything on the disk:
 
 ## Configuration
 
-Config can be `config.toml` or `config.json`.
+The configuration lives in either `config.toml` or `config.json`. The CLI tool
+currently expects this file to be inside a `.leech/` directory in the current
+working directory (this may change). The C API does not care.
 
 ### State directory
 
-State files (`HEAD`, `STATE`, `REPORTED`, the `PATCH` file, and block files)
-live in a directory separate from the config and CSV inputs. By default this is
-a `state` subdirectory of the work directory; the optional top-level `state-dir`
-option points it elsewhere:
+State files (`HEAD`, `STATE`, `REPORTED`, `PATCH`, and block files) live in a
+`state` subdirectory next to the config (in the work directory) by default. The
+optional top-level `state-dir` option allows you to point it elsewhere:
 
 ```toml
-state-dir = "/var/lib/leech2"  # absolute path
-# state-dir = "db"             # relative paths resolve against the work directory
+state-dir = "/var/lib/leech2"
 ```
 
-leech2 creates the state directory on demand. CSV `source` paths and `include`
-globs are unaffected -- they remain inputs resolved relative to the work
-directory.
+Use can either use an absolute path or path relative to the work directory.
 
 ### Drop-in fragments
 
 The base config may pull in additional config files via a top-level `include`
 key holding a list of glob patterns. This lets a package that bundles leech2
-ship a read-only base config while still letting users extend the reporting
-system -- adding tables or injected fields -- by dropping fragment files into an
-included directory, without editing the bundled file.
+ship a read-only base config while still letting users extend / overwrite the
+reporting system by dropping fragment files into an included directory. This way
+users can extend or overwrite config options without having to edit the package
+bundled file.
 
 ```toml
 include = ["conf.d/*.toml", "conf.d/*.json"]
@@ -101,19 +93,12 @@ include = ["conf.d/*.toml", "conf.d/*.json"]
 - Relative patterns resolve against the work directory; absolute patterns are
   used as-is. A pattern that matches nothing is not an error.
 - Fragments use the same schema as the base config and may be `.toml` or `.json`
-  regardless of the base file's format. Every section is optional, so a fragment
-  can contribute just the tables (or injected fields) it adds.
+  regardless of the base file's format. Every section is optional.
 - Fragments are deep-merged in order: the base first, then each `include`
   pattern in the order listed, with each pattern's matches sorted by filename.
-- Merging is **last-wins** and recurses into sections: the `tables` map unions by
-  table name, and sections like `[compression]` and `[truncate]` merge field by
-  field, so a fragment can override just the keys it sets. Lists are replaced
-  wholesale, so a later fragment that sets a table's `fields` or the
-  `injected-fields` list overrides the earlier one entirely. A drop-in fragment
-  can therefore override values from the bundled base config.
+- Merging is **last-wins** and recurses into sections.
 - A base `config.toml`/`config.json` is required, and only the base may declare
-  `include`; a fragment that sets `include` is rejected (nested includes are not
-  supported).
+  `include` (nested includes are not supported).
 
 ### Tables
 
@@ -123,19 +108,17 @@ include = ["conf.d/*.toml", "conf.d/*.json"]
   `source`; otherwise it is **callback-backed** and its rows are pulled from
   the FFI cell callback at block creation time.
 - Inside a `[csv]` block, when `header = false` (the default), CSV columns are
-  mapped to config fields by position — the first column maps to the first
-  field, etc.
+  mapped to config fields by position.
 - When `header = true`, the first row of the CSV is treated as a header. Each
-  config field is matched to a CSV column by name, so columns may appear in any
-  order. Every config field name must be present in the header; extra CSV columns
-  are ignored. In this mode, the order in which fields are declared under the
-  table is cosmetic — reordering them does not invalidate existing state.
-- The type field controls how values are quoted in generated SQL. These are not
-  database column types — your database may use any compatible type (e.g.
+  config field is matched to a CSV column by name. Hence, columns may appear in
+  any order. Every config field name must be present in the header; extra CSV
+  columns are ignored.
+- The type field controls how values are quoted in generated SQL string. These
+  are not database column types. Your database may use any compatible type (e.g.
   `INTEGER`, `FLOAT`, `TIMESTAMP`). It is your responsibility to ensure the
   quoted literals are valid for your target database type.
 - A field may carry an optional `comment` describing what it is for. leech2
-  ignores it; it exists to document fields in `config.json`, which has no
+  ignores it. It exists only to document fields in `config.json`, which has no
   comment syntax of its own.
 
 ```toml
@@ -185,10 +168,10 @@ false = "^N$"
 ### Injected fields
 
 Optional `[[injected-fields]]` entries add static columns to all generated SQL.
-Each entry becomes an extra column in INSERT statements and an extra condition in
-DELETE/UPDATE WHERE clauses. When any injected fields are configured,
-state payload patches use `DELETE FROM ... WHERE ...` instead of `TRUNCATE` so
-that other agents' data is preserved.
+Each entry becomes an extra column in INSERT statements and an extra condition
+in DELETE/UPDATE WHERE clauses. When any injected fields are configured, state
+payload patches use `DELETE FROM ... WHERE ...` instead of `TRUNCATE` so that
+other agents' data is preserved.
 
 ```toml
 [[injected-fields]]
@@ -202,13 +185,10 @@ type = "TEXT"
 value = "production"
 ```
 
-The `type` field accepts the same values as table field types (`TEXT`, `NUMBER`,
-`BOOLEAN`).
-
 Fields can also be injected at runtime via `lch patch inject` or the
-`lch_patch_inject` C API. Runtime injection is useful when the authoritative
-value is only known to the receiver (e.g. a hub that derives it from an
-authenticated connection); values provided at runtime overwrite any
+`lch_patch_inject` C API function. Runtime injection is useful when the
+authoritative value is only known to the receiver (e.g. a hub that derives it
+from an authenticated connection); values provided at runtime overwrite any
 statically declared field with the same name.
 
 ```sh
@@ -218,45 +198,36 @@ lch patch inject count 42 NUMBER
 
 ### Filters
 
-The `[csv]` block can declare per-table filtering that drops records at CSV
-load time. Filtered records never enter state, deltas, or SQL output.
+The `[csv]` block can declare per-table filtering that drops records at CSV load
+time. Filtered records never enter state, deltas, or SQL output.
 
 ```toml
 [tables.users.csv]
 source = "users.csv"
-max-field-length = 1024      # drop records with any field longer than this
+max-field-length = 1024
 
 [tables.users.csv.filter]
-fields  = ["status", "label"]   # which fields the patterns are matched against
-include = "^(active|pending)$"  # keep only records whose listed fields match
-exclude = '^DROP$'              # then drop records whose listed fields match
+fields  = ["status", "label"]
+include = "^(active|pending)$"
+exclude = '^DROP$'
 ```
 
 - `max-field-length`: Optional. Any record where any field value exceeds this
-  length in bytes (UTF-8 encoded) is dropped.
+  length in bytes is dropped.
 - `csv.filter` is an optional single-block-per-table section with three keys:
   - `fields`: list of field names this filter examines. Every name must appear
-    in the table's `fields` (validated at config-load time).
+    in the table's `fields`.
   - `include`: optional regex (whitelist). The record is kept only if at least
-    one listed field matches the pattern. Use `|` for alternation when several
-    values should pass.
+    one listed field matches the pattern.
   - `exclude`: optional regex (blacklist). The record is dropped if any listed
-    field matches the pattern. Exclude is evaluated after include, so on
-    overlap exclude wins.
-- Filters are per-table by structure — there's no cross-table filter scope.
-  Callback-backed tables (no `[csv]` block) own their own row inclusion via
-  `LCH_SKIP_RECORD`.
+    field matches the pattern. Exclude is evaluated after include.
 
 Both regexes follow the Rust [`regex`](https://docs.rs/regex/) crate and are
 unanchored by default — use `^...$` for exact matches.
 
-**Escaping regex patterns:** In JSON, backslashes in a regex must be
-doubled: `"\\d+"` means `\d+`. In TOML, use single-quoted literal strings
-to write regexes verbatim: `'\d+'`.
-
-Filtering happens before state computation. When a record that previously
-passed the filters stops passing, it appears as a DELETE in the next delta.
-When a previously-filtered record starts passing, it appears as an INSERT.
+When a record that previously passed the filters stops passing, it appears as a
+DELETE in the next delta. Similarly, when a previously-filtered record starts
+passing, it appears as an INSERT.
 
 ### Compression
 
@@ -269,8 +240,8 @@ enable = true  # enable zstd compression (default: true)
 level = 3      # compression level (defaults to zstd default)
 ```
 
-When compression would enlarge a small payload, the raw protobuf is sent
-instead; the receiver auto-detects which form it received.
+If compression would enlarge a small payload, the raw protobuf is sent instead;
+the receiver auto-detects which form it received.
 
 ### Stats
 
@@ -282,10 +253,8 @@ cumulative `STATS` JSON file in the state directory. Disabled by default:
 enable = true  # record stats (default: false)
 ```
 
-Each entry stores the `duration_ms`, `bytes_in`, and `bytes_out` of the
-delta-merging and compression stages. Run `lch stats show` to print an
-aggregated summary (per-stage median, average, and most recent run; bytes
-saved also as a percentage, with a combined total row).
+Each entry stores performance related information about the different
+compression stages. Run `lch stats show` to print an aggregated summary.
 
 ### History truncation
 
@@ -300,29 +269,22 @@ remove-orphans = true     # remove blocks not reachable from HEAD (default: true
 truncate-reported = true  # remove blocks older than last reported (default: true)
 ```
 
-All fields are optional and independent. Supported duration suffixes: `s`
-(seconds), `m` (minutes), `h` (hours), `d` (days), `w` (weeks).
+All fields are optional and independent.
 
-By default, truncation removes orphaned blocks (on disk but not reachable from
-HEAD) and blocks older than the last reported position (see `lch_patch_applied`).
-Set `remove-orphans = false` or `truncate-reported = false` to disable these
-behaviors. Disabling orphan removal is not recommended — corrupt blocks are
-detected during the chain walk and left unreachable so that orphan removal can
-clean them up.
+By default, truncation removes orphaned blocks (i.e., on disk but not reachable
+from HEAD), as well as blocks older than the last reported position (see
+`lch_patch_applied`).
 
 ### File permissions
 
-Files created in the work directory (`HEAD`, `STATE`, `REPORTED`, block files,
-and their lock files) are given Unix permission bits taken from the optional
-top-level `file-mode` option:
+Files created in the work directory are given Unix permission bits taken from
+the optional top-level `file-mode` option:
 
 ```toml
 file-mode = "0600"  # owner read/write only (default)
 ```
 
-The value is an octal string (an optional `0o` prefix is accepted) and must be
-`<= 0o777`. It defaults to `"0600"`, so only the owner can read or write the
-work directory's files. The option is ignored on non-Unix platforms.
+The option is ignored on non-Unix platforms.
 
 The state directory itself, when leech2 creates it, is given the permission bits
 from the optional top-level `dir-mode` option:
@@ -330,8 +292,6 @@ from the optional top-level `dir-mode` option:
 ```toml
 dir-mode = "0700"  # owner read/write/traverse only (default)
 ```
-
-It follows the same octal-string rules as `file-mode` and defaults to `"0700"`.
 
 ## C API
 
@@ -343,9 +303,6 @@ discover compile and link flags with `pkg-config --cflags --libs leech2`.
 ```c
 lch_config_t *cfg = lch_init("/path/to/workdir");
 
-/* Every table in the config has a `source` key, so no callback bundle is
- * needed -- pass NULL. See "Callback-backed tables" below for the case where
- * a table's rows come from the application instead of a CSV file. */
 lch_block_create(cfg, NULL);
 
 lch_buffer_t patch = {0};
@@ -380,7 +337,7 @@ debug builds; release builds strip them at compile time.
 ## Man pages
 
 Man pages are included in `.deb` and `.rpm` packages and in release tarballs.
-After installing, run `man lch` or `man libleech2` for full documentation.
+After installing, run `man lch` or `man libleech2` to see them.
 
 ## Contributing
 
