@@ -30,6 +30,26 @@ cargo xtask generate-man-pages target/release/man
 There are no man-page source files to edit: update the CLI's clap definitions
 or the header's doc comments and the pages follow.
 
+## Tooling (`xtask`)
+
+Repo automation lives in the `xtask` crate rather than in `build.rs` or ad-hoc
+scripts. It is a separate workspace member kept out of `default-members`, so
+plain `cargo build`, `cargo test`, and `cargo clippy` never build it and its
+dependencies (such as `clap_mangen`) stay out of the shipped `leech2` dependency
+tree. It runs only when invoked explicitly, which is why release-only work like
+man-page generation belongs here.
+
+Run a task through the cargo alias defined in `.cargo/config.toml`:
+
+```sh
+cargo xtask <task> [args...]
+```
+
+The only task today is `generate-man-pages` (see [Man pages](#man-pages)). To add
+another, add a match arm in `xtask/src/main.rs`. Tasks can reuse code from the
+`lch` binary by including a source file directly, as the man-page task does with
+`src/cli.rs` (`#[path = "../../src/cli.rs"]`).
+
 ## Formatting
 
 | File type  | Tool           | Command                  |
