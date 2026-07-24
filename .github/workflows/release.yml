@@ -49,8 +49,28 @@ jobs:
           name: source-tarball
           path: leech2-*.tar.gz
 
-  build:
+  man:
     needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install doxygen
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y doxygen
+
+      - name: Generate man pages
+        run: cargo xtask generate-man-pages man-pages
+
+      - name: Upload man pages
+        uses: actions/upload-artifact@v7
+        with:
+          name: man-pages
+          path: man-pages/
+
+  build:
+    needs: [validate, man]
     strategy:
       matrix:
         include:
@@ -84,6 +104,13 @@ jobs:
 
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Download man pages
+        if: runner.os != 'Windows'
+        uses: actions/download-artifact@v8
+        with:
+          name: man-pages
+          path: target/${{ matrix.target }}/release/man
 
       - name: Package .deb
         if: runner.os == 'Linux'
@@ -123,7 +150,8 @@ jobs:
           cp include/leech2.h "dist/${DIR}/"
           cp README.md "dist/${DIR}/"
           cp LICENSE "dist/${DIR}/"
-          cp "target/${{ matrix.target }}/release/man/lch.1" "target/${{ matrix.target }}/release/man/libleech2.3" "dist/${DIR}/"
+          cp "target/${{ matrix.target }}/release/man/"*.1 "dist/${DIR}/"
+          cp "target/${{ matrix.target }}/release/man/"*.3 "dist/${DIR}/"
           tar czf "dist/${DIR}.tar.gz" -C dist "${DIR}"
 
       - name: Create zip

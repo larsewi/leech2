@@ -8,6 +8,13 @@ license = "MIT"
 repository = "https://github.com/larsewi/leech2"
 homepage = "https://github.com/larsewi/leech2"
 
+# `xtask` holds release-only tooling (man-page generation). Keep it out of the
+# default set so plain `cargo build`/`test`/`clippy` only touch the `leech2`
+# package; build it explicitly with `cargo xtask ...` (see .cargo/config.toml).
+[workspace]
+members = ["xtask"]
+default-members = ["."]
+
 [lib]
 crate-type = ["cdylib", "lib"]
 
@@ -53,8 +60,8 @@ assets = [
     ["target/release/leech2-deb.pc", "usr/lib/pkgconfig/leech2.pc", "644"],
     ["include/leech2.h", "usr/include/", "644"],
     ["README.md", "usr/share/doc/leech2/", "644"],
-    ["target/release/man/lch.1", "usr/share/man/man1/", "644"],
-    ["target/release/man/libleech2.3", "usr/share/man/man3/", "644"],
+    ["target/release/man/*.1", "usr/share/man/man1/", "644"],
+    ["target/release/man/*.3", "usr/share/man/man3/", "644"],
 ]
 
 [package.metadata.generate-rpm]
@@ -64,8 +71,8 @@ assets = [
     { source = "target/release/leech2-rpm.pc", dest = "/usr/lib64/pkgconfig/leech2.pc", mode = "644" },
     { source = "include/leech2.h", dest = "/usr/include/leech2.h", mode = "644" },
     { source = "README.md", dest = "/usr/share/doc/leech2/README.md", mode = "644" },
-    { source = "target/release/man/lch.1", dest = "/usr/share/man/man1/lch.1", mode = "644" },
-    { source = "target/release/man/libleech2.3", dest = "/usr/share/man/man3/libleech2.3", mode = "644" },
+    { source = "target/release/man/*.1", dest = "/usr/share/man/man1/", mode = "644" },
+    { source = "target/release/man/*.3", dest = "/usr/share/man/man3/", mode = "644" },
 ]
 
 [package.metadata.generate-rpm.requires]

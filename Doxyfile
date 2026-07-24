@@ -1,0 +1,24 @@
+# Doxygen configuration for the libleech2 man pages.
+#
+# Only the man-page output is used. `cargo xtask generate-man-pages` runs
+# doxygen with this config; OUTPUT_DIRECTORY and PROJECT_NUMBER are supplied at
+# run time via the environment. This produces the header's file page
+# (leech2.h.3, documenting every function) plus one page per documented struct.
+# MAN_LINKS is left off on purpose: it would emit a page per struct member with
+# generic names (data, kind, text, ...) that pollute the global man namespace.
+
+PROJECT_NAME           = libleech2
+PROJECT_NUMBER         = $(LEECH2_VERSION)
+OUTPUT_DIRECTORY       = $(DOXYGEN_OUTPUT_DIR)
+INPUT                  = include/leech2.h
+OPTIMIZE_OUTPUT_FOR_C  = YES
+EXTRACT_ALL            = YES
+MACRO_EXPANSION        = YES
+FULL_PATH_NAMES        = NO
+WARN_IF_UNDOCUMENTED   = NO
+QUIET                  = YES
+
+GENERATE_HTML          = NO
+GENERATE_LATEX         = NO
+GENERATE_MAN           = YES
+MAN_LINKS              = NO

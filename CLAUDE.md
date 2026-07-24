@@ -21,7 +21,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Always run `prettier --write "**/*.md"` after changing Markdown files.
 - Update documentation ([README.md](README.md), [CONTRIBUTING.md](CONTRIBUTING.md), [DELTA_MERGING_RULES.md](DELTA_MERGING_RULES.md), [RELEASING.md](RELEASING.md)) when changing or adding features.
 - Follow the vocabulary in [TERMINOLOGY.md](TERMINOLOGY.md) when naming types, fields, and concepts in code, comments, and docs.
-- Update man page templates ([man/lch.1.in](man/lch.1.in), [man/libleech2.3.in](man/libleech2.3.in)) when adding new features or making breaking changes to the CLI or C API.
+- The `lch.1` and `libleech2` man pages are generated (see [CONTRIBUTING.md](CONTRIBUTING.md)): `lch.1` from the clap definitions in `src/cli.rs`, the `libleech2` pages from the doc comments in `include/leech2.h` via doxygen. There are no man-page source files to edit; keep the clap help text and header doc comments accurate and the pages follow. The `xtask` crate holds the generator.
 - Avoid `unwrap()`, `expect()`, and other panicking functions in production code. Use proper error handling (`?`, `ok_or_else`, pattern matching, etc.) instead. Panicking in tests is acceptable.
 - Use `anyhow` for error handling: `anyhow::Result<T>` for return types, `bail!()` for early error returns, `.context()` / `.with_context()` to add context to errors. Do not use `Box<dyn std::error::Error>`.
 - Prefer imports over fully-qualified paths. Add `use` items for types and functions that are used in a file rather than repeating `crate::module::Type` or `std::collections::HashMap` inline.

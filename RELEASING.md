@@ -43,6 +43,8 @@ label wins: `breaking` > `feature` > anything else.
 
    The workflow will:
    - Read the version from `Cargo.toml`
+   - Generate the man pages (`cargo xtask generate-man-pages`) and share them
+     with the platform builds
    - Build release binaries for six targets:
      - Linux x86_64
      - Linux aarch64
