@@ -2,8 +2,25 @@
  * @file leech2.h
  * @brief C API for the leech2 library.
  *
- * leech2 tracks CSV data sources, computes deltas between snapshots, and
- * produces SQL patches that can be applied to a downstream database.
+ * leech2 tracks changes to CSV data sources using a git-like,
+ * content-addressable chain of blocks: each block records the delta from the
+ * previous snapshot of every configured table. A patch consolidates a range of
+ * blocks and converts into the SQL needed to replay those changes on a
+ * downstream database.
+ *
+ * The library operates on a work directory that holds the configuration and CSV
+ * inputs; its state (the HEAD, STATE, REPORTED, and STATS files, plus the
+ * content-addressable block files) lives in a separate state directory, by
+ * default a `state` subdirectory of the work directory. The configuration
+ * format is described in the project documentation.
+ *
+ * Concurrency: the library serializes access to its own state files with
+ * advisory locks, so multiple processes may safely share one working directory.
+ * It also takes a shared advisory lock on each CSV source while reading, so a
+ * producer can keep leech2 from observing a half-written file in one of two
+ * ways: replace the file atomically (write a temporary file in the same
+ * directory, then rename it into place), or hold an exclusive lock on it while
+ * rewriting in place -- leech2 waits for that lock before reading.
  */
 
 #ifndef __LEECH2_H__
@@ -17,66 +34,87 @@
 extern "C" {
 #endif
 
+/** Return code: the operation completed successfully. */
 #define LCH_SUCCESS 0
+/** Return code: the operation failed; details go to the installed log callback. */
 #define LCH_FAILURE -1
 
-/* Cell-callback return codes (see lch_read_cell_cb_t). */
+/** Cell-callback return code (see lch_read_cell_cb_t): no row exists at the
+ *  requested index; stop iterating the current table. */
 #define LCH_END_OF_TABLE 1
+/** Cell-callback return code (see lch_read_cell_cb_t): drop the current row and
+ *  advance to the next. */
 #define LCH_SKIP_RECORD 2
 
 /**
- * Log severity levels.
+ * @brief Log severity levels.
  *
  * @note LCH_LOG_TRACE messages are only emitted in debug builds. Release
  *       builds strip trace-level logging at compile time.
  */
 typedef enum {
-  LCH_LOG_ERROR = 1,
-  LCH_LOG_WARN = 2,
-  LCH_LOG_INFO = 3,
-  LCH_LOG_DEBUG = 4,
-  LCH_LOG_TRACE = 5,
+  LCH_LOG_ERROR = 1, /**< Errors that abort an operation. */
+  LCH_LOG_WARN = 2,  /**< Unexpected conditions that do not abort. */
+  LCH_LOG_INFO = 3,  /**< High-level progress messages. */
+  LCH_LOG_DEBUG = 4, /**< Detailed diagnostic messages. */
+  LCH_LOG_TRACE = 5, /**< Very verbose tracing; debug builds only. */
 } lch_log_level_t;
 
+/**
+ * @brief Value kind tag for lch_cell_t.
+ *
+ * Identifies which union member of a cell holds the value and must match the
+ * declared kind of the field the cell represents.
+ */
 typedef enum {
-  LCH_VALUE_NULL = 0,
-  LCH_VALUE_TEXT = 1,
-  LCH_VALUE_NUMBER = 2,
-  LCH_VALUE_BOOLEAN = 3,
+  LCH_VALUE_NULL = 0,    /**< SQL NULL; no union member is valid. */
+  LCH_VALUE_TEXT = 1,    /**< Text value; the @c text member is valid. */
+  LCH_VALUE_NUMBER = 2,  /**< Numeric value; the @c number member is valid. */
+  LCH_VALUE_BOOLEAN = 3, /**< Boolean value; the @c boolean member is valid. */
 } lch_kind_t;
 
+/**
+ * @brief A single typed value passed across the FFI boundary.
+ *
+ * The @p kind tag selects which union member holds the value.
+ */
 typedef struct {
-  /* Must match the declared kind of the field this cell represents:
-   *   TEXT field    -> LCH_VALUE_TEXT or LCH_VALUE_NULL
-   *   NUMBER field  -> LCH_VALUE_NUMBER or LCH_VALUE_NULL
-   *   BOOLEAN field -> LCH_VALUE_BOOLEAN or LCH_VALUE_NULL
-   * LCH_VALUE_NULL is rejected on primary-key fields. */
+  /**
+   * Kind tag selecting the valid union member. Must match the declared kind of
+   * the field this cell represents:
+   *   - TEXT field    -> LCH_VALUE_TEXT or LCH_VALUE_NULL
+   *   - NUMBER field  -> LCH_VALUE_NUMBER or LCH_VALUE_NULL
+   *   - BOOLEAN field -> LCH_VALUE_BOOLEAN or LCH_VALUE_NULL
+   * LCH_VALUE_NULL is rejected on primary-key fields.
+   */
   lch_kind_t kind;
   union {
-    /* Valid when kind == LCH_VALUE_TEXT. Null-terminated, must not be NULL;
-     * use LCH_VALUE_NULL to represent a null value. */
+    /** Valid when kind == LCH_VALUE_TEXT. Null-terminated, must not be NULL;
+     *  use LCH_VALUE_NULL to represent a null value. */
     const char *text;
-    /* Valid when kind == LCH_VALUE_NUMBER. Must be finite (not NaN/Inf). */
+    /** Valid when kind == LCH_VALUE_NUMBER. Must be finite (not NaN/Inf). */
     double number;
-    /* Valid when kind == LCH_VALUE_BOOLEAN. */
+    /** Valid when kind == LCH_VALUE_BOOLEAN. */
     bool boolean;
   };
 } lch_cell_t;
 
 /**
- * Owned byte buffer returned by the library.
+ * @brief Owned byte buffer returned by the library.
  *
  * Functions that allocate a buffer fill in @p data and @p len. The buffer must
  * eventually be released with the matching free routine (see each function's
  * documentation). On failure, the fields are left untouched.
  */
 typedef struct {
+  /** Pointer to @p len bytes owned by the library. */
   uint8_t *data;
+  /** Length of the buffer in bytes. */
   size_t len;
 } lch_buffer_t;
 
 /**
- * Callback type for receiving log messages.
+ * @brief Callback type for receiving log messages.
  *
  * @param level     Severity level of the message.
  * @param msg       Null-terminated log message string. Only valid for the
@@ -87,7 +125,7 @@ typedef void (*lch_log_callback_t)(lch_log_level_t level, const char *msg,
                                    void *usr_data);
 
 /**
- * Initialize logging with a callback.
+ * @brief Initialize logging with a callback.
  *
  * Installs a custom logger that delivers all log messages through @p callback.
  * Must be called before lch_init() for the callback to receive messages from
@@ -111,19 +149,19 @@ typedef void (*lch_log_callback_t)(lch_log_level_t level, const char *msg,
 extern int lch_log_init(lch_log_callback_t callback, void *usr_data);
 
 /**
- * Return the leech2 library version.
+ * @brief Return the leech2 library version.
  *
  * Useful for verifying at runtime that the program is linked against the
  * expected libleech2.
  *
  * @return Pointer to a null-terminated, statically-allocated version string
- *         (e.g. "4.1.3"). The pointer is valid for the lifetime of the
+ *         (e.g. "1.2.3"). The pointer is valid for the lifetime of the
  *         process and must not be freed or modified.
  */
 extern const char *lch_version(void);
 
 /**
- * Opaque configuration handle.
+ * @brief Opaque configuration handle.
  *
  * Created by lch_init() and freed by lch_deinit(). All other API functions
  * require a valid handle obtained from lch_init().
@@ -131,7 +169,7 @@ extern const char *lch_version(void);
 typedef struct LchConfig lch_config_t;
 
 /**
- * Initialize the library and load configuration.
+ * @brief Initialize the library and load configuration.
  *
  * Parses the configuration found in @p work_dir and returns an opaque handle
  * used by all subsequent API calls.
@@ -143,17 +181,20 @@ typedef struct LchConfig lch_config_t;
 extern lch_config_t *lch_init(const char *work_dir);
 
 /**
- * Free a configuration handle.
+ * @brief Free a configuration handle.
  *
  * Releases all resources associated with the handle. Passing NULL is a safe
  * no-op. After this call the handle is invalid and must not be used.
+ *
+ * If a previous lch_block_create() started a background truncation that is
+ * still running, this call blocks until it finishes.
  *
  * @param cfg  Handle previously returned by lch_init(), or NULL.
  */
 extern void lch_deinit(lch_config_t *cfg);
 
 /**
- * Per-table setup hook for callback-backed tables.
+ * @brief Per-table setup hook for callback-backed tables.
  *
  * Invoked once, before the first cell callback for @p table.
  *
@@ -167,7 +208,7 @@ extern void lch_deinit(lch_config_t *cfg);
 typedef int (*lch_table_begin_cb_t)(const char *table, void *usr_data);
 
 /**
- * Per-table teardown hook for callback-backed tables.
+ * @brief Per-table teardown hook for callback-backed tables.
  *
  * Invoked once for every table whose lch_table_begin_cb_t returned
  * LCH_SUCCESS, including on the failure path.
@@ -185,7 +226,7 @@ typedef int (*lch_table_begin_cb_t)(const char *table, void *usr_data);
 typedef int (*lch_table_end_cb_t)(const char *table, void *usr_data);
 
 /**
- * Cell callback for callback-backed tables.
+ * @brief Cell callback for callback-backed tables.
  *
  * Iteration contract:
  *   - Rows are requested in ascending order, starting from row == 0.
@@ -227,7 +268,7 @@ typedef int (*lch_read_cell_cb_t)(const char *table, size_t row, size_t col,
                                   void *usr_data);
 
 /**
- * Per-cell cleanup hook for callback-backed tables.
+ * @brief Per-cell cleanup hook for callback-backed tables.
  *
  * Invoked once for each lch_read_cell_cb_t call that returned LCH_SUCCESS,
  * for every cell kind, immediately after leech2 has copied the value into its
@@ -247,7 +288,7 @@ typedef int (*lch_read_cell_cb_t)(const char *table, size_t row, size_t col,
 typedef void (*lch_destroy_cell_cb_t)(lch_cell_t *cell, void *usr_data);
 
 /**
- * Callback bundle passed to lch_block_create() for callback-backed tables.
+ * @brief Callback bundle passed to lch_block_create() for callback-backed tables.
  *
  * Initialize with designated initializers (e.g. `.read_cell = my_read_cell`)
  * rather than positional ones, so optional fields added in future releases
@@ -269,13 +310,15 @@ typedef struct {
 } lch_callbacks_t;
 
 /**
- * Create a new block from the current snapshot of every configured table.
+ * @brief Create a new block from the current snapshot of every configured table.
  *
  * Reads each table's contents (from the CSV source declared under
  * [tables.X.csv], or via the callback bundle for tables that have no [csv]
  * block), computes the new state and the delta against the previous state,
- * and writes a new block together with updated STATE and HEAD files.
- * History truncation is performed afterwards.
+ * and writes a new block together with updated STATE and HEAD files. History
+ * truncation then runs on a background thread, so this call may return before
+ * truncation completes; any still-running truncation is joined by
+ * lch_deinit().
  *
  * @param cfg        Valid config handle (must not be NULL).
  * @param callbacks  Optional callback bundle. May be NULL when every table
@@ -286,7 +329,7 @@ extern int lch_block_create(const lch_config_t *cfg,
                             const lch_callbacks_t *callbacks);
 
 /**
- * Create a patch from HEAD back to a known hash.
+ * @brief Create a patch from HEAD back to a known hash.
  *
  * Walks the block chain from HEAD to @p hash, merging deltas along the way.
  * On success, @p out receives the encoded patch buffer.
@@ -301,6 +344,9 @@ extern int lch_block_create(const lch_config_t *cfg,
  * The buffer written to @p out must eventually be freed with
  * lch_buffer_free().
  *
+ * When the [stats] configuration section is enabled, a run record is appended
+ * to the STATS file in the state directory.
+ *
  * @param cfg       Valid config handle (must not be NULL).
  * @param hash      Last-known block hash (null-terminated string), or NULL.
  * @param[out] out  Receives the encoded patch buffer (must not be NULL).
@@ -310,7 +356,7 @@ extern int lch_patch_create(const lch_config_t *cfg, const char *hash,
                             lch_buffer_t *out);
 
 /**
- * Convert an encoded patch to SQL statements.
+ * @brief Convert an encoded patch to SQL statements.
  *
  * Decodes the patch in @p patch and produces SQL that, when executed, applies
  * the patch to a downstream database:
@@ -334,7 +380,7 @@ extern int lch_patch_to_sql(const lch_config_t *cfg, const lch_buffer_t *patch,
                             char **sql);
 
 /**
- * Inject a field into an encoded patch.
+ * @brief Inject a field into an encoded patch.
  *
  * Decodes the patch in @p in, adds or overwrites an injected field with the
  * given @p name and @p cell, and encodes the result into a new caller-owned
@@ -365,7 +411,7 @@ extern int lch_patch_inject(const lch_config_t *cfg, const lch_buffer_t *in,
                             lch_buffer_t *out);
 
 /**
- * Extract the head hash from an encoded patch.
+ * @brief Extract the head hash from an encoded patch.
  *
  * Decodes @p patch and returns its head hash -- the hash of the most recent
  * block consolidated into the patch -- as a newly allocated, null-terminated
@@ -387,7 +433,7 @@ extern int lch_patch_inject(const lch_config_t *cfg, const lch_buffer_t *in,
 extern int lch_patch_hash(const lch_buffer_t *patch, char **out);
 
 /**
- * Mark a patch as applied.
+ * @brief Mark a patch as applied.
  *
  * Updates the REPORTED file with the patch's head hash so that future
  * truncation knows which blocks are safe to remove.
@@ -400,7 +446,7 @@ extern int lch_patch_applied(const lch_config_t *cfg,
                              const lch_buffer_t *patch);
 
 /**
- * Mark a patch as failed.
+ * @brief Mark a patch as failed.
  *
  * Removes the REPORTED file so that the next lch_patch_create() produces a
  * full state patch (TRUNCATE + INSERT for all tables). This is safe to call
@@ -412,7 +458,7 @@ extern int lch_patch_applied(const lch_config_t *cfg,
 extern int lch_patch_failed(const lch_config_t *cfg);
 
 /**
- * Free a library-owned buffer.
+ * @brief Free a library-owned buffer.
  *
  * Passing NULL is a safe no-op, as is passing a buffer with @c data set to
  * NULL. After this call, the buffer's @c data pointer is invalid and must not
@@ -423,7 +469,7 @@ extern int lch_patch_failed(const lch_config_t *cfg);
 extern void lch_buffer_free(lch_buffer_t *buf);
 
 /**
- * Free a null-terminated string returned by the library.
+ * @brief Free a null-terminated string returned by the library.
  *
  * Used for any C string produced by leech2 (e.g. lch_patch_to_sql(),
  * lch_patch_hash()). Passing NULL is a safe no-op.
