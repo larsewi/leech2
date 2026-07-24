@@ -28,7 +28,10 @@ cargo xtask generate-man-pages target/release/man
 ```
 
 There are no man-page source files to edit: update the CLI's clap definitions
-or the header's doc comments and the pages follow.
+or the header's doc comments and the pages follow. Generation runs doxygen with
+`WARN_AS_ERROR`, so it fails if any symbol in `include/leech2.h` is
+undocumented. `cargo test -p xtask` exercises generation and this check; CI runs
+it with doxygen installed.
 
 ## Tooling (`xtask`)
 

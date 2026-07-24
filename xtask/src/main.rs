@@ -208,3 +208,52 @@ fn last_commit_date(repo_root: &Path) -> String {
         .filter(|text| !text.is_empty())
         .unwrap_or_else(|| "unknown".to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn doxygen_available() -> bool {
+        Command::new("doxygen")
+            .arg("--version")
+            .output()
+            .is_ok_and(|output| output.status.success())
+    }
+
+    // The clap-derived pages need no external tools, so this always runs.
+    #[test]
+    fn renders_cli_man_pages() -> Result<()> {
+        let out = tempfile::tempdir()?;
+        generate_cli_man_pages(out.path(), "9.9.9", "2020-01-01")?;
+
+        let root = std::fs::read_to_string(out.path().join("lch.1"))?;
+        assert!(root.contains(".TH \"LCH\" \"1\""), "unexpected .TH: {root}");
+        assert!(root.contains("leech2 9.9.9"), "version not stamped");
+        assert!(
+            out.path().join("lch-block-create.1").exists(),
+            "per-subcommand page not generated"
+        );
+        Ok(())
+    }
+
+    // Runs the full pipeline (needs doxygen; skipped when absent, as CI installs
+    // it -- see build.yml). Because the Doxyfile sets WARN_AS_ERROR alongside
+    // WARN_IF_UNDOCUMENTED, generation fails if any symbol in leech2.h is
+    // undocumented, so this guards documentation completeness too.
+    #[test]
+    fn generates_all_man_pages() -> Result<()> {
+        if !doxygen_available() {
+            eprintln!("skipping generates_all_man_pages: doxygen not installed");
+            return Ok(());
+        }
+        let out = tempfile::tempdir()?;
+        generate_man_pages(out.path())?;
+        for page in ["lch.1", "lch-patch-create.1", "leech2.h.3", "lch_cell_t.3"] {
+            assert!(
+                out.path().join(page).exists(),
+                "man page not generated: {page}"
+            );
+        }
+        Ok(())
+    }
+}

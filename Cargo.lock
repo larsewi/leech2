@@ -1226,6 +1226,7 @@ dependencies = [
  "clap",
  "clap_mangen",
  "glob",
+ "tempfile",
 ]
 
 [[package]]
