@@ -556,7 +556,7 @@ dependencies = [
 
 [[package]]
 name = "leech2"
-version = "5.4.2"
+version = "5.4.3"
 dependencies = [
  "anyhow",
  "cc",
