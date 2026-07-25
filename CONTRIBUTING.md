@@ -8,6 +8,55 @@ To run a single test: `cargo test <test_name>` (e.g. `cargo test test_merge_rule
 Prefix with `LEECH2_LOG=<level>` to enable logging (`error`, `warn`, `info`,
 `debug`, `trace`).
 
+## Man pages
+
+The `lch.1` and `libleech2` man pages are generated, not hand-written, so they
+never drift from the CLI or the C API:
+
+- `lch.1`, plus one page per subcommand (`lch-block-create.1`, ...), is
+  rendered from the clap command definition in `src/cli.rs`.
+- The `libleech2` pages come from the doc comments in `include/leech2.h`, via
+  doxygen (configured by `Doxyfile`).
+
+Generation lives in the release-only `xtask` crate, so doxygen and
+`clap_mangen` stay out of the everyday `cargo build`. The release workflow runs
+it automatically; to regenerate locally you need [doxygen](https://www.doxygen.nl/)
+installed, then:
+
+```sh
+cargo xtask generate-man-pages target/release/man
+```
+
+There are no man-page source files to edit: update the CLI's clap definitions
+or the header's doc comments and the pages follow. Generation runs doxygen with
+`WARN_AS_ERROR`, so it fails if any symbol in `include/leech2.h` is
+undocumented. `cargo test -p xtask` exercises generation and this check; CI runs
+it with doxygen installed.
+
+## Tooling (`xtask`)
+
+Repo automation lives in the `xtask` crate rather than in `build.rs` or ad-hoc
+scripts. It is a separate workspace member kept out of `default-members`, so
+plain `cargo build`, `cargo test`, and `cargo clippy` never build it and its
+dependencies (such as `clap_mangen`) stay out of the shipped `leech2` dependency
+tree. It runs only when invoked explicitly, which is why release-only work like
+man-page generation belongs here.
+
+Run a task through the cargo alias defined in `.cargo/config.toml`:
+
+```sh
+cargo xtask <task> [args...]
+```
+
+Arguments are parsed with clap, so `cargo xtask --help` lists the tasks and
+`cargo xtask <task> --help` documents one.
+
+The only task today is `generate-man-pages` (see [Man pages](#man-pages)). To
+add another, add a variant to the `Task` enum in `xtask/src/main.rs` and a match
+arm in `main`. Tasks can reuse code from the `lch` binary by including a source
+file directly, as the man-page task does with `src/cli.rs` (`#[path =
+"../../src/cli.rs"]`).
+
 ## Formatting
 
 | File type  | Tool           | Command                  |
@@ -325,6 +374,7 @@ src/
                 callback-backed tables
   logger.rs     Callback-based log dispatch for FFI consumers
   main.rs       CLI (lch binary)
+  cli.rs        clap CLI definition (shared with the xtask man-page generator)
   config.rs     TOML/JSON config parsing, drop-in fragment merging (include)
   table.rs      Table loading (CSV path + callback path) and the in-memory
                 table type (HashMap<Vec<Cell>, Vec<Cell>>)
@@ -347,7 +397,10 @@ src/
 proto/          Protobuf definitions (compiled at build time by prost-build)
 include/        C header (leech2.h)
 leech2.pc.in    pkg-config template (version and libdir filled in by build.rs)
-man/            Man page templates (*.in, version and date filled in by build.rs)
+Doxyfile        Doxygen config for the libleech2 man pages (run via xtask)
+xtask/          Release-only tooling; `cargo xtask generate-man-pages <dir>`
+                renders lch.1 (+ a page per subcommand) from the clap CLI and
+                the libleech2 pages from include/leech2.h via doxygen
 tests/          Acceptance tests (`accept_*.rs`), the round-trip
                 property test (`round_trip.rs`, gated on `PGHOST`),
                 and the C FFI test (`test_c_ffi.rs` + `test_c_ffi.c`)

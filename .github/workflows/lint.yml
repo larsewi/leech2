@@ -21,7 +21,7 @@ jobs:
         uses: ./.github/actions/setup-protoc
 
       - name: Run clippy
-        run: cargo clippy -- -D warnings
+        run: cargo clippy --workspace -- -D warnings
 
   c:
     runs-on: ubuntu-latest

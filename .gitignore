@@ -82,3 +82,4 @@ dkms.conf
 .leech2/*
 test_c_ffi
 test_cpp_ffi
+man/*

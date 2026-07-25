@@ -30,3 +30,16 @@ jobs:
         run: cargo build --verbose
       - name: Run tests
         run: cargo test --verbose
+
+  man:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Cache cargo
+        uses: ./.github/actions/cargo-cache
+        with:
+          profile: debug
+      - name: Install doxygen
+        run: sudo apt-get update && sudo apt-get install -y doxygen
+      - name: Test man-page generation and documentation completeness
+        run: cargo test -p xtask
