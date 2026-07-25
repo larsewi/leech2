@@ -29,7 +29,7 @@ jobs:
           fi
 
   source:
-    needs: validate
+    needs: [validate, man]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -37,16 +37,29 @@ jobs:
       - name: Install protobuf compiler
         uses: ./.github/actions/setup-protoc
 
+      - name: Download man pages
+        uses: actions/download-artifact@v8
+        with:
+          name: man-pages
+          path: man-pages
+
+      # The man pages are generated, so 'cargo package' cannot include them:
+      # unpack the .crate, add them under man/, and repack.
       - name: Create source tarball
         run: |
+          DIR="leech2-${{ needs.validate.outputs.version }}"
           cargo package
-          cp "target/package/leech2-${{ needs.validate.outputs.version }}.crate" \
-             "leech2-${{ needs.validate.outputs.version }}.tar.gz"
+          tar xzf "target/package/${DIR}.crate"
+          mkdir "${DIR}/man"
+          cp man-pages/*.1 man-pages/*.3 "${DIR}/man/"
+          tar czf "${DIR}.tar.gz" "${DIR}"
 
+      # Artifacts named 'release-*' are attached to the GitHub release; see the
+      # download step in the 'release' job.
       - name: Upload source tarball
         uses: actions/upload-artifact@v7
         with:
-          name: source-tarball
+          name: release-source-tarball
           path: leech2-*.tar.gz
 
   man:
@@ -63,6 +76,9 @@ jobs:
       - name: Generate man pages
         run: cargo xtask generate-man-pages man-pages
 
+      # Deliberately not named 'release-*': the man pages ship inside the .deb,
+      # .rpm and source tarball, not as standalone release assets. This artifact
+      # only carries them to the jobs that package them.
       - name: Upload man pages
         uses: actions/upload-artifact@v7
         with:
@@ -105,8 +121,9 @@ jobs:
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
 
+      # Only the .deb and .rpm ship man pages, so only Linux needs them.
       - name: Download man pages
-        if: runner.os != 'Windows'
+        if: runner.os == 'Linux'
         uses: actions/download-artifact@v8
         with:
           name: man-pages
@@ -151,8 +168,6 @@ jobs:
           cp include/leech2.h "dist/${DIR}/"
           cp README.md "dist/${DIR}/"
           cp LICENSE "dist/${DIR}/"
-          cp "target/${{ matrix.target }}/release/man/"*.1 "dist/${DIR}/"
-          cp "target/${{ matrix.target }}/release/man/"*.3 "dist/${DIR}/"
           tar czf "dist/${DIR}.tar.gz" -C dist "${DIR}"
 
       - name: Create zip
@@ -172,35 +187,35 @@ jobs:
         if: runner.os != 'Windows'
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ matrix.artifact }}-tarball
+          name: release-${{ matrix.artifact }}-tarball
           path: dist/*.tar.gz
 
       - name: Upload zip
         if: runner.os == 'Windows'
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ matrix.artifact }}-zip
+          name: release-${{ matrix.artifact }}-zip
           path: dist/*.zip
 
       - name: Upload .deb
         if: runner.os == 'Linux'
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ matrix.artifact }}-deb
+          name: release-${{ matrix.artifact }}-deb
           path: target/${{ matrix.target }}/debian/*.deb
 
       - name: Upload .rpm
         if: runner.os == 'Linux'
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ matrix.artifact }}-rpm
+          name: release-${{ matrix.artifact }}-rpm
           path: target/${{ matrix.target }}/generate-rpm/*.rpm
 
       - name: Upload .msi
         if: runner.os == 'Windows' && matrix.target != 'aarch64-pc-windows-msvc'
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ matrix.artifact }}-msi
+          name: release-${{ matrix.artifact }}-msi
           path: target/wix/*.msi
 
   release:
@@ -211,10 +226,11 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Download all artifacts
+      - name: Download release assets
         uses: actions/download-artifact@v8
         with:
           path: release-assets
+          pattern: release-*
           merge-multiple: true
 
       - name: Scan release assets for viruses

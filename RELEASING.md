@@ -43,8 +43,8 @@ label wins: `breaking` > `feature` > anything else.
 
    The workflow will:
    - Read the version from `Cargo.toml`
-   - Generate the man pages (`cargo xtask generate-man-pages`) and share them
-     with the platform builds
+   - Generate the man pages (`cargo xtask generate-man-pages`) for the `.deb`
+     and `.rpm` packages and the source tarball
    - Build release binaries for six targets:
      - Linux x86_64
      - Linux aarch64
@@ -54,7 +54,8 @@ label wins: `breaking` > `feature` > anything else.
      - Windows aarch64
    - Package `.deb`, `.rpm` and `.msi` files for Linux and Windows targets
    - Create `.tar.gz` or `.zip` archives for all targets
-   - Create a source tarball (`cargo package`) for building from source
+   - Create a source tarball (`cargo package`, with the man pages added under
+     `man/`) for building from source
    - Run virus scan on all build artifacts
    - Generate a `checksums.txt` with the SHA-256 sum of every artifact
    - Create a GitHub Release with all artifacts attached

@@ -336,8 +336,9 @@ debug builds; release builds strip them at compile time.
 
 ## Man pages
 
-Man pages are included in `.deb` and `.rpm` packages and in release tarballs.
-After installing, run `man 1 lch` or `man 3 leech2.h` to see them.
+Man pages are included in the `.deb` and `.rpm` packages, and under `man/` in
+the source tarball. After installing a package, run `man 1 lch` or
+`man 3 leech2.h` to see them.
 
 ## Contributing
 
