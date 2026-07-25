@@ -128,7 +128,8 @@ jobs:
         if: runner.os == 'Windows' && matrix.target != 'aarch64-pc-windows-msvc'
         run: |
           cargo install cargo-wix --locked
-          cargo wix --no-build --nocapture --target ${{ matrix.target }}
+          # cargo-wix refuses to guess a package in a workspace, so name it.
+          cargo wix --package leech2 --no-build --nocapture --target ${{ matrix.target }}
 
       - name: Determine file extensions
         id: ext
