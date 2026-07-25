@@ -37,11 +37,14 @@ jobs:
       - name: Install protobuf compiler
         uses: ./.github/actions/setup-protoc
 
+      # Download outside the checkout: 'cargo package' refuses to run with
+      # uncommitted files in the working tree, and with --allow-dirty it would
+      # pack them into the crate as well.
       - name: Download man pages
         uses: actions/download-artifact@v8
         with:
           name: man-pages
-          path: man-pages
+          path: ${{ runner.temp }}/man-pages
 
       # The man pages are generated, so 'cargo package' cannot include them:
       # unpack the .crate, add them under man/, and repack.
@@ -51,7 +54,7 @@ jobs:
           cargo package
           tar xzf "target/package/${DIR}.crate"
           mkdir "${DIR}/man"
-          cp man-pages/*.1 man-pages/*.3 "${DIR}/man/"
+          cp "${RUNNER_TEMP}/man-pages/"*.1 "${RUNNER_TEMP}/man-pages/"*.3 "${DIR}/man/"
           tar czf "${DIR}.tar.gz" "${DIR}"
 
       # Artifacts named 'release-*' are attached to the GitHub release; see the
