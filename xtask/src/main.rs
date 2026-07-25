@@ -1,7 +1,8 @@
 //! Repo automation for leech2.
 //!
 //! Currently a single task, `generate-man-pages`, which regenerates the man
-//! pages. Run via the cargo alias (see `.cargo/config.toml`):
+//! pages. Run via the cargo alias (see `.cargo/config.toml`), and pass
+//! `--help` for the full usage:
 //!
 //! ```text
 //! cargo xtask generate-man-pages target/release/man
@@ -18,24 +19,34 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::{Context, Result, bail};
-use clap::CommandFactory;
+use clap::{CommandFactory, Parser, Subcommand};
 
 // Share the exact clap definition the `lch` binary parses.
 #[path = "../../src/cli.rs"]
 mod cli;
 
+/// Repo automation for leech2, invoked through the `cargo xtask` alias.
+#[derive(Parser)]
+// The only entry point is the `cargo xtask` alias, so spell that in the usage
+// line rather than letting clap infer the bare binary name from argv[0].
+#[command(name = "cargo xtask", bin_name = "cargo xtask", about, long_about = None)]
+struct Xtask {
+    #[command(subcommand)]
+    task: Task,
+}
+
+#[derive(Subcommand)]
+enum Task {
+    /// Regenerate the `lch` and `libleech2` man pages.
+    GenerateManPages {
+        /// Directory to write the man pages to; created if missing.
+        output_dir: PathBuf,
+    },
+}
+
 fn main() -> Result<()> {
-    let mut arguments = std::env::args().skip(1);
-    match arguments.next().as_deref() {
-        Some("generate-man-pages") => {
-            let output_dir: PathBuf = arguments
-                .next()
-                .context("usage: cargo xtask generate-man-pages <output-dir>")?
-                .into();
-            generate_man_pages(&output_dir)
-        }
-        Some(other) => bail!("unknown task '{other}'; available tasks: generate-man-pages"),
-        None => bail!("usage: cargo xtask <task>; available tasks: generate-man-pages"),
+    match Xtask::parse().task {
+        Task::GenerateManPages { output_dir } => generate_man_pages(&output_dir),
     }
 }
 
@@ -212,6 +223,13 @@ fn last_commit_date(repo_root: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // clap's own consistency check for a derived command tree (conflicting
+    // names, bad defaults, ...), which otherwise only trips at runtime.
+    #[test]
+    fn xtask_cli_is_well_formed() {
+        Xtask::command().debug_assert();
+    }
 
     fn doxygen_available() -> bool {
         Command::new("doxygen")
