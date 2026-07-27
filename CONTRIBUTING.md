@@ -4,34 +4,28 @@
 
 See [README.md](README.md) for build dependencies and basic build commands.
 
-To run a single test: `cargo test <test_name>` (e.g. `cargo test test_merge_rule5`).
-Prefix with `LEECH2_LOG=<level>` to enable logging (`error`, `warn`, `info`,
-`debug`, `trace`).
+To run a single test: `cargo test <test_name>` (e.g. `cargo test
+test_merge_rule5`). Prefix with `LEECH2_LOG=<level>` and suffix with `--
+--nocapture` to enable logging (`error`, `warn`, `info`, `debug`, `trace`).
 
 ## Man pages
 
-The `lch.1` and `libleech2` man pages are generated, not hand-written, so they
-never drift from the CLI or the C API:
+Man pages are generated, not hand-written, so they never drift from the CLI or
+the C API:
 
-- `lch.1`, plus one page per subcommand (`lch-block-create.1`, ...), is
-  rendered from the clap command definition in `src/cli.rs`.
-- The `libleech2` pages come from the doc comments in `include/leech2.h`, via
+- The CLI man pages are rendered from the clap command definition in
+  `src/cli.rs`.
+- The C API man pages come from the doc comments in `include/leech2.h`, via
   doxygen (configured by `Doxyfile`).
 
-Generation lives in the release-only `xtask` crate, so doxygen and
-`clap_mangen` stay out of the everyday `cargo build`. The release workflow runs
-it automatically; to regenerate locally you need [doxygen](https://www.doxygen.nl/)
+Generation lives in the release-only `xtask` crate, so doxygen and `clap_mangen`
+stay out of the everyday `cargo build`. The release workflow runs it
+automatically. To regenerate locally you need [doxygen](https://www.doxygen.nl/)
 installed, then:
 
 ```sh
 cargo xtask generate-man-pages target/release/man
 ```
-
-There are no man-page source files to edit: update the CLI's clap definitions
-or the header's doc comments and the pages follow. Generation runs doxygen with
-`WARN_AS_ERROR`, so it fails if any symbol in `include/leech2.h` is
-undocumented. `cargo test -p xtask` exercises generation and this check; CI runs
-it with doxygen installed.
 
 ## Tooling (`xtask`)
 
@@ -74,8 +68,8 @@ See [TERMINOLOGY.md](TERMINOLOGY.md) for the project's vocabulary.
 leech2 is a Rust `cdylib` that exposes a C-compatible API for tracking changes
 to CSV-backed database tables. It implements a git-like content-addressable
 block chain for change history. Changes flow through four primary operations:
-`Block::create()`, `Patch::create()`, `patch_to_sql()`,
-`Patch::applied()`, and `Patch::failed()`.
+`Block::create()`, `Patch::create()`, `patch_to_sql()`, `Patch::applied()`, and
+`Patch::failed()`.
 
 ### Block::create()
 
@@ -86,23 +80,23 @@ snapshot. Each delta records three operation types: inserts (new keys), deletes
 (removed keys), and updates (changed values).
 
 Tables can be sourced two ways: from a CSV file declared via a `[tables.X.csv]`
-block in the config (the original path; values are parsed from text), or from
-a caller-supplied callback bundle when no `[csv]` block is present (the C
-application produces typed cells directly via `lch_callbacks_t`). Both paths
-produce the same in-memory table representation; everything downstream — delta
-computation, layout change detection, block storage, truncation — is identical.
-Sentinels (`null` / `true` / `false`) and `filter` rules live under the table's
-`[csv]` block and apply only on the CSV path; callback-backed tables skip rows
-by returning `LCH_SKIP_RECORD`.
+block in the config, or from a caller-supplied callback bundle when no `[csv]`
+block is present. Both paths produce the same in-memory table representation;
+everything downstream — delta computation, layout change detection, block
+storage, truncation — is identical. Sentinels (`null` / `true` / `false`) and
+`filter` rules apply only on the CSV backed tables. Callback-backed tables skip
+rows by returning `LCH_SKIP_RECORD`.
 
-The callback bundle has four hooks: `table_begin` (optional per-table setup),
-`read_cell` (required; produces one typed cell per call), `destroy_cell`
-(optional; invoked once after each successful `read_cell`, for every cell kind,
-so the implementation can free memory it allocated for the cell with its own
-allocator — leech2 never frees caller memory itself), and `table_end` (optional
-per-table teardown). Initialize `lch_callbacks_t` with designated initializers
-(e.g. `.read_cell = my_read_cell`) so optional fields added in later releases
-default to NULL without breaking the initializer.
+The callback bundle has four hooks:
+- `table_begin` (option): per-table setup
+- `read_cell` (required): produces one typed cell per call
+- `destroy_cell` (optional) invoked once after each successful `read_cell` so
+  the implementation can free memory it allocated for the cell
+- `table_end` (optional) per-table teardown
+
+Initialize `lch_callbacks_t` with designated initializers (e.g. `.read_cell =
+my_read_cell`) so optional fields added in later releases default to NULL
+without breaking the initializer.
 
 When starting a fresh chain (HEAD is genesis), the block is stored with an empty
 payload — delta computation and STATE file loading are skipped entirely. The
@@ -117,10 +111,11 @@ canonical field list (primary keys first, then subsidiaries; each group sorted
 lexicographically by name).
 
 Because tuple identity is canonical, reordering fields in `tables.toml` does not
-register as a layout change. Adding, removing, or renaming a field does. Tables
-whose layout changed are recorded in the block as a `TableChange` with no delta
-(`delta: None`), signaling that patch consolidation should use a full state
-snapshot for that table instead of attempting to merge incompatible deltas.
+register as a layout change. However, adding, removing, or renaming a field
+does. Tables whose layout changed are recorded in the block as a `TableChange`
+with no delta (`delta: None`), signaling that patch consolidation should use a
+full state snapshot for that table instead of attempting to merge incompatible
+deltas.
 
 All table changes are bundled into a block together with a parent hash and a
 timestamp, SHA-1 hashed, and stored as a file named by its hash. The `HEAD`
@@ -151,43 +146,41 @@ bypass the built-in REPORTED mechanism (`lch_patch_applied` /
 have been reported.
 
 To keep memory usage low, consolidation proceeds in two phases: first, block
-hashes are collected by decoding each block file as a lightweight `BlockHeader`
-(which shares field tags with `Block` so prost skips the payload). Then, blocks
-are loaded one at a time in oldest-first order and their deltas are merged
-incrementally into per-table running results using 15 conflict-resolution rules
-(see [DELTA_MERGING_RULES.md](DELTA_MERGING_RULES.md)). Each block is dropped
-after its deltas are merged, so only one block's payload and the per-table
-running results are in memory at a time. Some rules handle non-conflicting
-scenarios seamlessly, while others detect unresolvable conflicts (e.g. double
-insert).
+hashes are collected by decoding each block file as a lightweight `BlockHeader`.
+Then, blocks are loaded one at a time in oldest-first order and their deltas are
+merged incrementally into per-table running results using 15 conflict-resolution
+rules (see [DELTA_MERGING_RULES.md](DELTA_MERGING_RULES.md)). Each block is
+dropped after its deltas are merged, so only one block's payload and the
+per-table running results are in memory at a time. Some rules handle
+non-conflicting scenarios seamlessly, while others detect unresolvable conflicts
+(e.g. double insert).
 
-When the reference hash is genesis or can't be resolved (e.g. the block was
-truncated), the library skips consolidation entirely and produces a full state
-snapshot for all tables. This guarantees TRUNCATE + INSERT SQL that is safe to
-apply regardless of what the target database currently contains. The same
-fallback applies when the block chain is broken (e.g. a block is missing).
+When the reference hash is genesis or can't be resolved (e.g. the block chain
+was truncated or corrupted), the library skips consolidation entirely and
+produces a full state snapshot for all tables. This guarantees TRUNCATE + INSERT
+SQL that is safe to apply regardless of what the target database currently
+contains. The same fallback applies when the block chain is broken (e.g. a block
+is missing).
 
 During consolidation, tables whose blocks contain a `TableChange` with no delta
 (indicating a layout change) go directly to full state without attempting to
-merge. If merging fails for a single table (e.g. an unresolvable conflict),
-only that table falls back to full state — other tables keep their consolidated
-deltas. After merging, each table's delta is optimized: deletes are stripped
-down to keys only, and updates are sparse-encoded to include only changed
-columns. The library then compares each table's consolidated delta encoded size
-against its full state and picks whichever is smaller. This means a single patch
-can contain a mix of delta tables and full state tables.
+merge. If merging fails for a single table (e.g. an unresolvable conflict), only
+that table falls back to full state — other tables keep their consolidated
+deltas.
 
-The hub validates each patch against its own config at SQL-generation
-time. The wire's `primary_key_names` and `subsidiary_value_names` lists
-(carried per-table on the `Delta`/`Table` message) must together match
-the hub's field set in count and names, and the wire's primary-key set
-must equal the hub's primary-key set. Each cell's `Cell` variant is then
-checked against the hub's declared `kind`. `NULL` is accepted on any
-non-primary-key field (primary-key cells with the value `NULL` are
-rejected upstream at load time). Together these defend against agents
-that misrepresent the schema or emit values of the wrong type. Sentinels
-(`null` / `true` / `false`) are agent-local CSV parsing rules and never
-need to agree between agent and hub.
+After merging, each table's delta is optimized: deletes are stripped down to
+keys only, and updates are sparse-encoded to include only changed columns. The
+library then compares each table's consolidated delta encoded size against its
+full state and picks whichever is smaller. This means a single patch can contain
+a mix of delta tables and full state tables.
+
+The hub validates each patch against its own config at SQL-generation time. The
+wire's primary-key names and subsidiary-value names must match the hub's field
+set. Furthermore, the wire's primary-key set must equal the hub's primary-key
+set. Each cell's `Cell` variant is then checked against the hub's declared
+`kind`. `NULL` is accepted on any non-primary-key field (primary-key cells with
+the value `NULL` are rejected upstream at load time). Together these defend
+against agents that misrepresent the schema or emit values of the wrong type.
 
 Printing the patch shows any combination of deltas and states:
 
@@ -212,27 +205,25 @@ Patch:
 
 ### patch_to_sql()
 
-`patch_to_sql()` converts an encoded patch into SQL statements suitable for
-replaying changes on a target database. For delta tables it generates `DELETE`,
-`INSERT`, and `UPDATE` statements. For full state tables it generates `TRUNCATE`
-followed by `INSERT` statements. Column ordering follows the wire's
-`Delta.fields`/`Table.fields` rather than the hub config's declaration
-order, so values land in the columns the agent intended even if the hub
-config declares the same fields in a different order. Schema disagreements
-between the wire and the hub config (unknown field, mismatched PK, wrong
-type, illegal NULL) are rejected before any SQL is emitted. A single patch may contain both delta and state
-tables, and all statements are wrapped in a single transaction.
+`patch_to_sql()` converts an encoded patch into SQL statements. For delta tables
+it generates `DELETE`, `INSERT`, and `UPDATE` statements. For full state tables
+it generates `TRUNCATE` followed by `INSERT` statements. Column ordering follows
+the wire's `Delta.fields`/`Table.fields` rather than the hub config's
+declaration order, so values land in the columns the agent intended even if the
+hub config declares the same fields in a different order. Schema disagreements
+between the wire and the hub config are rejected before any SQL is emitted.
+
 Column types defined in the config control how values are formatted in the SQL
 output (quoting for `TEXT`, bare numbers for `NUMBER`, etc.).
 
-When a patch carries injected fields (see `[[injected-fields]]` config section in
-[README.md](README.md)), those columns are injected into all SQL output:
-`INSERT` values include them, `DELETE`/`UPDATE` WHERE clauses are scoped by them,
-and state payloads use `DELETE FROM ... WHERE ...` instead of `TRUNCATE` so that
-other agents' data is preserved. Injected fields can also be added or
-overwritten after the fact via `Patch::inject_field()` (and its CLI /
-C FFI counterparts), which the receiving side of a connection can use to
-attach authoritative values derived from the authenticated peer.
+When a patch carries injected fields (see `[[injected-fields]]` config section
+in [README.md](README.md)), those columns are injected into all SQL output:
+`INSERT` values include them, `DELETE`/`UPDATE`- `WHERE` clauses are scoped by
+them, and state payloads use `DELETE FROM ... WHERE ...` instead of `TRUNCATE`
+to preserve other agents data. Injected fields can also be added or overwritten
+after the fact via `Patch::inject_field()` (and its CLI / C FFI counterparts),
+which the receiving side of a connection can use to attach authoritative values
+derived from the authenticated peer.
 
 ### Patch::applied()
 
@@ -247,68 +238,29 @@ position can be safely pruned.
 `Patch::failed()` handles the case where a patch could not be applied to the
 target database. It removes the `REPORTED` file, which forces the next
 `Patch::create()` to start from genesis and produce a full state patch
-(TRUNCATE + INSERT for all tables). This is idempotent and safe regardless of
-the current database state — the full state patch will bring the database to the
-correct state even if a previous partial application left it inconsistent.
+(`TRUNCATE` + `INSERT` for all tables). This is idempotent and safe regardless
+of the current database state — the full state patch will bring the database to
+the correct state even if a previous partial application left it inconsistent.
 
 ### Truncation
 
 After every `Block::create()`, optional truncation runs to reclaim disk space.
 It walks the chain using `Block::load_header()` (decoding only the parent hash
 and timestamp, skipping the payload) to determine reachability and creation
-timestamps, then removes orphaned
-blocks (not reachable from `HEAD`), blocks older than the `REPORTED` position,
-and blocks exceeding configured `max-blocks` or `max-age` limits.
+timestamps, then removes orphaned blocks (not reachable from `HEAD`), blocks
+older than the `REPORTED` position, and blocks exceeding configured `max-blocks`
+or `max-age` limits.
 
 Truncation runs on a background thread spawned after `Block::create()` advances
 `HEAD`, so the call returns without waiting for it. Concurrent block creation
 and truncation in the same work directory serialize on an exclusive lock on
-`.chain.lock`, held by `Block::create()` across the block-file write, `STATE`
-write, and `HEAD` advance, and held by `truncate::run()` for the whole pass.
-Without this lock a concurrent truncator could observe the new block file
-before `HEAD` points at it and remove it as an orphan.
-
-The most recently spawned background `JoinHandle` lives in the `Config`'s
-`background_truncation` slot; `truncate::spawn_background` short-circuits
-while that slot holds an unfinished handle, since the in-flight pass will
-see the latest `HEAD` once it acquires the chain lock. `Drop for Config`
-joins the handle, so `lch_deinit()` (and end-of-scope in the CLI) cleanly
-wait for truncation before tearing down. Tests that assert on truncation
-state call `truncate::wait_for_pending(&config)` between `Block::create`
-and the assertion.
+`.chain.lock`.
 
 ### Recovery from missing files
 
 Work directory files can go missing due to truncation, manual deletion, or disk
 errors. The library is designed to always produce SQL that is safe to apply,
 even when the block chain or metadata is incomplete.
-
-**Scenario/behavior:**
-
-- **REPORTED block truncated:** `Patch::create` can't resolve the hash → falls
-  back to full state (TRUNCATE + INSERT)
-- **REPORTED file deleted:** CLI/FFI falls back to genesis → `Patch::create`
-  produces full state
-- **HEAD file deleted:** `head::load` returns genesis → empty patch. Next
-  `Block::create` stores a block with an empty payload (stale STATE file is
-  ignored), and the STATE file is overwritten with the current snapshot
-- **Block chain broken:** (middle block deleted) | Delta consolidation fails →
-  falls back to full state
-- **STATE file deleted:** (chain intact, no layout change) | Delta
-  consolidation still succeeds via block chain; STATE is not needed
-- **STATE file deleted:** (chain intact, layout change in range) | A
-  layout-changed table can only be sent as full state, which is sourced from
-  STATE. With STATE gone the full state cannot be reconstructed, so
-  `Patch::create` fails loudly rather than emitting a patch that silently omits
-  the changed table
-
-The key invariant: when the reference point is unknown or unreliable (genesis,
-unresolvable hash, broken chain), the patch always uses **full state** for all
-tables, which generates `TRUNCATE + INSERT` SQL. This avoids duplicate-key
-violations that would occur if bare `INSERT` statements were applied to a
-database that already contains rows. When injected fields are configured, state
-tables use `DELETE FROM ... WHERE ...` instead of `TRUNCATE`, so only the matching
-rows are replaced and other agents' data is preserved.
 
 See `tests/accept_recovery.rs` for acceptance tests covering these scenarios.
 
@@ -321,36 +273,6 @@ test additionally verifies SQL **semantics** by applying the generated SQL
 through `psql` and asserting that the hub's row state matches the agent's
 in-memory model after every ship.
 
-### Topology
-
-Three simulated agents run in parallel, each driven by a seeded RNG. Each
-ship is applied to two targets:
-
-1. **Per-agent schema** — one Postgres schema per agent (`rt_<seed>_agent_a`,
-   etc.), holding raw rows. The agent's patch is applied as-is.
-2. **Shared hub schema** — `rt_<seed>_hub`, with a composite primary key
-   `(host, id)`. The same patch is taken, `inject_field("host", agent_name,
-"TEXT")` is called on it, and the resulting SQL is applied. leech2 rewrites
-   `INSERT` / `UPDATE` / `DELETE` / `TRUNCATE` to scope by `host`, so multiple
-   agents writing through the same target schema do not trample each other.
-
-After every ship both targets are queried and the row sets are compared to
-the agent's model. The hub query filters by `host`.
-
-### What it catches
-
-- Merge logic errors that produce a wrong final state regardless of which
-  rule misfires (caught by row mismatch).
-- Syntactically invalid SQL (caught by `psql` exit code, gated by
-  `--variable=ON_ERROR_STOP=1`).
-- Bugs in the layout-fallback path: each agent toggles its `email` column on
-  and off at two random rounds, so consolidations crossing those boundaries
-  exercise full-state replays.
-- Bugs in injected-field handling: the hub schema only verifies if `host`
-  scoping in `INSERT` columns and `WHERE` clauses is correct end-to-end.
-
-### Running it
-
 The test is `#[ignore]`d so `cargo test` skips it locally. CI runs it via the
 `Round-trip` workflow with a Postgres 16 service container. To run locally:
 
@@ -359,9 +281,8 @@ PGHOST=localhost PGUSER=leech2 PGPASSWORD=leech2 PGDATABASE=leech2 \
   cargo test --release --test round_trip -- --include-ignored --nocapture
 ```
 
-The seed defaults to a fixed constant. Override with `ROUND_TRIP_SEED=<u64>` to
-reproduce a specific failure; the workflow exposes the same input via
-`workflow_dispatch`.
+The seed randomised. Override the seed with `ROUND_TRIP_SEED=<u64>` to reproduce
+a specific failure; the workflow exposes the same input via `workflow_dispatch`.
 
 ## Source layout
 
@@ -438,15 +359,14 @@ leech2 creates the state directory on demand, with permission bits from the
 
 Proto definitions are in `proto/`. Code is generated at build time via
 `prost-build` (`build.rs`) into `OUT_DIR` and included via `src/proto.rs`.
-Domain types have `From` impls to convert to/from their proto counterparts.
-All protobuf types implement `Display`, so you can print them directly to
-inspect their contents (e.g. `println!("{}", block)`, `println!("{}", patch)`).
+Domain types have `From` impls to convert to/from their proto counterparts. All
+protobuf types implement `Display`, so you can print them directly to inspect
+their contents (e.g. `println!("{}", block)`, `println!("{}", patch)`).
 
-Each table cell on the wire is a `proto::cell::Cell` — a oneof of
-`null` / `text` / `boolean` / `number` (`f64`). The type travels with the
-data via the oneof tag, so the receiver doesn't re-parse strings to know
-the type. CSV ingest produces a typed domain `Cell` per the config's
-`SqlType`; SQL emission consumes those `Cell`s directly.
+Each table cell on the wire is a `proto::cell::Cell` — a oneof of `null` /
+`text` / `boolean` / `number` (`f64`). The type travels with the data via the
+oneof tag, so the receiver doesn't have to re-parse any strings to know the
+type.
 
 ## Delta merging rules
 
