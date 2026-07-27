@@ -36,7 +36,8 @@ extern "C" {
 
 /** Return code: the operation completed successfully. */
 #define LCH_SUCCESS 0
-/** Return code: the operation failed; details go to the installed log callback. */
+/** Return code: the operation failed; details go to the installed log callback.
+ */
 #define LCH_FAILURE -1
 
 /** Cell-callback return code (see lch_read_cell_cb_t): no row exists at the
@@ -288,7 +289,8 @@ typedef int (*lch_read_cell_cb_t)(const char *table, size_t row, size_t col,
 typedef void (*lch_destroy_cell_cb_t)(lch_cell_t *cell, void *usr_data);
 
 /**
- * @brief Callback bundle passed to lch_block_create() for callback-backed tables.
+ * @brief Callback bundle passed to lch_block_create() for callback-backed
+ * tables.
  *
  * Initialize with designated initializers (e.g. `.read_cell = my_read_cell`)
  * rather than positional ones, so optional fields added in future releases
@@ -310,7 +312,8 @@ typedef struct {
 } lch_callbacks_t;
 
 /**
- * @brief Create a new block from the current snapshot of every configured table.
+ * @brief Create a new block from the current snapshot of every configured
+ * table.
  *
  * Reads each table's contents (from the CSV source declared under
  * [tables.X.csv], or via the callback bundle for tables that have no [csv]
