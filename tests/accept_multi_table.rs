@@ -8,7 +8,6 @@ use leech2::utils::GENESIS_HASH;
 
 #[test]
 fn test_multiple_tables() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 

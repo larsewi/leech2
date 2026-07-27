@@ -27,6 +27,21 @@ pub mod update;
 pub mod utils;
 pub mod wire;
 
+/// Install a logger for the unit tests in this crate, before any test runs.
+/// Reads the `LEECH2_LOG` env var, same as the CLI and the integration tests.
+/// Run `cargo test -- --nocapture` to see the output; libtest only replays
+/// captured output for failing tests.
+///
+/// Runs before the Rust runtime is fully initialized, hence `unsafe`; the body
+/// stays limited to installing the logger.
+#[cfg(test)]
+#[ctor::ctor(unsafe)]
+fn init_test_logging() {
+    let _ = env_logger::Builder::from_env(env_logger::Env::new().filter("LEECH2_LOG"))
+        .is_test(true)
+        .try_init();
+}
+
 /// Install or replace the log callback.
 ///
 /// The first call installs the global logger; subsequent calls atomically swap

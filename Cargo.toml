@@ -43,6 +43,7 @@ zstd = "0.13"
 
 [dev-dependencies]
 cc = "1"
+ctor = "1.0.11"
 rand = "0.9"
 tempfile = "3"
 

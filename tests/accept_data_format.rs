@@ -8,7 +8,6 @@ use leech2::utils::GENESIS_HASH;
 
 #[test]
 fn test_csv_with_header_row() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
@@ -50,7 +49,6 @@ header = true
 
 #[test]
 fn test_csv_header_reordered_columns() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
@@ -102,7 +100,6 @@ header = true
 
 #[test]
 fn test_empty_csv_table() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
@@ -149,7 +146,6 @@ source = "users.csv"
 
 #[test]
 fn test_field_type_sql_quoting() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
@@ -218,7 +214,6 @@ source = "records.csv"
 
 #[test]
 fn test_null_sentinel() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
@@ -271,7 +266,6 @@ null = "^(N/A)?$"
 
 #[test]
 fn test_custom_boolean_sentinels() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
@@ -307,7 +301,6 @@ false = "^N$"
 
 #[test]
 fn test_default_boolean_sentinels_reject_legacy_synonyms() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
@@ -339,7 +332,6 @@ fn test_null_pattern_matching_primary_key_value_rejected() {
     // The null pattern is per-table, so a poorly-chosen pattern can match a
     // primary-key cell's value. Loading that row must be rejected -- NULL
     // primary keys would produce broken SQL.
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 

@@ -7,7 +7,6 @@ use leech2::sql;
 
 #[test]
 fn test_hash_prefix_resolution() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 

@@ -19,7 +19,6 @@ source = "users.csv"
 /// directory, separate from the config and CSV inputs that sit at the root.
 #[test]
 fn test_state_dir_defaults_to_subdir() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
@@ -44,7 +43,6 @@ fn test_state_dir_defaults_to_subdir() {
 /// still read relative to the work directory.
 #[test]
 fn test_state_dir_absolute_redirect() {
-    common::init_logging();
     let work = tempfile::tempdir().unwrap();
     let state = tempfile::tempdir().unwrap();
     let work_dir = work.path();
@@ -76,7 +74,6 @@ fn test_state_dir_absolute_redirect() {
 /// A relative `state-dir` resolves against the work directory.
 #[test]
 fn test_state_dir_relative_to_work_dir() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 

@@ -8,7 +8,6 @@ use leech2::utils::GENESIS_HASH;
 
 #[test]
 fn test_missing_config_file() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     let result = Config::load(tmp.path());
     assert!(result.is_err());
@@ -23,7 +22,6 @@ fn test_missing_config_file() {
 
 #[test]
 fn test_config_no_primary_key() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     common::write_config(
         tmp.path(),
@@ -50,7 +48,6 @@ source = "users.csv"
 
 #[test]
 fn test_config_duplicate_field_names() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     common::write_config(
         tmp.path(),
@@ -77,7 +74,6 @@ source = "users.csv"
 
 #[test]
 fn test_config_invalid_toml_syntax() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     common::write_config(tmp.path(), "config.toml", "this is not valid toml [[[");
     let result = Config::load(tmp.path());
@@ -93,7 +89,6 @@ fn test_config_invalid_toml_syntax() {
 
 #[test]
 fn test_config_invalid_json_syntax() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     common::write_config(tmp.path(), "config.json", "{not valid json}");
     let result = Config::load(tmp.path());
@@ -109,7 +104,6 @@ fn test_config_invalid_json_syntax() {
 
 #[test]
 fn test_truncate_config_max_blocks_invalid() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     common::write_config(
         tmp.path(),
@@ -139,7 +133,6 @@ source = "users.csv"
 
 #[test]
 fn test_truncate_config_max_age_invalid() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     common::write_config(
         tmp.path(),
@@ -169,7 +162,6 @@ source = "users.csv"
 
 #[test]
 fn test_truncate_config_no_truncate_section() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     common::write_config(
         tmp.path(),
@@ -192,7 +184,6 @@ source = "users.csv"
 
 #[test]
 fn test_json_config_file() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
@@ -230,7 +221,6 @@ fn test_json_config_file() {
 
 #[test]
 fn test_empty_tables_map_rejected() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     common::write_config(tmp.path(), "config.toml", "[tables]\n");
 
@@ -243,7 +233,6 @@ fn test_empty_tables_map_rejected() {
 
 #[test]
 fn test_injected_field_collides_with_table_column() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     common::write_config(
         tmp.path(),
@@ -274,7 +263,6 @@ source = "users.csv"
 
 #[test]
 fn test_filter_references_unknown_field() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     common::write_config(
         tmp.path(),
@@ -304,7 +292,6 @@ exclude = "^x$"
 
 #[test]
 fn test_empty_csv_source_rejected() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     common::write_config(
         tmp.path(),
@@ -330,7 +317,6 @@ source = ""
 
 #[test]
 fn test_injected_field_empty_name_rejected() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     common::write_config(
         tmp.path(),
@@ -360,7 +346,6 @@ source = "users.csv"
 
 #[test]
 fn test_injected_field_value_does_not_parse() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     common::write_config(
         tmp.path(),
@@ -391,7 +376,6 @@ source = "users.csv"
 
 #[test]
 fn test_field_empty_name_rejected() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     common::write_config(
         tmp.path(),
@@ -417,7 +401,6 @@ source = "users.csv"
 
 #[test]
 fn test_field_unknown_type_rejected() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     common::write_config(
         tmp.path(),
@@ -443,7 +426,6 @@ source = "users.csv"
 
 #[test]
 fn test_compression_level_out_of_range() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     common::write_config(
         tmp.path(),

@@ -613,8 +613,6 @@ fn run_round_for_agent(
 #[test]
 #[ignore = "requires PGHOST; run via `cargo test -- --include-ignored`"]
 fn round_trip_multi_agent() {
-    common::init_logging();
-
     if env::var("PGHOST").is_err() {
         eprintln!("round_trip: PGHOST not set, skipping");
         return;

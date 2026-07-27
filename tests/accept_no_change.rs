@@ -7,7 +7,6 @@ use leech2::sql;
 
 #[test]
 fn test_unchanged_csv_between_blocks() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 

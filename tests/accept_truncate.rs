@@ -19,7 +19,6 @@ fn create_block(config: &Config) -> String {
 
 #[test]
 fn test_truncate_max_blocks() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
@@ -90,7 +89,6 @@ source = "users.csv"
 /// then also verify that blocks created within the age window are preserved.
 #[test]
 fn test_truncate_max_age() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
@@ -143,7 +141,6 @@ source = "users.csv"
 
 #[test]
 fn test_orphaned_blocks_removed() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
@@ -217,7 +214,6 @@ source = "users.csv"
 
 #[test]
 fn test_truncate_reported() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
@@ -272,7 +268,6 @@ source = "users.csv"
 
 #[test]
 fn test_disable_remove_orphans() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
@@ -315,7 +310,6 @@ source = "users.csv"
 
 #[test]
 fn test_disable_truncate_reported() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 

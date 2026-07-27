@@ -8,7 +8,6 @@ use leech2::utils::GENESIS_HASH;
 
 #[test]
 fn test_filter_max_field_length() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
@@ -48,7 +47,6 @@ max-field-length = 5
 
 #[test]
 fn test_filter_exclude_anchored_regex() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
@@ -95,7 +93,6 @@ exclude = "^inactive$"
 
 #[test]
 fn test_filter_exclude_unanchored_regex() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
@@ -143,7 +140,6 @@ exclude = "DEPRECATED"
 /// exclude has no effect on a sibling table that lacks its own filter.
 #[test]
 fn test_filter_only_applies_to_owning_table() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
@@ -192,7 +188,6 @@ source = "orders.csv"
 
 #[test]
 fn test_filter_produces_delete_when_record_starts_matching() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
@@ -233,7 +228,6 @@ exclude = "^inactive$"
 
 #[test]
 fn test_filter_produces_insert_when_record_stops_matching() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
@@ -274,7 +268,6 @@ exclude = "^inactive$"
 
 #[test]
 fn test_filter_include_keeps_only_matching_records() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
@@ -321,7 +314,6 @@ include = "^(active|pending)$"
 
 #[test]
 fn test_filter_include_unanchored_regex() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
@@ -369,7 +361,6 @@ include = "PRODUCTION"
 /// check if at least one listed field matches the pattern.
 #[test]
 fn test_filter_include_or_across_fields() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
@@ -417,7 +408,6 @@ include = "^active$"
 
 #[test]
 fn test_filter_exclude_wins_over_include() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
@@ -460,7 +450,6 @@ exclude = "^pending$"
 
 #[test]
 fn test_filter_produces_delete_when_record_stops_matching_include() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
@@ -501,7 +490,6 @@ include = "^active$"
 
 #[test]
 fn test_filter_produces_insert_when_record_starts_matching_include() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
