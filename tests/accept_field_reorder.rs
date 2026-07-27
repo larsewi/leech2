@@ -11,7 +11,6 @@ use leech2::sql;
 /// order in the config is cosmetic.
 #[test]
 fn test_field_reorder_in_config_produces_no_delta() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 

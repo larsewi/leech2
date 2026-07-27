@@ -5,7 +5,6 @@ use leech2::config::Config;
 
 #[test]
 fn test_block_create_with_missing_csv() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 

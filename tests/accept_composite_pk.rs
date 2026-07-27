@@ -7,7 +7,6 @@ use leech2::sql;
 
 #[test]
 fn test_composite_primary_keys() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 

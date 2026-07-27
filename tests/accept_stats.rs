@@ -45,7 +45,6 @@ fn read_stats(config: &Config) -> Vec<Value> {
 
 #[test]
 fn test_stats_enabled_writes_cumulative_records() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
@@ -79,7 +78,6 @@ fn test_stats_enabled_writes_cumulative_records() {
 
 #[test]
 fn test_stats_disabled_writes_nothing() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
@@ -95,7 +93,6 @@ fn test_stats_disabled_writes_nothing() {
 
 #[test]
 fn test_stats_dry_run_writes_nothing() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
@@ -122,7 +119,6 @@ fn sum_saved(entries: &[Value], stage: &str) -> i64 {
 
 #[test]
 fn test_summarize_aggregates_runs() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
@@ -169,7 +165,6 @@ fn test_summarize_aggregates_runs() {
 
 #[test]
 fn test_summarize_returns_none_without_stats_file() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 

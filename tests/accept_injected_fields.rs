@@ -9,7 +9,6 @@ use leech2::utils::GENESIS_HASH;
 
 #[test]
 fn test_injected_field_delta_sql() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
@@ -69,7 +68,6 @@ source = "users.csv"
 
 #[test]
 fn test_injected_field_state_sql() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
@@ -118,7 +116,6 @@ source = "users.csv"
 
 #[test]
 fn test_no_injected_fields_unchanged_sql() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
@@ -154,7 +151,6 @@ source = "users.csv"
 
 #[test]
 fn test_injected_field_integer_type() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
@@ -195,7 +191,6 @@ source = "users.csv"
 
 #[test]
 fn test_multiple_injected_fields() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
@@ -264,7 +259,6 @@ source = "users.csv"
 
 #[test]
 fn test_runtime_inject_without_static_fields() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
@@ -309,7 +303,6 @@ source = "users.csv"
 
 #[test]
 fn test_runtime_inject_appends_alongside_static() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
@@ -358,7 +351,6 @@ source = "users.csv"
 
 #[test]
 fn test_runtime_inject_overrides_static_value() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
@@ -407,7 +399,6 @@ source = "users.csv"
 
 #[test]
 fn test_multiple_injected_fields_state_sql() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 

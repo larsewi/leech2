@@ -8,7 +8,6 @@ use leech2::utils::GENESIS_HASH;
 
 #[test]
 fn test_two_blocks_insert_delete_update() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
@@ -72,7 +71,6 @@ source = "users.csv"
 
 #[test]
 fn test_three_blocks_chain_consolidation() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
@@ -182,7 +180,6 @@ source = "users.csv"
 
 #[test]
 fn test_consecutive_updates_same_column_consolidate() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 

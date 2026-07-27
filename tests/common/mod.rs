@@ -8,9 +8,14 @@ use leech2::patch::Patch;
 use leech2::sql;
 use leech2::wire;
 
-/// Initialize logging for tests. Reads the `LEECH2_LOG` env var (same as the
-/// CLI). Safe to call multiple times — subsequent calls are no-ops.
-pub fn init_logging() {
+/// Install a logger for this test binary, before any test runs. Reads the
+/// `LEECH2_LOG` env var, same as the CLI. Run `cargo test -- --nocapture` to
+/// see the output; libtest only replays captured output for failing tests.
+///
+/// Runs before the Rust runtime is fully initialized, hence `unsafe`; the body
+/// stays limited to installing the logger.
+#[ctor::ctor(unsafe)]
+fn init_logging() {
     let _ = env_logger::Builder::from_env(env_logger::Env::new().filter("LEECH2_LOG"))
         .is_test(true)
         .try_init();

@@ -9,7 +9,6 @@ use leech2::sql;
 /// full state for that table while keeping deltas for unchanged tables.
 #[test]
 fn test_config_change_produces_mixed_patch() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 

@@ -10,7 +10,6 @@ use leech2::utils::GENESIS_HASH;
 /// block creation and patch generation end to end, alongside the base table.
 #[test]
 fn test_include_fragment_table_round_trip() {
-    common::init_logging();
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
