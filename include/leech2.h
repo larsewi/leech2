@@ -86,6 +86,7 @@ typedef struct {
    *   - TEXT field    -> LCH_VALUE_TEXT or LCH_VALUE_NULL
    *   - NUMBER field  -> LCH_VALUE_NUMBER or LCH_VALUE_NULL
    *   - BOOLEAN field -> LCH_VALUE_BOOLEAN or LCH_VALUE_NULL
+   *
    * LCH_VALUE_NULL is rejected on primary-key fields.
    */
   lch_kind_t kind;
