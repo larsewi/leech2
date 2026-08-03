@@ -88,6 +88,7 @@ storage, truncation — is identical. Sentinels (`null` / `true` / `false`) and
 rows by returning `LCH_SKIP_RECORD`.
 
 The callback bundle has four hooks:
+
 - `table_begin` (option): per-table setup
 - `read_cell` (required): produces one typed cell per call
 - `destroy_cell` (optional) invoked once after each successful `read_cell` so
