@@ -18,13 +18,13 @@ echo "$PINS" | while read -r PIN; do
     fi
 
     if ! LATEST=$(gh api "repos/${REPOSITORY}/releases/latest" --jq .tag_name 2>/dev/null); then
-        echo "::warning::Skipping ${REPOSITORY}: no latest release found"
+        echo "Skipping ${REPOSITORY}: no latest release found"
         continue
     fi
 
     MAJOR=${LATEST%%.*}
     if ! [[ $MAJOR =~ ^v?[0-9]+$ ]]; then
-        echo "::warning::Skipping ${REPOSITORY}: cannot read a major tag from ${LATEST}"
+        echo "Skipping ${REPOSITORY}: cannot read a major tag from ${LATEST}"
         continue
     fi
 

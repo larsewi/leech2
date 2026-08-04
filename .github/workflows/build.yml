@@ -19,7 +19,7 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Cache cargo
         uses: ./.github/actions/cargo-cache
         with:
@@ -34,7 +34,7 @@ jobs:
   man:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Cache cargo
         uses: ./.github/actions/cargo-cache
         with:
