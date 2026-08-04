@@ -20,6 +20,7 @@ jobs:
         with:
           token: ${{ secrets.PAT }}
           commit-message: "Updated Cargo dependencies"
+          sign-commits: true
           branch: auto/update-cargo
           title: "Updated Cargo dependencies"
           body: |
@@ -61,6 +62,7 @@ jobs:
         with:
           token: ${{ secrets.PAT }}
           commit-message: "Updated protoc to ${{ steps.latest.outputs.version }}"
+          sign-commits: true
           branch: auto/update-protoc
           title: "Updated protoc to ${{ steps.latest.outputs.version }}"
           body: |

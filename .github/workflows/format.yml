@@ -20,6 +20,7 @@ jobs:
         with:
           token: ${{ secrets.PAT }}
           commit-message: "Formatted Rust code"
+          sign-commits: true
           branch: auto/format-rust
           title: "Formatted Rust code"
           body: |
@@ -48,6 +49,7 @@ jobs:
         with:
           token: ${{ secrets.PAT }}
           commit-message: "Formatted C code"
+          sign-commits: true
           branch: auto/format-c
           title: "Formatted C code"
           body: |
@@ -77,6 +79,7 @@ jobs:
         with:
           token: ${{ secrets.PAT }}
           commit-message: "Formatted shell scripts"
+          sign-commits: true
           branch: auto/format-shell
           title: "Formatted shell scripts"
           body: |
@@ -101,6 +104,7 @@ jobs:
         with:
           token: ${{ secrets.PAT }}
           commit-message: "Formatted Markdown files"
+          sign-commits: true
           branch: auto/format-markdown
           title: "Formatted Markdown files"
           body: |
