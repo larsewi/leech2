@@ -37,7 +37,7 @@ jobs:
       ROUND_TRIP_SEED: ${{ inputs.seed }}
       LEECH2_LOG: info
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Cache cargo
         uses: ./.github/actions/cargo-cache
         with:
