@@ -37,6 +37,7 @@ jobs:
         with:
           token: ${{ secrets.PAT }}
           commit-message: "Bumped version to ${{ steps.bump.outputs.new_version }}"
+          sign-commits: true
           branch: auto/bump-version
           title: "Bumped version to ${{ steps.bump.outputs.new_version }}"
           body: |
