@@ -8,9 +8,11 @@ on:
 jobs:
   cargo:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Update dependencies
         run: cargo update
@@ -19,6 +21,7 @@ jobs:
         uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ secrets.PAT }}
+          branch-token: ${{ secrets.GITHUB_TOKEN }}
           commit-message: "Updated Cargo dependencies"
           sign-commits: true
           branch: auto/update-cargo
@@ -31,11 +34,43 @@ jobs:
           assignees: larsewi
           labels: chore
 
-  protoc:
+  actions:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
+
+      - name: Update GitHub Actions
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/update-actions.sh
+
+      - name: Create pull request
+        uses: peter-evans/create-pull-request@v8
+        with:
+          token: ${{ secrets.PAT }}
+          branch-token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "Updated GitHub Actions"
+          sign-commits: true
+          branch: auto/update-actions
+          title: "Updated GitHub Actions"
+          body: |
+            Automated weekly update of the actions used in the workflows.
+
+            Please review the version bumps before merging.
+          delete-branch: true
+          assignees: larsewi
+          labels: chore
+
+  protoc:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v7
 
       - name: Get latest protoc version
         id: latest
@@ -61,6 +96,7 @@ jobs:
         uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ secrets.PAT }}
+          branch-token: ${{ secrets.GITHUB_TOKEN }}
           commit-message: "Updated protoc to ${{ steps.latest.outputs.version }}"
           sign-commits: true
           branch: auto/update-protoc

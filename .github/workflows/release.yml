@@ -22,9 +22,11 @@ jobs:
           echo "Releasing version: ${VERSION}"
 
       - name: Check tag does not already exist
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          if git ls-remote --exit-code --tags origin "v${{ steps.version.outputs.version }}" >/dev/null 2>&1; then
-            echo "::error::Tag v${{ steps.version.outputs.version }} already exists"
+          if git ls-remote --exit-code --tags origin "v${VERSION}" >/dev/null 2>&1; then
+            echo "::error::Tag v${VERSION} already exists"
             exit 1
           fi
 
@@ -49,8 +51,10 @@ jobs:
       # The man pages are generated, so 'cargo package' cannot include them:
       # unpack the .crate, add them under man/, and repack.
       - name: Create source tarball
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
         run: |
-          DIR="leech2-${{ needs.validate.outputs.version }}"
+          DIR="leech2-${VERSION}"
           cargo package
           tar xzf "target/package/${DIR}.crate"
           mkdir "${DIR}/man"
@@ -163,8 +167,10 @@ jobs:
 
       - name: Create tarball
         if: runner.os != 'Windows'
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
         run: |
-          DIR="leech2-${{ needs.validate.outputs.version }}-${{ matrix.artifact }}"
+          DIR="leech2-${VERSION}-${{ matrix.artifact }}"
           mkdir -p "dist/${DIR}"
           cp "target/${{ matrix.target }}/release/${{ steps.ext.outputs.bin }}" "dist/${DIR}/"
           cp "target/${{ matrix.target }}/release/${{ steps.ext.outputs.lib }}" "dist/${DIR}/"
@@ -176,8 +182,10 @@ jobs:
       - name: Create zip
         if: runner.os == 'Windows'
         shell: bash
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
         run: |
-          DIR="leech2-${{ needs.validate.outputs.version }}-${{ matrix.artifact }}"
+          DIR="leech2-${VERSION}-${{ matrix.artifact }}"
           mkdir -p "dist/${DIR}"
           cp "target/${{ matrix.target }}/release/${{ steps.ext.outputs.bin }}" "dist/${DIR}/"
           cp "target/${{ matrix.target }}/release/${{ steps.ext.outputs.lib }}" "dist/${DIR}/"
@@ -252,8 +260,9 @@ jobs:
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.validate.outputs.version }}
         run: |
-          gh release create "v${{ needs.validate.outputs.version }}" \
-            --title "leech2 v${{ needs.validate.outputs.version }}" \
+          gh release create "v${VERSION}" \
+            --title "leech2 v${VERSION}" \
             --generate-notes \
             release-assets/*
