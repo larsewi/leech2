@@ -17,6 +17,9 @@ on:
 jobs:
   bump:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: read
 
     steps:
       - uses: actions/checkout@v5
@@ -37,6 +40,7 @@ jobs:
         uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ secrets.PAT }}
+          branch-token: ${{ secrets.GITHUB_TOKEN }}
           commit-message: "Bumped version to ${{ steps.bump.outputs.new_version }}"
           sign-commits: true
           branch: auto/bump-version

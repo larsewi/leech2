@@ -8,6 +8,8 @@ on:
 jobs:
   rust:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - uses: actions/checkout@v6
@@ -19,6 +21,7 @@ jobs:
         uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ secrets.PAT }}
+          branch-token: ${{ secrets.GITHUB_TOKEN }}
           commit-message: "Formatted Rust code"
           sign-commits: true
           branch: auto/format-rust
@@ -33,6 +36,8 @@ jobs:
 
   c:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - uses: actions/checkout@v6
@@ -48,6 +53,7 @@ jobs:
         uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ secrets.PAT }}
+          branch-token: ${{ secrets.GITHUB_TOKEN }}
           commit-message: "Formatted C code"
           sign-commits: true
           branch: auto/format-c
@@ -62,6 +68,8 @@ jobs:
 
   shell:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - uses: actions/checkout@v6
@@ -78,6 +86,7 @@ jobs:
         uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ secrets.PAT }}
+          branch-token: ${{ secrets.GITHUB_TOKEN }}
           commit-message: "Formatted shell scripts"
           sign-commits: true
           branch: auto/format-shell
@@ -92,6 +101,8 @@ jobs:
 
   markdown:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - uses: actions/checkout@v6
@@ -103,6 +114,7 @@ jobs:
         uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ secrets.PAT }}
+          branch-token: ${{ secrets.GITHUB_TOKEN }}
           commit-message: "Formatted Markdown files"
           sign-commits: true
           branch: auto/format-markdown

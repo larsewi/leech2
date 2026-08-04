@@ -8,6 +8,8 @@ on:
 jobs:
   cargo:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - uses: actions/checkout@v5
@@ -19,6 +21,7 @@ jobs:
         uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ secrets.PAT }}
+          branch-token: ${{ secrets.GITHUB_TOKEN }}
           commit-message: "Updated Cargo dependencies"
           sign-commits: true
           branch: auto/update-cargo
@@ -33,6 +36,8 @@ jobs:
 
   protoc:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - uses: actions/checkout@v5
@@ -61,6 +66,7 @@ jobs:
         uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ secrets.PAT }}
+          branch-token: ${{ secrets.GITHUB_TOKEN }}
           commit-message: "Updated protoc to ${{ steps.latest.outputs.version }}"
           sign-commits: true
           branch: auto/update-protoc
