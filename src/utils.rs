@@ -61,7 +61,12 @@ pub fn parse_duration(s: &str) -> Result<Duration> {
 pub fn compute_hash(data: &[u8]) -> String {
     let mut hasher = Sha1::new();
     hasher.update(data);
-    format!("{:x}", hasher.finalize())
+    let digest = hasher.finalize();
+    let mut hash = String::with_capacity(digest.len() * 2);
+    for byte in digest {
+        hash.push_str(&format!("{byte:02x}"));
+    }
+    hash
 }
 
 /// Indent all lines after the first by prepending `prefix`.
