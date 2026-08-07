@@ -32,7 +32,7 @@ use leech2::utils::GENESIS_HASH;
 use leech2::wire;
 use rand::rngs::StdRng;
 use rand::seq::{IndexedRandom, IteratorRandom};
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 
 const NUM_AGENTS: usize = 3;
 const ROUNDS: usize = 100;
@@ -490,8 +490,7 @@ fn setup_agents(rng: &mut StdRng, base_dir: &Path, seed: u64) -> Vec<AgentRun> {
         let agent_schema = HubSim::new(format!("rt_{seed}_{name}"));
         agent_schema.bootstrap(AGENT_SCHEMA_DDL).unwrap();
 
-        let schema_change_rounds: HashSet<usize> =
-            (0..ROUNDS).choose_multiple(rng, 2).into_iter().collect();
+        let schema_change_rounds: HashSet<usize> = (0..ROUNDS).sample(rng, 2).into_iter().collect();
         log::info!("Agent '{name}': scheduled schema changes at rounds {schema_change_rounds:?}");
 
         agents.push(AgentRun {
