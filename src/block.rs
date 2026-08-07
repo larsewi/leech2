@@ -84,9 +84,8 @@ impl Block {
     /// The write window — store the new block file, then store STATE, then
     /// advance HEAD — is held under an exclusive lock on `.chain.lock` so a
     /// concurrent truncation cannot observe the new block file before HEAD
-    /// points at it (which would orphan-mark and delete it). After HEAD
-    /// advances, truncation is kicked off on a background thread; use
-    /// [`truncate::wait_for_pending`] to observe its completion.
+    /// points at it (which would orphan-mark and delete it). Truncation runs
+    /// after HEAD advances, once the lock has been released.
     pub fn create(config: &Config, callbacks: Option<&Callbacks>) -> Result<String> {
         let state_dir = config.ensure_state_dir()?;
         let file_mode = config.file_mode;
@@ -149,8 +148,10 @@ impl Block {
         drop(chain_lock);
 
         // In dry-run this reports what truncation would remove; otherwise it
-        // kicks off the real cleanup on a background thread.
-        truncate::spawn_background(config);
+        // does the real cleanup.
+        if let Err(e) = truncate::run(&state_dir, &config.truncate, file_mode, config.dry_run) {
+            log::warn!("Truncation failed: {:#}", e);
+        }
 
         Ok(hash)
     }

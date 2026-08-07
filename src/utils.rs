@@ -111,20 +111,6 @@ pub fn parse_file_mode(raw: &str) -> Result<u32> {
         .map_err(|e| anyhow::anyhow!("invalid octal file-mode '{}': {}", raw, e))
 }
 
-/// Join `handle` and surface any panic payload as a warning under `context`
-/// (e.g. `"Background truncation thread"`). Without this, `let _ = handle.join();`
-/// silently discards worker-thread panics.
-pub fn join_logging_panics(handle: std::thread::JoinHandle<()>, context: &str) {
-    if let Err(panic) = handle.join() {
-        let message = panic
-            .downcast_ref::<&str>()
-            .copied()
-            .or_else(|| panic.downcast_ref::<String>().map(String::as_str))
-            .unwrap_or("<non-string panic payload>");
-        log::warn!("{} panicked: {}", context, message);
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

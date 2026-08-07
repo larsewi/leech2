@@ -5,13 +5,12 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::thread::JoinHandle;
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 
 use crate::cell::{Kind, parse_typed_cell};
-use crate::utils::{join_logging_panics, parse_duration, parse_file_mode, validate_field_name};
+use crate::utils::{parse_duration, parse_file_mode, validate_field_name};
 
 /// Subdirectory of the work directory where state files live when `state-dir`
 /// is not set in the config.
@@ -379,14 +378,6 @@ pub struct Config {
         deserialize_with = "deserialize_file_mode"
     )]
     pub dir_mode: u32,
-    /// Handle of the background truncation thread most recently spawned for
-    /// this config (if any). `truncate::spawn_background` only spawns a new
-    /// thread when this slot is empty or holds a finished handle, so at most
-    /// one pass is in flight at a time for a given `Config`. `Drop` joins
-    /// any unfinished handle so `lch_deinit` (and end-of-scope in tests and
-    /// the CLI) cleanly waits for truncation before tearing down.
-    #[serde(skip)]
-    pub(crate) background_truncation: Mutex<Option<JoinHandle<()>>>,
     /// Stage stats for the patch-creation run currently in flight. Operations
     /// record into this as they run; `stats::finalize_patch_create` drains it
     /// to the `STATS` file. Not deserialized.
@@ -411,22 +402,8 @@ impl Default for Config {
             truncate: TruncateConfig::default(),
             file_mode: default_file_mode(),
             dir_mode: default_dir_mode(),
-            background_truncation: Default::default(),
             pending_stats: Default::default(),
             dry_run: false,
-        }
-    }
-}
-
-impl Drop for Config {
-    fn drop(&mut self) {
-        let slot = self
-            .background_truncation
-            .get_mut()
-            .unwrap_or_else(|e| e.into_inner());
-        let handle = slot.take();
-        if let Some(handle) = handle {
-            join_logging_panics(handle, "Background truncation thread");
         }
     }
 }

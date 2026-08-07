@@ -188,9 +188,6 @@ extern lch_config_t *lch_init(const char *work_dir);
  * Releases all resources associated with the handle. Passing NULL is a safe
  * no-op. After this call the handle is invalid and must not be used.
  *
- * If a previous lch_block_create() started a background truncation that is
- * still running, this call blocks until it finishes.
- *
  * @param cfg  Handle previously returned by lch_init(), or NULL.
  */
 extern void lch_deinit(lch_config_t *cfg);
@@ -320,9 +317,7 @@ typedef struct {
  * [tables.X.csv], or via the callback bundle for tables that have no [csv]
  * block), computes the new state and the delta against the previous state,
  * and writes a new block together with updated STATE and HEAD files. History
- * truncation then runs on a background thread, so this call may return before
- * truncation completes; any still-running truncation is joined by
- * lch_deinit().
+ * truncation then runs before this call returns.
  *
  * @param cfg        Valid config handle (must not be NULL).
  * @param callbacks  Optional callback bundle. May be NULL when every table
