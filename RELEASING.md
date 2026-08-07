@@ -9,7 +9,7 @@ version **MAJOR.MINOR.PATCH**, increment the:
 
 ## Pull request labels
 
-Every pull request should carry exactly one of these labels. They drive both
+Every pull request should carry at most one of these labels. They drive both
 the auto-generated release notes (see `.github/release.yml`) and the automatic
 version bump (see `.github/scripts/bump-version.sh`):
 
@@ -19,6 +19,9 @@ version bump (see `.github/scripts/bump-version.sh`):
 - **`bug`** — bug fix; triggers a **patch** bump
 - **`chore`** — internal change (tooling, refactor, docs, CI); excluded from
   release notes and counted as a **patch** bump
+- **no label** — user-visible change that is neither a new feature nor a bug
+  fix, such as changed or removed behavior; listed under **Other Changes** in
+  the release notes and counted as a **patch** bump
 
 When the **Version** workflow runs in `auto` mode, it inspects the labels of
 every pull request merged since the previous `v*` tag. The highest-priority
