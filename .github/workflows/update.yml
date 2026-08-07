@@ -14,6 +14,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Update dependencies across major versions
+        run: |
+          rustup toolchain install nightly --profile minimal
+          cargo +nightly update --breaking -Z unstable-options
+
       - name: Update dependencies
         run: cargo update
 
@@ -27,9 +32,11 @@ jobs:
           branch: auto/update-cargo
           title: "Updated Cargo dependencies"
           body: |
-            Automated weekly update of Cargo dependencies.
+            Automated weekly update of Cargo dependencies, including bumps to
+            new major versions.
 
-            Please review the changes to `Cargo.lock` before merging.
+            Please review the changes to `Cargo.toml` and `Cargo.lock` before
+            merging. A major version bump may require code changes.
           delete-branch: true
           assignees: larsewi
           labels: chore
