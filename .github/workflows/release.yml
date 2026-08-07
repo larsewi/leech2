@@ -235,7 +235,11 @@ jobs:
     permissions:
       contents: write
     steps:
+      # Full history and tags: the dependency summary diffs the lockfile at the
+      # previous release tag against this one.
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: Download release assets
         uses: actions/download-artifact@v8
@@ -257,6 +261,20 @@ jobs:
           cd release-assets
           sha256sum * > checksums.txt
 
+      # Runs before the release is created, while the newest v* tag is still the
+      # previous release. Writes nothing when there is no previous release to
+      # compare against.
+      - name: Summarize dependency updates
+        run: |
+          PREVIOUS_TAG=$(git tag --list 'v*' --sort=-v:refname | head -n1)
+          if [ -z "$PREVIOUS_TAG" ]; then
+            echo "No previous release tag; skipping dependency summary"
+            exit 0
+          fi
+          echo "Comparing dependencies against ${PREVIOUS_TAG}"
+          cargo xtask changelog-dependencies --since "$PREVIOUS_TAG" >dependency-updates.md
+          cat dependency-updates.md
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -266,3 +284,24 @@ jobs:
             --title "leech2 v${VERSION}" \
             --generate-notes \
             release-assets/*
+
+      # The generated notes carry one line per pull request, so dependency
+      # updates are aggregated into their own section instead (see the
+      # changelog-dependencies task in the xtask crate).
+      - name: Add dependency updates to release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          if [ ! -s dependency-updates.md ]; then
+            echo "No direct dependency updates; leaving the notes as generated"
+            exit 0
+          fi
+          gh release view "v${VERSION}" --json body --jq .body >release-notes.md
+          {
+            echo
+            echo "## Dependency Updates"
+            echo
+            cat dependency-updates.md
+          } >>release-notes.md
+          gh release edit "v${VERSION}" --notes-file release-notes.md

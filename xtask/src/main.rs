@@ -1,25 +1,26 @@
-//! Repo automation for leech2.
-//!
-//! Currently a single task, `generate-man-pages`, which regenerates the man
-//! pages. Run via the cargo alias (see `.cargo/config.toml`), and pass
-//! `--help` for the full usage:
+//! Repo automation for leech2. Run via the cargo alias (see
+//! `.cargo/config.toml`), and pass `--help` for the full usage:
 //!
 //! ```text
 //! cargo xtask generate-man-pages target/release/man
+//! cargo xtask changelog-dependencies --since v5.4.3
 //! ```
 //!
-//! `lch.1` is rendered from the clap CLI definition so it never drifts from
-//! the binary; the `libleech2` pages are produced by doxygen from the doc
-//! comments in `include/leech2.h` so they never drift from the C API. This
-//! lives in a release-only crate so doxygen and `clap_mangen` stay out of the
-//! everyday `cargo build` loop while every release still ships up-to-date man
-//! pages.
+//! `generate-man-pages` renders `lch.1` from the clap CLI definition so it
+//! never drifts from the binary, and produces the `libleech2` pages with
+//! doxygen from the doc comments in `include/leech2.h` so they never drift from
+//! the C API. `changelog-dependencies` summarizes direct-dependency updates for
+//! the release notes. This lives in a release-only crate so doxygen and
+//! `clap_mangen` stay out of the everyday `cargo build` loop while every
+//! release still ships up-to-date man pages.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::{Context, Result, bail};
 use clap::{CommandFactory, Parser, Subcommand};
+
+mod dependencies;
 
 // Share the exact clap definition the `lch` binary parses.
 #[path = "../../src/cli.rs"]
@@ -42,22 +43,37 @@ enum Task {
         /// Directory to write the man pages to; created if missing.
         output_dir: PathBuf,
     },
+    /// Print release-notes lines for the direct dependencies updated since a
+    /// release tag.
+    ChangelogDependencies {
+        /// Release tag to compare against, e.g. `v5.4.3`.
+        #[arg(long)]
+        since: String,
+    },
 }
 
 fn main() -> Result<()> {
     match Xtask::parse().task {
         Task::GenerateManPages { output_dir } => generate_man_pages(&output_dir),
+        Task::ChangelogDependencies { since } => {
+            dependencies::changelog_dependencies(repo_root()?, &since)
+        }
     }
+}
+
+/// The repo root, which is the parent of the xtask crate `CARGO_MANIFEST_DIR`
+/// points at.
+fn repo_root() -> Result<&'static Path> {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .context("xtask has no parent directory")
 }
 
 fn generate_man_pages(output_dir: &Path) -> Result<()> {
     std::fs::create_dir_all(output_dir)
         .with_context(|| format!("failed to create '{}'", output_dir.display()))?;
 
-    // CARGO_MANIFEST_DIR points at the xtask crate; the repo root is its parent.
-    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .context("xtask has no parent directory")?;
+    let repo_root = repo_root()?;
     let version = leech2_version(repo_root)?;
     let date = last_commit_date(repo_root);
 

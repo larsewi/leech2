@@ -45,12 +45,6 @@ cargo xtask <task> [args...]
 Arguments are parsed with clap, so `cargo xtask --help` lists the tasks and
 `cargo xtask <task> --help` documents one.
 
-The only task today is `generate-man-pages` (see [Man pages](#man-pages)). To
-add another, add a variant to the `Task` enum in `xtask/src/main.rs` and a match
-arm in `main`. Tasks can reuse code from the `lch` binary by including a source
-file directly, as the man-page task does with `src/cli.rs` (`#[path =
-"../../src/cli.rs"]`).
-
 ## Formatting
 
 | File type  | Tool           | Command                  |
