@@ -5,11 +5,11 @@ use std::time::SystemTime;
 use anyhow::{Context, Result};
 
 use crate::block::Block;
-use crate::config::{Config, TruncateConfig};
+use crate::config::TruncateConfig;
 use crate::head;
 use crate::reported;
 use crate::storage;
-use crate::utils::{GENESIS_HASH, join_logging_panics};
+use crate::utils::GENESIS_HASH;
 
 /// Lock-file name used to serialize chain-mutating operations (block creation
 /// advancing HEAD, and truncation walking the chain and removing orphans).
@@ -218,60 +218,6 @@ pub fn run(work_dir: &Path, config: &TruncateConfig, mode: u32, dry_run: bool) -
     truncate_chain(work_dir, config, &chain, mode, dry_run)?;
 
     Ok(())
-}
-
-/// Spawn `run` on a background thread, taking an owned snapshot of
-/// `config.state_dir()`, `config.truncate`, and `config.file_mode` so the
-/// thread is decoupled from the `Config`'s lifetime. The `JoinHandle` is parked
-/// in `config.background_truncation`.
-///
-/// If a previous background pass is still running, this is a no-op: that
-/// pass is either holding or waiting on the chain lock and will observe
-/// the latest `HEAD` when it runs, so a follow-up spawn would only queue
-/// behind the same chain lock and repeat the cleanup work.
-pub fn spawn_background(config: &Config) {
-    let mut slot = config
-        .background_truncation
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
-
-    let previous = slot.take();
-    if let Some(handle) = previous {
-        if handle.is_finished() {
-            join_logging_panics(handle, "Background truncation thread");
-        } else {
-            log::debug!(
-                "Skipping background truncation for '{}': previous pass still in flight",
-                config.state_dir().display()
-            );
-            *slot = Some(handle);
-            return;
-        }
-    }
-
-    let state_dir = config.state_dir();
-    let truncate_config = config.truncate.clone();
-    let file_mode = config.file_mode;
-    let dry_run = config.dry_run;
-    let handle = std::thread::spawn(move || {
-        if let Err(e) = run(&state_dir, &truncate_config, file_mode, dry_run) {
-            log::warn!("Background truncation failed (non-fatal): {:#}", e);
-        }
-    });
-    *slot = Some(handle);
-}
-
-/// Join the background truncation thread most recently spawned for
-/// `config`, if any. Returns after it has exited.
-pub fn wait_for_pending(config: &Config) {
-    let mut slot = config
-        .background_truncation
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
-    let handle = slot.take();
-    if let Some(handle) = handle {
-        join_logging_panics(handle, "Background truncation thread");
-    }
 }
 
 #[cfg(test)]

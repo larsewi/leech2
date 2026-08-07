@@ -252,10 +252,9 @@ timestamps, then removes orphaned blocks (not reachable from `HEAD`), blocks
 older than the `REPORTED` position, and blocks exceeding configured `max-blocks`
 or `max-age` limits.
 
-Truncation runs on a background thread spawned after `Block::create()` advances
-`HEAD`, so the call returns without waiting for it. Concurrent block creation
-and truncation in the same work directory serialize on an exclusive lock on
-`.chain.lock`.
+Truncation runs after `Block::create()` advances `HEAD`, before the call
+returns. Concurrent block creation and truncation in the same work directory
+serialize on an exclusive lock on `.chain.lock`.
 
 ### Recovery from missing files
 

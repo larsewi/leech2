@@ -363,9 +363,10 @@ mod tests {
     use super::*;
 
     fn test_config(dir: &std::path::Path) -> Config {
-        let mut config = Config::default();
-        config.work_dir = dir.to_path_buf();
-        config
+        Config {
+            work_dir: dir.to_path_buf(),
+            ..Default::default()
+        }
     }
 
     fn sample_run() -> RunStats {

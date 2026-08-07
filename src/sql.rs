@@ -632,8 +632,10 @@ mod tests {
     #[test]
     fn test_patch_to_sql_accepts_well_formed_patch() {
         let table_config = dummy_table(&[("id", true)]);
-        let mut config = Config::default();
-        config.tables = HashMap::from([("test_table".to_string(), table_config)]);
+        let config = Config {
+            tables: HashMap::from([("test_table".to_string(), table_config)]),
+            ..Default::default()
+        };
 
         let mut delta = dummy_delta(&["id"], &[]);
         delta.inserts.push(ProtoRecord {
@@ -651,8 +653,10 @@ mod tests {
         // A wire-injected field whose name matches a real column would splice
         // the column in twice, producing an INSERT with a duplicate column.
         let table_config = dummy_table(&[("id", true), ("name", false)]);
-        let mut config = Config::default();
-        config.tables = HashMap::from([("test_table".to_string(), table_config)]);
+        let config = Config {
+            tables: HashMap::from([("test_table".to_string(), table_config)]),
+            ..Default::default()
+        };
 
         let mut delta = dummy_delta(&["id"], &["name"]);
         delta.inserts.push(ProtoRecord {
@@ -676,8 +680,10 @@ mod tests {
         // assign and would render as `UPDATE "t" SET  WHERE ...;` with an
         // empty SET clause. Reject it instead of emitting malformed SQL.
         let table_config = dummy_table(&[("id", true), ("host", true)]);
-        let mut config = Config::default();
-        config.tables = HashMap::from([("test_table".to_string(), table_config)]);
+        let config = Config {
+            tables: HashMap::from([("test_table".to_string(), table_config)]),
+            ..Default::default()
+        };
 
         let mut delta = dummy_delta(&["id", "host"], &[]);
         delta.updates.push(ProtoUpdate {
@@ -698,8 +704,10 @@ mod tests {
         // Two-column table: id (PK) + name (subsidiary). An update whose
         // changed_indices points at column 5 must bail rather than panic.
         let table_config = dummy_table(&[("id", true), ("name", false)]);
-        let mut config = Config::default();
-        config.tables = HashMap::from([("test_table".to_string(), table_config)]);
+        let config = Config {
+            tables: HashMap::from([("test_table".to_string(), table_config)]),
+            ..Default::default()
+        };
 
         let mut delta = dummy_delta(&["id"], &["name"]);
         delta.updates.push(ProtoUpdate {
@@ -723,8 +731,10 @@ mod tests {
     fn test_subsidiary_order_drift_uses_wire_order_for_columns() {
         // Hub config: subsidiary declaration order is [email, name].
         let hub_config_table = dummy_table(&[("id", true), ("email", false), ("name", false)]);
-        let mut hub_config = Config::default();
-        hub_config.tables = HashMap::from([("users".to_string(), hub_config_table)]);
+        let hub_config = Config {
+            tables: HashMap::from([("users".to_string(), hub_config_table)]),
+            ..Default::default()
+        };
 
         // Wire entry as the agent would have serialized it: subsidiary values
         // laid out in the agent's declaration order, i.e. [name, email].
@@ -752,8 +762,10 @@ mod tests {
         // try to target a column outside the configured schema set by
         // putting an unknown name in the wire field lists.
         let hub_config_table = dummy_table(&[("id", true), ("name", false)]);
-        let mut hub_config = Config::default();
-        hub_config.tables = HashMap::from([("users".to_string(), hub_config_table)]);
+        let hub_config = Config {
+            tables: HashMap::from([("users".to_string(), hub_config_table)]),
+            ..Default::default()
+        };
 
         let primary_keys = vec!["id".to_string()];
         let subsidiary_values = vec!["password_hash".to_string()];
@@ -767,8 +779,10 @@ mod tests {
         // Hub: id is the sole PK. A malicious agent claims `email` is the
         // PK so its UPDATE/DELETE WHERE clauses scope on email instead.
         let hub_config_table = dummy_table(&[("id", true), ("email", false)]);
-        let mut hub_config = Config::default();
-        hub_config.tables = HashMap::from([("users".to_string(), hub_config_table)]);
+        let hub_config = Config {
+            tables: HashMap::from([("users".to_string(), hub_config_table)]),
+            ..Default::default()
+        };
 
         let primary_keys = vec!["email".to_string()];
         let subsidiary_values = vec!["id".to_string()];
@@ -865,8 +879,10 @@ mod tests {
         // resolve checks, but the inserted value is a Text.
         let mut table = dummy_table(&[("id", true), ("score", false)]);
         table.fields[1].kind = Kind::Number;
-        let mut config = Config::default();
-        config.tables = HashMap::from([("t".to_string(), table)]);
+        let config = Config {
+            tables: HashMap::from([("t".to_string(), table)]),
+            ..Default::default()
+        };
 
         let mut delta = dummy_delta(&["id"], &["score"]);
         delta.inserts.push(ProtoRecord {
@@ -883,8 +899,10 @@ mod tests {
     #[test]
     fn test_patch_to_sql_rejects_update_with_mismatched_value_count() {
         let table = dummy_table(&[("id", true), ("a", false), ("b", false)]);
-        let mut config = Config::default();
-        config.tables = HashMap::from([("t".to_string(), table)]);
+        let config = Config {
+            tables: HashMap::from([("t".to_string(), table)]),
+            ..Default::default()
+        };
 
         let mut delta = dummy_delta(&["id"], &["a", "b"]);
         delta.updates.push(ProtoUpdate {
@@ -903,8 +921,10 @@ mod tests {
     #[test]
     fn test_patch_to_sql_rejects_delete_with_short_primary_key() {
         let table = dummy_table(&[("id", true), ("host", true), ("name", false)]);
-        let mut config = Config::default();
-        config.tables = HashMap::from([("t".to_string(), table)]);
+        let config = Config {
+            tables: HashMap::from([("t".to_string(), table)]),
+            ..Default::default()
+        };
 
         let mut delta = dummy_delta(&["id", "host"], &["name"]);
         delta.deletes.push(ProtoRecord {
@@ -924,8 +944,10 @@ mod tests {
     #[test]
     fn test_patch_to_sql_rejects_update_with_empty_primary_key() {
         let table = dummy_table(&[("id", true), ("name", false)]);
-        let mut config = Config::default();
-        config.tables = HashMap::from([("t".to_string(), table)]);
+        let config = Config {
+            tables: HashMap::from([("t".to_string(), table)]),
+            ..Default::default()
+        };
 
         let mut delta = dummy_delta(&["id"], &["name"]);
         delta.updates.push(ProtoUpdate {
