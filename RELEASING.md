@@ -29,11 +29,11 @@ label wins: `breaking` > `feature` > anything else.
 
 ## Dependency updates
 
-Dependency bumps get their own **Dependency Updates** section in the release
+Dependency bumps get their own **Dependencies** section in the release
 notes, one line per direct dependency:
 
 ```markdown
-## Dependency Updates
+## Dependencies
 
 - Updated dependency anyhow from 1.0.102 to 1.0.104
 - Added dependency glob 0.3.4
@@ -89,7 +89,7 @@ a major other than the one declared.
    - Run virus scan on all build artifacts
    - Generate a `checksums.txt` with the SHA-256 sum of every artifact
    - Create a GitHub Release with all artifacts attached
-   - Add a **Dependency Updates** section to the release notes (see
+   - Add a **Dependencies** section to the release notes (see
      [Dependency updates](#dependency-updates))
 
 4. **Verify the release**

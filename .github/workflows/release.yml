@@ -300,7 +300,7 @@ jobs:
           gh release view "v${VERSION}" --json body --jq .body >release-notes.md
           {
             echo
-            echo "## Dependency Updates"
+            echo "## Dependencies"
             echo
             cat dependency-updates.md
           } >>release-notes.md
