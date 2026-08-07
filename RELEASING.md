@@ -27,6 +27,33 @@ When the **Version** workflow runs in `auto` mode, it inspects the labels of
 every pull request merged since the previous `v*` tag. The highest-priority
 label wins: `breaking` > `feature` > anything else.
 
+## Dependency updates
+
+Dependency bumps get their own **Dependency Updates** section in the release
+notes, one line per direct dependency:
+
+```markdown
+## Dependency Updates
+
+- Updated dependency anyhow from 1.0.102 to 1.0.104
+- Added dependency glob 0.3.4
+- Removed dependency chrono
+```
+
+The section is not built from pull requests. The **Release** workflow runs
+
+```sh
+cargo xtask changelog-dependencies --since v5.4.3
+```
+
+which diffs `Cargo.lock` at the previous release tag against the one being
+released, keeping the packages that `Cargo.toml` declares under `[dependencies]`
+or `[build-dependencies]`. Comparing the two tag boundaries means a dependency
+bumped several times in one release window collapses into a single line, from
+the version that shipped last time to the version shipping now. Transitive
+packages and `dev-dependencies` are left out, as is a crate the lockfile pins at
+a major other than the one declared.
+
 ## Steps
 
 1. **Bump the version**
@@ -62,6 +89,8 @@ label wins: `breaking` > `feature` > anything else.
    - Run virus scan on all build artifacts
    - Generate a `checksums.txt` with the SHA-256 sum of every artifact
    - Create a GitHub Release with all artifacts attached
+   - Add a **Dependency Updates** section to the release notes (see
+     [Dependency updates](#dependency-updates))
 
 4. **Verify the release**
 
