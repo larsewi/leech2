@@ -36,15 +36,15 @@ regex = "1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_path_to_error = "0.1.20"
-sha1 = "0.10"
+sha1 = "0.11"
 terminal_size = "0.4"
-toml = "0.8"
+toml = "1.1"
 zstd = "0.13"
 
 [dev-dependencies]
 cc = "1"
 ctor = "1.0.11"
-rand = "0.9"
+rand = "0.10"
 tempfile = "3"
 
 [build-dependencies]
