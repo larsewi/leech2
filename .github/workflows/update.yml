@@ -16,8 +16,8 @@ jobs:
 
       - name: Update dependencies across major versions
         run: |
-          rustup toolchain install nightly --profile minimal
-          cargo +nightly update --breaking -Z unstable-options
+          cargo install cargo-edit --locked
+          cargo upgrade --incompatible
 
       - name: Update dependencies
         run: cargo update
