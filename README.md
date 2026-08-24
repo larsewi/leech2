@@ -43,6 +43,9 @@ lch block create
 # Make more edits and create another block
 lch block create
 
+# Inspect the recorded state
+lch state show
+
 # Generate a patch (from REPORTED, or GENESIS on first run)
 lch patch create
 

@@ -33,6 +33,11 @@ pub enum Cmd {
         #[command(subcommand)]
         command: PatchCmd,
     },
+    /// Operate on the state file
+    State {
+        #[command(subcommand)]
+        command: StateCmd,
+    },
     /// Operate on the stats file
     Stats {
         #[command(subcommand)]
@@ -86,6 +91,12 @@ pub enum PatchCmd {
     Applied,
     /// Mark the current patch as failed (removes REPORTED to force full state)
     Failed,
+}
+
+#[derive(Subcommand)]
+pub enum StateCmd {
+    /// Show the contents of the STATE file
+    Show,
 }
 
 #[derive(Subcommand)]
