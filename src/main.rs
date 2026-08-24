@@ -7,10 +7,11 @@ use clap::Parser;
 use leech2::block::Block;
 use leech2::cell::{Kind, parse_typed_cell};
 use leech2::config::Config;
+use leech2::state::ProtoState;
 use leech2::utils::{GENESIS_HASH, format_timestamp};
 
 mod cli;
-use cli::{BlockCmd, Cli, Cmd, PatchCmd, StatsCmd};
+use cli::{BlockCmd, Cli, Cmd, PatchCmd, StateCmd, StatsCmd};
 
 const LEECH2_DIR: &str = ".leech2";
 const PATCH_FILE: &str = "PATCH";
@@ -254,6 +255,13 @@ fn cmd_patch_applied(config: &Config) -> Result<()> {
     Ok(())
 }
 
+fn cmd_state_show(config: &Config) -> Result<String> {
+    let state_dir = config.ensure_state_dir()?;
+    let state = ProtoState::load(&state_dir, config.file_mode)?
+        .context("no STATE file found, run `lch block create` first")?;
+    Ok(state.to_string())
+}
+
 fn cmd_stats_show(config: &Config) -> Result<()> {
     match leech2::stats::summarize(config)? {
         Some(summary) => println!("{}", summary),
@@ -350,6 +358,15 @@ fn run(cli: Cli) -> Result<()> {
                 }
                 PatchCmd::Failed => {
                     cmd_patch_failed(&config)?;
+                }
+            }
+        }
+        Cmd::State { command } => {
+            let config = Config::load(&work_dir)?;
+            match command {
+                StateCmd::Show => {
+                    let output = cmd_state_show(&config)?;
+                    print_with_pager(&output);
                 }
             }
         }

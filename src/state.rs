@@ -11,7 +11,8 @@ use crate::storage;
 use crate::table::Table;
 use crate::utils::indent;
 
-type ProtoState = crate::proto::state::State;
+pub use crate::proto::state::State as ProtoState;
+
 type ProtoTable = crate::proto::table::Table;
 
 const STATE_FILE: &str = "STATE";
