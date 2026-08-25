@@ -49,7 +49,10 @@ impl From<State> for ProtoState {
 
 impl fmt::Display for ProtoState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "State ({} tables):", self.tables.len())?;
+        write!(f, "State ({} tables)", self.tables.len())?;
+        if !self.tables.is_empty() {
+            write!(f, ":")?;
+        }
         for (name, table) in &self.tables {
             write!(f, "\n  '{}' {}", name, indent(&table.to_string(), "  "))?;
         }
