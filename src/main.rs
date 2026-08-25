@@ -280,17 +280,27 @@ fn cmd_patch_failed(config: &Config) -> Result<()> {
 }
 
 /// Print `content` to stdout, piping through a pager (e.g. `less`) when the
-/// output exceeds the terminal height. Falls back to plain `println!` when
+/// output exceeds the terminal height. Falls back to plain printing when
 /// stdout is not a TTY, the terminal size is unavailable, or the pager fails
-/// to launch. Honors the `PAGER` environment variable.
+/// to launch. Honors the `PAGER` environment variable. A trailing newline is
+/// added only when `content` does not already end with one.
 fn print_with_pager(content: &str) {
+    /// Print `content` followed by exactly one trailing newline.
+    fn print_unpaged(content: &str) {
+        if content.ends_with('\n') {
+            print!("{}", content);
+        } else {
+            println!("{}", content);
+        }
+    }
+
     let is_tty = std::io::stdout().is_terminal();
     let exceeds_height =
         terminal_size::terminal_size().is_some_and(|(_, h)| content.lines().count() > h.0 as usize);
     let use_pager = is_tty && exceeds_height;
 
     if !use_pager {
-        println!("{}", content);
+        print_unpaged(content);
         return;
     }
 
@@ -303,7 +313,7 @@ fn print_with_pager(content: &str) {
     {
         Ok(child) => child,
         Err(_) => {
-            print!("{}", content);
+            print_unpaged(content);
             return;
         }
     };
