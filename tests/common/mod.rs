@@ -32,12 +32,31 @@ pub fn write_csv(work_dir: &Path, filename: &str, content: &str) {
 }
 
 /// Parse SQL output into a set of individual statements. Handles
-/// non-deterministic ordering from HashMap iteration.
+/// non-deterministic ordering from HashMap iteration. A statement spans
+/// several lines (one clause per line) and ends with a semicolon; the clauses
+/// are folded onto one line so callers can pass single-line expectations.
 fn parse_sql_statements(sql: &str) -> HashSet<String> {
-    sql.lines()
-        .map(|l| l.trim().to_string())
-        .filter(|l| !l.is_empty())
-        .collect()
+    let mut statements = HashSet::new();
+    let mut current = String::new();
+
+    for line in sql.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        if !current.is_empty() {
+            current.push(' ');
+        }
+        current.push_str(line);
+        if line.ends_with(';') {
+            statements.insert(std::mem::take(&mut current));
+        }
+    }
+    if !current.is_empty() {
+        statements.insert(current);
+    }
+
+    statements
 }
 
 /// Assert that the SQL output contains exactly the expected set of statements

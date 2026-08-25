@@ -58,10 +58,27 @@ source = "products.csv"
     // Products table: price changed 100->150
     // Per-table size comparison may choose delta (UPDATE) or state (TRUNCATE+INSERT).
     if sql.contains(r#"UPDATE "products""#) {
-        assert!(sql.contains(r#"UPDATE "products" SET "price" = 150 WHERE "sku" = 'ABC';"#));
+        assert!(
+            sql.contains(
+                &[
+                    r#"UPDATE "products""#,
+                    r#"SET "price" = 150"#,
+                    r#"WHERE "sku" = 'ABC';"#,
+                ]
+                .join("\n")
+            )
+        );
     } else {
         assert!(sql.contains(r#"TRUNCATE "products";"#));
-        assert!(sql.contains(r#"INSERT INTO "products" ("sku", "price") VALUES ('ABC', 150);"#));
+        assert!(
+            sql.contains(
+                &[
+                    r#"INSERT INTO "products" ("sku", "price")"#,
+                    r#"VALUES ('ABC', 150);"#,
+                ]
+                .join("\n")
+            )
+        );
     }
 
     // Patch from genesis: should have inserts for both tables

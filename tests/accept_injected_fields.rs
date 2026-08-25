@@ -55,13 +55,32 @@ source = "users.csv"
 
     assert!(
         sql.contains(
-            r#"INSERT INTO "users" ("host", "id", "name") VALUES ('agent-1', 9, 'Ivan');"#
+            &[
+                r#"INSERT INTO "users" ("host", "id", "name")"#,
+                r#"VALUES ('agent-1', 9, 'Ivan');"#,
+            ]
+            .join("\n")
         )
     );
-    assert!(sql.contains(r#"DELETE FROM "users" WHERE "id" = 2 AND "host" = 'agent-1';"#));
-    assert!(sql.contains(
-        r#"UPDATE "users" SET "name" = 'Alicia' WHERE "id" = 1 AND "host" = 'agent-1';"#
-    ));
+    assert!(
+        sql.contains(
+            &[
+                r#"DELETE FROM "users""#,
+                r#"WHERE "id" = 2 AND "host" = 'agent-1';"#,
+            ]
+            .join("\n")
+        )
+    );
+    assert!(
+        sql.contains(
+            &[
+                r#"UPDATE "users""#,
+                r#"SET "name" = 'Alicia'"#,
+                r#"WHERE "id" = 1 AND "host" = 'agent-1';"#,
+            ]
+            .join("\n")
+        )
+    );
 
     common::assert_wire_roundtrip(&config, &patch);
 }
@@ -240,19 +259,38 @@ source = "users.csv"
     let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
 
     // INSERT should have both injected columns prepended
-    assert!(sql.contains(
-        r#"INSERT INTO "users" ("host", "environment", "id", "name") VALUES ('agent-1', 'production', 9, 'Ivan');"#
-    ));
+    assert!(
+        sql.contains(
+            &[
+                r#"INSERT INTO "users" ("host", "environment", "id", "name")"#,
+                r#"VALUES ('agent-1', 'production', 9, 'Ivan');"#,
+            ]
+            .join("\n")
+        )
+    );
 
     // DELETE should have both injected fields in WHERE
-    assert!(sql.contains(
-        r#"DELETE FROM "users" WHERE "id" = 2 AND "host" = 'agent-1' AND "environment" = 'production';"#
-    ));
+    assert!(
+        sql.contains(
+            &[
+                r#"DELETE FROM "users""#,
+                r#"WHERE "id" = 2 AND "host" = 'agent-1' AND "environment" = 'production';"#,
+            ]
+            .join("\n")
+        )
+    );
 
     // UPDATE should have both injected fields in WHERE
-    assert!(sql.contains(
-        r#"UPDATE "users" SET "name" = 'Alicia' WHERE "id" = 1 AND "host" = 'agent-1' AND "environment" = 'production';"#
-    ));
+    assert!(
+        sql.contains(
+            &[
+                r#"UPDATE "users""#,
+                r#"SET "name" = 'Alicia'"#,
+                r#"WHERE "id" = 1 AND "host" = 'agent-1' AND "environment" = 'production';"#,
+            ]
+            .join("\n")
+        )
+    );
 
     common::assert_wire_roundtrip(&config, &patch);
 }
@@ -439,9 +477,15 @@ source = "users.csv"
         !sql.contains("TRUNCATE"),
         "With injected fields, should use DELETE WHERE, not TRUNCATE"
     );
-    assert!(sql.contains(
-        r#"DELETE FROM "users" WHERE "host" = 'agent-1' AND "environment" = 'production';"#
-    ));
+    assert!(
+        sql.contains(
+            &[
+                r#"DELETE FROM "users""#,
+                r#"WHERE "host" = 'agent-1' AND "environment" = 'production';"#,
+            ]
+            .join("\n")
+        )
+    );
 
     common::assert_wire_roundtrip(&config, &patch);
 }

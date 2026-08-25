@@ -39,7 +39,15 @@ source = "users.csv"
     assert_eq!(patch.head, hash2);
 
     let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
-    assert!(sql.contains(r#"INSERT INTO "users" ("id", "name") VALUES (2, 'Bob');"#));
+    assert!(
+        sql.contains(
+            &[
+                r#"INSERT INTO "users" ("id", "name")"#,
+                r#"VALUES (2, 'Bob');"#,
+            ]
+            .join("\n")
+        )
+    );
 
     // Unknown prefix should fall back to full state patch (TRUNCATE + INSERT)
     let patch = Patch::create(&config, "deadbeefdeadbeef").unwrap();

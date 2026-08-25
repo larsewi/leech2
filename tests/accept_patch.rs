@@ -62,9 +62,26 @@ source = "users.csv"
     assert_eq!(common::count_sql(&sql_partial, "UPDATE "), 1);
 
     // Verify specific SQL content
-    assert!(sql_partial.contains(r#"INSERT INTO "users" ("id", "name") VALUES (4, 'Dave');"#));
-    assert!(sql_partial.contains(r#"DELETE FROM "users" WHERE "id" = 2;"#));
-    assert!(sql_partial.contains(r#"UPDATE "users" SET "name" = 'Alicia' WHERE "id" = 1;"#));
+    assert!(
+        sql_partial.contains(
+            &[
+                r#"INSERT INTO "users" ("id", "name")"#,
+                r#"VALUES (4, 'Dave');"#,
+            ]
+            .join("\n")
+        )
+    );
+    assert!(sql_partial.contains(&[r#"DELETE FROM "users""#, r#"WHERE "id" = 2;"#].join("\n")));
+    assert!(
+        sql_partial.contains(
+            &[
+                r#"UPDATE "users""#,
+                r#"SET "name" = 'Alicia'"#,
+                r#"WHERE "id" = 1;"#,
+            ]
+            .join("\n")
+        )
+    );
 
     common::assert_wire_roundtrip(&config, &patch_partial);
 }
@@ -147,12 +164,27 @@ source = "users.csv"
         assert_eq!(common::count_sql(&sql_from1, "DELETE FROM"), 1);
         assert_eq!(common::count_sql(&sql_from1, "UPDATE "), 1);
 
-        assert!(sql_from1.contains(r#"DELETE FROM "users" WHERE "id" = 2;"#));
-        assert!(sql_from1.contains(
-            r#"INSERT INTO "users" ("id", "name", "email") VALUES (3, 'Charles', 'ch@ex.com');"#
-        ));
+        assert!(sql_from1.contains(&[r#"DELETE FROM "users""#, r#"WHERE "id" = 2;"#].join("\n")));
+        assert!(
+            sql_from1.contains(
+                &[
+                    r#"INSERT INTO "users" ("id", "name", "email")"#,
+                    r#"VALUES (3, 'Charles', 'ch@ex.com');"#,
+                ]
+                .join("\n")
+            )
+        );
         // Update should only set the changed column (email)
-        assert!(sql_from1.contains(r#"UPDATE "users" SET "email" = 'a@new.com' WHERE "id" = 1;"#));
+        assert!(
+            sql_from1.contains(
+                &[
+                    r#"UPDATE "users""#,
+                    r#"SET "email" = 'a@new.com'"#,
+                    r#"WHERE "id" = 1;"#,
+                ]
+                .join("\n")
+            )
+        );
     }
 
     common::assert_wire_roundtrip(&config, &patch_from1);
@@ -231,7 +263,14 @@ source = "products.csv"
     assert_eq!(common::count_sql(&sql, "INSERT INTO"), 0);
     assert_eq!(common::count_sql(&sql, "DELETE FROM"), 0);
     assert!(
-        sql.contains(r#"UPDATE "products" SET "price" = 249.97 WHERE "id" = 3;"#),
+        sql.contains(
+            &[
+                r#"UPDATE "products""#,
+                r#"SET "price" = 249.97"#,
+                r#"WHERE "id" = 3;"#,
+            ]
+            .join("\n")
+        ),
         "expected price=249.97, got:\n{sql}"
     );
 

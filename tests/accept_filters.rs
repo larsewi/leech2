@@ -180,10 +180,42 @@ source = "orders.csv"
     let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
 
     // users id=1 is filtered out; orders is unaffected.
-    assert!(!sql.contains(r#"INSERT INTO "users" ("id", "status") VALUES (1, 'inactive');"#));
-    assert!(sql.contains(r#"INSERT INTO "users" ("id", "status") VALUES (2, 'active');"#));
-    assert!(sql.contains(r#"INSERT INTO "orders" ("id", "status") VALUES (10, 'inactive');"#));
-    assert!(sql.contains(r#"INSERT INTO "orders" ("id", "status") VALUES (20, 'active');"#));
+    assert!(
+        !sql.contains(
+            &[
+                r#"INSERT INTO "users" ("id", "status")"#,
+                r#"VALUES (1, 'inactive');"#,
+            ]
+            .join("\n")
+        )
+    );
+    assert!(
+        sql.contains(
+            &[
+                r#"INSERT INTO "users" ("id", "status")"#,
+                r#"VALUES (2, 'active');"#,
+            ]
+            .join("\n")
+        )
+    );
+    assert!(
+        sql.contains(
+            &[
+                r#"INSERT INTO "orders" ("id", "status")"#,
+                r#"VALUES (10, 'inactive');"#,
+            ]
+            .join("\n")
+        )
+    );
+    assert!(
+        sql.contains(
+            &[
+                r#"INSERT INTO "orders" ("id", "status")"#,
+                r#"VALUES (20, 'active');"#,
+            ]
+            .join("\n")
+        )
+    );
 }
 
 #[test]
@@ -223,7 +255,7 @@ exclude = "^inactive$"
     let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
 
     // User 2 should appear as a DELETE (was in state, now filtered out)
-    assert!(sql.contains(r#"DELETE FROM "users" WHERE "id" = 2;"#));
+    assert!(sql.contains(&[r#"DELETE FROM "users""#, r#"WHERE "id" = 2;"#].join("\n")));
 }
 
 #[test]
@@ -263,7 +295,15 @@ exclude = "^inactive$"
     let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
 
     // User 2 should appear as an INSERT (was not in state, now included)
-    assert!(sql.contains(r#"INSERT INTO "users" ("id", "status") VALUES (2, 'active');"#));
+    assert!(
+        sql.contains(
+            &[
+                r#"INSERT INTO "users" ("id", "status")"#,
+                r#"VALUES (2, 'active');"#,
+            ]
+            .join("\n")
+        )
+    );
 }
 
 #[test]
@@ -485,7 +525,7 @@ include = "^active$"
     let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
 
     // User 2 should appear as a DELETE (was in state, now filtered out)
-    assert!(sql.contains(r#"DELETE FROM "users" WHERE "id" = 2;"#));
+    assert!(sql.contains(&[r#"DELETE FROM "users""#, r#"WHERE "id" = 2;"#].join("\n")));
 }
 
 #[test]
@@ -525,5 +565,13 @@ include = "^active$"
     let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
 
     // User 2 should appear as an INSERT (was not in state, now included)
-    assert!(sql.contains(r#"INSERT INTO "users" ("id", "status") VALUES (2, 'active');"#));
+    assert!(
+        sql.contains(
+            &[
+                r#"INSERT INTO "users" ("id", "status")"#,
+                r#"VALUES (2, 'active');"#,
+            ]
+            .join("\n")
+        )
+    );
 }
