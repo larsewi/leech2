@@ -35,7 +35,10 @@ impl fmt::Display for Block {
             Some(ts) => write!(f, "\n  Created: {}", utils::format_timestamp(ts))?,
             None => write!(f, "\n  Created: N/A")?,
         }
-        write!(f, "\n  Payload ({} tables):", self.payload.len())?;
+        write!(f, "\n  Payload ({} tables)", self.payload.len())?;
+        if !self.payload.is_empty() {
+            write!(f, ":")?;
+        }
         for (name, change) in &self.payload {
             match &change.delta {
                 Some(delta) => write!(
@@ -202,7 +205,7 @@ mod tests {
         let expected = "Block:
   Parent: deadbeef
   Created: 2023-11-14 22:13:20 UTC
-  Payload (0 tables):";
+  Payload (0 tables)";
         assert_eq!(block.to_string(), expected);
     }
 }
