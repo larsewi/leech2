@@ -21,7 +21,8 @@ pub fn load(work_dir: &Path, mode: u32) -> Result<Option<String>> {
 }
 
 pub fn save(work_dir: &Path, hash: &str, mode: u32, dry_run: bool) -> Result<()> {
-    storage::store(work_dir, REPORTED_FILE, hash.as_bytes(), mode, dry_run)?;
+    let contents = format!("{}\n", hash);
+    storage::store(work_dir, REPORTED_FILE, contents.as_bytes(), mode, dry_run)?;
     log::info!("Updated reported to '{:.7}...'", hash);
     Ok(())
 }
