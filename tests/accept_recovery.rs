@@ -233,7 +233,15 @@ fn test_state_file_deleted_with_valid_chain() {
     // Delta path: should have INSERT for Bob, no TRUNCATE
     assert_eq!(common::count_sql(&sql, "TRUNCATE"), 0);
     assert_eq!(common::count_sql(&sql, "INSERT INTO"), 1);
-    assert!(sql.contains(r#"INSERT INTO "users" ("id", "name") VALUES (2, 'Bob');"#));
+    assert!(
+        sql.contains(
+            &[
+                r#"INSERT INTO "users" ("id", "name")"#,
+                r#"VALUES (2, 'Bob');"#,
+            ]
+            .join("\n")
+        )
+    );
 
     common::assert_wire_roundtrip(&config, &patch);
 }

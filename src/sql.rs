@@ -282,7 +282,7 @@ fn emit_deletes(
         let where_clause = primary_key_where_clause(&record.key, schema, injected_fields)
             .with_context(|| format!("key {:?}", record.key))?;
         out.push_str(&format!(
-            "DELETE FROM {} WHERE {};\n",
+            "DELETE FROM {}\nWHERE {};\n",
             quoted_table, where_clause
         ));
     }
@@ -323,7 +323,7 @@ fn emit_inserts(
             .with_context(|| format!("key {:?}", record.key))?;
         literals.splice(..0, injected_values.iter().cloned());
         out.push_str(&format!(
-            "INSERT INTO {} ({}) VALUES ({});\n",
+            "INSERT INTO {} ({})\nVALUES ({});\n",
             quoted_table,
             columns,
             literals.join(", ")
@@ -382,7 +382,7 @@ fn format_update(
     let where_clause = primary_key_where_clause(&update.key, schema, injected_fields)?;
 
     Ok(format!(
-        "UPDATE {} SET {} WHERE {};\n",
+        "UPDATE {}\nSET {}\nWHERE {};\n",
         quoted_table,
         set_parts.join(", "),
         where_clause
@@ -495,7 +495,7 @@ fn state_table_to_sql(
             conditions.push(injected.where_clause());
         }
         out.push_str(&format!(
-            "DELETE FROM {} WHERE {};\n",
+            "DELETE FROM {}\nWHERE {};\n",
             quoted_table,
             conditions.join(" AND ")
         ));
@@ -649,6 +649,47 @@ mod tests {
     }
 
     #[test]
+    fn test_patch_to_sql_puts_each_clause_on_its_own_line() {
+        let table_config = dummy_table(&[("id", true), ("name", false)]);
+        let config = Config {
+            tables: HashMap::from([("users".to_string(), table_config)]),
+            ..Default::default()
+        };
+
+        let mut delta = dummy_delta(&["id"], &["name"]);
+        delta.deletes.push(ProtoRecord {
+            key: text_proto_cells(&["1"]),
+            value: vec![],
+        });
+        delta.inserts.push(ProtoRecord {
+            key: text_proto_cells(&["2"]),
+            value: text_proto_cells(&["Bob"]),
+        });
+        delta.updates.push(ProtoUpdate {
+            key: text_proto_cells(&["3"]),
+            changed_indices: vec![0],
+            old_value: text_proto_cells(&["Carol"]),
+            new_value: text_proto_cells(&["Caroline"]),
+        });
+        let patch = dummy_patch(HashMap::from([("users".to_string(), delta)]));
+
+        let sql = patch_to_sql(&config, &patch).unwrap().unwrap();
+
+        let expected = [
+            r#"DELETE FROM "users""#,
+            r#"WHERE "id" = '1';"#,
+            r#"INSERT INTO "users" ("id", "name")"#,
+            r#"VALUES ('2', 'Bob');"#,
+            r#"UPDATE "users""#,
+            r#"SET "name" = 'Caroline'"#,
+            r#"WHERE "id" = '3';"#,
+        ]
+        .join("\n")
+            + "\n";
+        assert_eq!(sql, expected);
+    }
+
+    #[test]
     fn test_patch_to_sql_rejects_injected_field_colliding_with_column() {
         // A wire-injected field whose name matches a real column would splice
         // the column in twice, producing an INSERT with a duplicate column.
@@ -751,7 +792,13 @@ mod tests {
         // The hub emits columns in the wire's order, so 'Alice' lands in
         // the name column and the email address lands in the email column.
         assert!(
-            sql.contains("INSERT INTO \"users\" (\"id\", \"name\", \"email\") VALUES ('1', 'Alice', 'alice@example.com');"),
+            sql.contains(
+                &[
+                    r#"INSERT INTO "users" ("id", "name", "email")"#,
+                    r#"VALUES ('1', 'Alice', 'alice@example.com');"#,
+                ]
+                .join("\n")
+            ),
             "expected wire-order SQL, got:\n{sql}"
         );
     }

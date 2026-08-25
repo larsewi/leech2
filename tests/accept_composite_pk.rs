@@ -42,12 +42,24 @@ source = "enrollments.csv"
     // Composite-key columns appear in canonical (lex-sorted) order:
     // course_id before student_id.
     assert!(
-        sql.contains(r#"DELETE FROM "enrollments" WHERE "course_id" = 102 AND "student_id" = 1;"#)
+        sql.contains(
+            &[
+                r#"DELETE FROM "enrollments""#,
+                r#"WHERE "course_id" = 102 AND "student_id" = 1;"#,
+            ]
+            .join("\n")
+        )
     );
 
-    assert!(sql.contains(
-        r#"INSERT INTO "enrollments" ("course_id", "student_id", "grade") VALUES (103, 2, 'B');"#
-    ));
+    assert!(
+        sql.contains(
+            &[
+                r#"INSERT INTO "enrollments" ("course_id", "student_id", "grade")"#,
+                r#"VALUES (103, 2, 'B');"#,
+            ]
+            .join("\n")
+        )
+    );
 
     assert!(sql.contains(r#"WHERE "course_id" = 101 AND "student_id" = 1;"#));
     assert!(sql.contains(r#"SET "grade" = 'A+'"#));
