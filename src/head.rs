@@ -12,7 +12,7 @@ pub fn load(work_dir: &Path, mode: u32) -> Result<String> {
         Some(data) => {
             let text = String::from_utf8(data).context("HEAD file contains non-UTF-8 data")?;
             // Tolerate trailing whitespace from manual edits or differing
-            // line endings; `head::store` writes the bare hash with no
+            // line endings; `head::store` writes the hash followed by a
             // newline.
             text.trim().to_string()
         }
@@ -23,7 +23,8 @@ pub fn load(work_dir: &Path, mode: u32) -> Result<String> {
 }
 
 pub fn store(work_dir: &Path, hash: &str, mode: u32, dry_run: bool) -> Result<()> {
-    storage::store(work_dir, HEAD_FILE, hash.as_bytes(), mode, dry_run)?;
+    let contents = format!("{}\n", hash);
+    storage::store(work_dir, HEAD_FILE, contents.as_bytes(), mode, dry_run)?;
     log::debug!("Updated head to '{:.7}...'", hash);
     Ok(())
 }
