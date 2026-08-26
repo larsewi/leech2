@@ -273,9 +273,9 @@ fn cmd_stats_show(config: &Config) -> Result<()> {
 fn cmd_patch_failed(config: &Config) -> Result<()> {
     let state_dir = config.ensure_state_dir()?;
     leech2::reported::remove(&state_dir, config.file_mode, config.dry_run)?;
-    if !config.dry_run {
-        println!("REPORTED removed; next patch will be a full state");
-    }
+
+    // Without REPORTED, the next patch is built from genesis.
+    println!("{}", GENESIS_HASH);
     Ok(())
 }
 
