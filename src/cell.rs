@@ -174,14 +174,14 @@ pub fn decode_proto_cells(protos: Vec<ProtoCell>) -> Result<Vec<Cell>> {
     Ok(out)
 }
 
-/// Build a `Vec<Cell>` of `Text` variants from a slice of `&str` — handy
+/// Build a `Vec<Cell>` of `Text` variants from a slice of `&str` -- handy
 /// for test fixtures.
 #[cfg(test)]
 pub(crate) fn text_cells(strs: &[&str]) -> Vec<Cell> {
     strs.iter().map(|&s| s.into()).collect()
 }
 
-/// Build a `Vec<ProtoCell>` of `Text` variants from a slice of `&str` —
+/// Build a `Vec<ProtoCell>` of `Text` variants from a slice of `&str` --
 /// handy for test fixtures that need to populate proto messages directly.
 #[cfg(test)]
 pub(crate) fn text_proto_cells(strs: &[&str]) -> Vec<ProtoCell> {
@@ -276,7 +276,7 @@ fn describe_sentinel(pattern: Option<&Regex>, default: &str) -> String {
 /// Parse a string into a typed `Cell` according to the kind tag. Boolean
 /// parsing uses the default literals; CSV-parsing callers that honor
 /// per-table regex overrides should call [`parse_boolean`] directly.
-/// Passing [`Kind::Null`] is rejected — Null is set via the table's
+/// Passing [`Kind::Null`] is rejected -- Null is set via the table's
 /// null-sentinel mechanism, not by parsing.
 pub fn parse_typed_cell(value: &str, kind: Kind) -> Result<Cell> {
     match kind {
@@ -364,7 +364,7 @@ mod tests {
 
     #[test]
     fn hash_matches_equality() {
-        // Equal values must hash equal — the HashMap contract.
+        // Equal values must hash equal -- the HashMap contract.
         let pairs = [
             (Cell::Null, Cell::Null),
             (Cell::Text("x".into()), Cell::Text("x".into())),
@@ -380,7 +380,7 @@ mod tests {
     #[test]
     fn hash_distinguishes_variants() {
         // Different variants with the same payload-equivalent value should
-        // hash differently — otherwise Boolean(false) and Number(0.0) and
+        // hash differently -- otherwise Boolean(false) and Number(0.0) and
         // Text("") could collide in a HashMap.
         let null_h = hash_of(&Cell::Null);
         let text_h = hash_of(&Cell::Text(String::new()));

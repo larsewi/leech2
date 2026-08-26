@@ -52,7 +52,7 @@ source = "products.csv"
 
     let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
 
-    // Users table: 1 insert (Bob) — may appear as delta INSERT or state TRUNCATE+INSERT
+    // Users table: 1 insert (Bob) -- may appear as delta INSERT or state TRUNCATE+INSERT
     assert!(sql.contains(r#""users""#));
 
     // Products table: price changed 100->150

@@ -64,7 +64,7 @@ source = "users.csv"
     let patch = Patch::create(&config, GENESIS_HASH).unwrap();
     assert_eq!(patch.head, hash3);
 
-    // --- Under limit: create with max-blocks=2, only 2 blocks exist → both preserved ---
+    // --- Under limit: create with max-blocks=2, only 2 blocks exist -> both preserved ---
     // (We already have hash2 and hash3 remaining, which is exactly max-blocks=2)
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n3,Charlie\n4,Dave\n");
     let hash4 = Block::create(&config, None).unwrap();
@@ -108,7 +108,7 @@ source = "users.csv"
     // Wait for the first block to become older than 1s
     std::thread::sleep(std::time::Duration::from_secs(2));
 
-    // Create second block — truncation should remove hash1 (older than 1s)
+    // Create second block -- truncation should remove hash1 (older than 1s)
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
     let hash2 = Block::create(&config, None).unwrap();
 
@@ -118,7 +118,7 @@ source = "users.csv"
     );
     assert!(state_dir.join(&hash2).exists(), "HEAD should be preserved");
 
-    // Create two more blocks quickly — both should be preserved (within 1s window)
+    // Create two more blocks quickly -- both should be preserved (within 1s window)
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n3,Charlie\n");
     let hash3 = Block::create(&config, None).unwrap();
 
@@ -162,7 +162,7 @@ source = "users.csv"
     assert!(state_dir.join(orphan_hash).exists());
     assert!(state_dir.join(&stale_lock).exists());
 
-    // Create another block — truncation runs and should remove the orphan
+    // Create another block -- truncation runs and should remove the orphan
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
     let hash2 = Block::create(&config, None).unwrap();
 
@@ -184,7 +184,7 @@ source = "users.csv"
     // Manually reset HEAD to GENESIS, making all current blocks orphans
     head::store(&state_dir, GENESIS_HASH, config.file_mode, false).unwrap();
 
-    // Create a new block — truncation should remove the now-orphaned blocks
+    // Create a new block -- truncation should remove the now-orphaned blocks
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n3,Charlie\n");
     let hash3 = Block::create(&config, None).unwrap();
 
@@ -233,12 +233,12 @@ source = "users.csv"
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n3,Charlie\n");
     let hash3 = Block::create(&config, None).unwrap();
 
-    // No REPORTED file yet — all blocks should be preserved
+    // No REPORTED file yet -- all blocks should be preserved
     assert!(state_dir.join(&hash1).exists());
     assert!(state_dir.join(&hash2).exists());
     assert!(state_dir.join(&hash3).exists());
 
-    // Mark B2 as reported — blocks older than B2 should be removed on next create
+    // Mark B2 as reported -- blocks older than B2 should be removed on next create
     reported::save(&state_dir, &hash2, config.file_mode, false).unwrap();
 
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n3,Charlie\n4,Dave\n");
@@ -288,7 +288,7 @@ source = "users.csv"
     let orphan_hash = "aa00000000000000000000000000000000000000";
     std::fs::write(state_dir.join(orphan_hash), b"fake").unwrap();
 
-    // Create another block — orphan should survive because remove-orphans is false
+    // Create another block -- orphan should survive because remove-orphans is false
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
     let _hash2 = Block::create(&config, None).unwrap();
 
@@ -335,7 +335,7 @@ source = "users.csv"
     // Mark B2 as reported
     reported::save(&state_dir, &hash2, config.file_mode, false).unwrap();
 
-    // Create another block — B1 should survive because truncate-reported is false
+    // Create another block -- B1 should survive because truncate-reported is false
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n3,Charlie\n4,Dave\n");
     let hash4 = Block::create(&config, None).unwrap();
 

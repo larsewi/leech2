@@ -35,11 +35,11 @@ impl<'a> TableSchema<'a> {
     /// schema agrees with the hub config.
     ///
     /// - The union of primary-key and subsidiary names must equal the hub
-    ///   config field set — a wire that omits a column would silently
+    ///   config field set -- a wire that omits a column would silently
     ///   leave it at the DB's default value, and an unknown name could
     ///   target columns the operator never authorized leech2 to write to.
     /// - The wire's primary-key set must equal the hub's primary-key
-    ///   set — otherwise an agent could choose which column scopes the
+    ///   set -- otherwise an agent could choose which column scopes the
     ///   WHERE clause on UPDATE/DELETE, allowing arbitrary-row targeting.
     ///
     /// Type and nullability drift is caught later, per cell, by
@@ -376,7 +376,7 @@ fn format_update(
     }
 
     if set_parts.is_empty() {
-        bail!("update has no SET assignments — would emit an empty SET clause");
+        bail!("update has no SET assignments -- would emit an empty SET clause");
     }
 
     let where_clause = primary_key_where_clause(&update.key, schema, injected_fields)?;

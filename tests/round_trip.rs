@@ -275,7 +275,7 @@ fn pick_mutation(rng: &mut StdRng) -> MutationKind {
 }
 
 /// Pick a name from a small alphabet. The pool is intentionally tiny so
-/// repeated updates frequently land on the same value — this exercises the
+/// repeated updates frequently land on the same value -- this exercises the
 /// "update with no real change" merge paths.
 fn random_name(rng: &mut StdRng) -> String {
     const NAMES: &[&str] = &["alice", "bob", "carol", "dave", "eve", "frank"];
@@ -373,7 +373,7 @@ impl HubSim {
     }
 
     /// Pipe a leech2-generated SQL patch through `psql`. Failures here mean
-    /// the SQL is syntactically invalid or violates a constraint — both are
+    /// the SQL is syntactically invalid or violates a constraint -- both are
     /// bugs the test is designed to catch.
     fn apply(&self, sql: &str) -> Result<()> {
         self.psql(sql).map(|_| ())

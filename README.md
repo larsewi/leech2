@@ -146,7 +146,7 @@ header = true            # CSV has a header row (defaults to false)
 The `[csv]` block can declare per-table regex sentinels. `null` maps matching
 cell values to SQL `NULL`. `true` / `false` override the strings recognized as
 boolean true/false (only meaningful for BOOLEAN fields; ignored elsewhere).
-Patterns are unanchored — use `^...$` for exact matches. A primary-key cell
+Patterns are unanchored -- use `^...$` for exact matches. A primary-key cell
 matching the `null` pattern is rejected at load time.
 
 When a `true` or `false` regex is set, the strict defaults (`"true"` /
@@ -226,7 +226,7 @@ exclude = '^DROP$'
     field matches the pattern. Exclude is evaluated after include.
 
 Both regexes follow the Rust [`regex`](https://docs.rs/regex/) crate and are
-unanchored by default — use `^...$` for exact matches.
+unanchored by default -- use `^...$` for exact matches.
 
 When a record that previously passed the filters stops passing, it appears as a
 DELETE in the next delta. Similarly, when a previously-filtered record starts

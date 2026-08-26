@@ -7,7 +7,7 @@ This document defines the vocabulary used to describe leech2's data model.
 ### Field
 
 A named, typed column declaration. Has a `name`, a `kind` (`TEXT` / `NUMBER` /
-`BOOLEAN`), optional sentinels, and a `primary-key` flag. The schema concept —
+`BOOLEAN`), optional sentinels, and a `primary-key` flag. The schema concept --
 what columns _exist_.
 
 ### Kind
@@ -31,7 +31,7 @@ for SQL `NULL` on any non-primary-key field; on `BOOLEAN` fields, `true` and
 
 The canonical column tuple of a table: primary-key columns first, then
 subsidiary columns, each group sorted lexicographically by field name. A
-**layout change** — adding, removing, or renaming a field — forces the patch to
+**layout change** -- adding, removing, or renaming a field -- forces the patch to
 carry a full state for that table instead of a delta. Reordering fields in
 config does not register as a layout change.
 
@@ -50,7 +50,7 @@ A single typed value at one (row, column). The atom of the data model.
 
 ### Row
 
-One horizontal slice of a table — every cell across every column. Use **row**
+One horizontal slice of a table -- every cell across every column. Use **row**
 for positional or source-level contexts (a line in the CSV, a tuple in SQL
 output); use **record** when talking about identity, lookup, or change tracking.
 
@@ -66,11 +66,11 @@ The unit of data identity within a table.
 
 ### Key
 
-The primary-key portion of a record — the cells that identify it.
+The primary-key portion of a record -- the cells that identify it.
 
 ### Value
 
-The non-key portion of a record — its subsidiary cells. When a record exists,
+The non-key portion of a record -- its subsidiary cells. When a record exists,
 its **value** is what the key maps to.
 
 ### Subsidiary
@@ -129,7 +129,7 @@ A pointer to the latest block.
 ### Patch
 
 A consumer-facing payload of per-table changes. Each table is delivered as
-either a delta or a full state — whichever is smaller, with layout changes
+either a delta or a full state -- whichever is smaller, with layout changes
 forcing full state. A single patch can mix both across its tables.
 
 ### Genesis
