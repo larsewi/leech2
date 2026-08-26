@@ -188,19 +188,19 @@ impl Delta {
 
     fn merge_insert(&mut self, key: Vec<Cell>, insert_value: Vec<Cell>) -> Result<()> {
         if self.inserts.contains_key(&key) {
-            // Rule 5: double insert → error
+            // Rule 5: double insert -> error
             bail!("rule 5: key {:?} inserted in both blocks", key);
         } else if let Some(delete_value) = self.deletes.remove(&key) {
             if delete_value == insert_value {
-                // Rule 9a: delete then insert with same value → cancels out
+                // Rule 9a: delete then insert with same value -> cancels out
                 log::trace!("Rule 9a: delete + insert cancel out for key {:?}", key);
             } else {
-                // Rule 9b: delete then insert with different value → update
+                // Rule 9b: delete then insert with different value -> update
                 log::trace!("Rule 9b: delete + insert becomes update for key {:?}", key);
                 self.updates.insert(key, (delete_value, insert_value));
             }
         } else if self.updates.contains_key(&key) {
-            // Rule 13: insert after update → error
+            // Rule 13: insert after update -> error
             bail!(
                 "rule 13: key {:?} updated in parent, inserted in child",
                 key
@@ -227,15 +227,15 @@ impl Delta {
             // Rule 6a: insert then delete -> cancels out
             log::trace!("Rule 6a: insert + delete cancel out for key {:?}", key);
         } else if self.deletes.contains_key(&key) {
-            // Rule 10: double delete → error
+            // Rule 10: double delete -> error
             bail!("rule 10: key {:?} deleted in both blocks", key);
         } else if let Some((old_value, new_value)) = self.updates.remove(&key) {
             if delete_value == new_value {
-                // Rule 14a: update then delete, values match → delete(old)
+                // Rule 14a: update then delete, values match -> delete(old)
                 log::trace!("Rule 14a: update + delete becomes delete for key {:?}", key);
                 self.deletes.insert(key, old_value);
             } else {
-                // Rule 14b: update then delete, values mismatch → error
+                // Rule 14b: update then delete, values mismatch -> error
                 bail!(
                     "rule 14b: key {:?} updated to {:?} in parent, but deleted with {:?}",
                     key,
@@ -272,7 +272,7 @@ impl Delta {
             log::trace!("Rule 7a: insert + update becomes insert for key {:?}", key);
             *insert_value = child_new;
         } else if self.deletes.contains_key(&key) {
-            // Rule 11: update after delete → error
+            // Rule 11: update after delete -> error
             bail!("rule 11: key {:?} deleted in parent, updated in child", key);
         } else if let Some((merged_old, mut merged_new)) = self.updates.remove(&key) {
             // Rules 15a/15b: combine parent and child updates per column.
@@ -316,7 +316,7 @@ impl Delta {
                 self.updates.insert(key, (merged_old, merged_new));
             } else {
                 // Rule 15b: parent's update was cancelled by the child
-                // (e.g. column went A→B then B→A). Drop the record rather
+                // (e.g. column went A->B then B->A). Drop the record rather
                 // than emit a degenerate update; the SQL layer rejects
                 // updates with no SET assignments.
                 log::trace!("Rule 15b: update + update cancel out for key {:?}", key);
@@ -747,7 +747,7 @@ mod tests {
         }
     }
 
-    // Rule 1: child insert, no parent → insert passes through
+    // Rule 1: child insert, no parent -> insert passes through
     #[test]
     fn test_merge_rule1_child_insert_only() {
         let mut parent_delta = empty_delta();
@@ -767,7 +767,7 @@ mod tests {
         assert!(parent_delta.updates.is_empty());
     }
 
-    // Rule 2: child delete, no parent → delete passes through
+    // Rule 2: child delete, no parent -> delete passes through
     #[test]
     fn test_merge_rule2_child_delete_only() {
         let mut parent_delta = empty_delta();
@@ -787,7 +787,7 @@ mod tests {
         assert!(parent_delta.updates.is_empty());
     }
 
-    // Rule 3: child update, no parent → update passes through
+    // Rule 3: child update, no parent -> update passes through
     #[test]
     fn test_merge_rule3_child_update_only() {
         let mut parent_delta = empty_delta();
@@ -807,7 +807,7 @@ mod tests {
         assert!(parent_delta.deletes.is_empty());
     }
 
-    // Rule 4: parent insert, no child → insert stays
+    // Rule 4: parent insert, no child -> insert stays
     #[test]
     fn test_merge_rule4_parent_insert_only() {
         let mut parent_delta = empty_delta();
@@ -825,7 +825,7 @@ mod tests {
         );
     }
 
-    // Rule 5: insert in both → error
+    // Rule 5: insert in both -> error
     #[test]
     fn test_merge_rule5_double_insert_error() {
         let mut parent_delta = empty_delta();
@@ -922,7 +922,7 @@ mod tests {
         assert!(msg.contains("rule 7b"), "got: {msg}");
     }
 
-    // Rule 8: parent delete, no child → delete stays
+    // Rule 8: parent delete, no child -> delete stays
     #[test]
     fn test_merge_rule8_parent_delete_only() {
         let mut parent_delta = empty_delta();
@@ -940,7 +940,7 @@ mod tests {
         );
     }
 
-    // Rule 9a: delete then insert with same value → cancels out
+    // Rule 9a: delete then insert with same value -> cancels out
     #[test]
     fn test_merge_rule9a_delete_then_insert_same_cancels() {
         let mut parent_delta = empty_delta();
@@ -959,7 +959,7 @@ mod tests {
         assert!(parent_delta.updates.is_empty());
     }
 
-    // Rule 9b: delete then insert with different value → update
+    // Rule 9b: delete then insert with different value -> update
     #[test]
     fn test_merge_rule9b_delete_then_insert_different_becomes_update() {
         let mut parent_delta = empty_delta();
@@ -981,7 +981,7 @@ mod tests {
         assert_eq!(new_value, &text_cells(&["Robert"]));
     }
 
-    // Rule 10: double delete → error
+    // Rule 10: double delete -> error
     #[test]
     fn test_merge_rule10_double_delete_error() {
         let mut parent_delta = empty_delta();
@@ -997,7 +997,7 @@ mod tests {
         assert!(merged_delta.is_err());
     }
 
-    // Rule 11: delete then update → error
+    // Rule 11: delete then update -> error
     #[test]
     fn test_merge_rule11_delete_then_update_error() {
         let mut parent_delta = empty_delta();
@@ -1014,7 +1014,7 @@ mod tests {
         assert!(merged_delta.is_err());
     }
 
-    // Rule 12: parent update, no child → update stays
+    // Rule 12: parent update, no child -> update stays
     #[test]
     fn test_merge_rule12_parent_update_only() {
         let mut parent_delta = empty_delta();
@@ -1032,7 +1032,7 @@ mod tests {
         assert_eq!(new_value, &text_cells(&["Alicia"]));
     }
 
-    // Rule 13: update then insert → error
+    // Rule 13: update then insert -> error
     #[test]
     fn test_merge_rule13_update_then_insert_error() {
         let mut parent_delta = empty_delta();
@@ -1049,7 +1049,7 @@ mod tests {
         assert!(merged_delta.is_err());
     }
 
-    // Rule 14a: update then delete with matching value → delete(old)
+    // Rule 14a: update then delete with matching value -> delete(old)
     #[test]
     fn test_merge_rule14a_update_then_delete_matching() {
         let mut parent_delta = empty_delta();
@@ -1073,7 +1073,7 @@ mod tests {
         );
     }
 
-    // Rule 14b: update then delete with mismatched value → error
+    // Rule 14b: update then delete with mismatched value -> error
     #[test]
     fn test_merge_rule14b_update_then_delete_mismatch_error() {
         let mut parent_delta = empty_delta();
@@ -1090,7 +1090,7 @@ mod tests {
         assert!(merged_delta.is_err());
     }
 
-    // Rule 15b: parent A→B then child B→A cancels — no record remains.
+    // Rule 15b: parent A->B then child B->A cancels, no record remains.
     #[test]
     fn test_merge_rule15b_update_then_update_cancels() {
         let mut parent_delta = empty_delta();
@@ -1112,7 +1112,7 @@ mod tests {
     }
 
     // Rule 15b multi-column: each column's net change cancels independently
-    // → no record remains.
+    // -> no record remains.
     #[test]
     fn test_merge_rule15b_multi_column_cancels() {
         let mut parent_delta = empty_delta();
@@ -1175,7 +1175,7 @@ mod tests {
         assert!(msg.contains("column 1"), "got: {msg}");
     }
 
-    // Rule 15a: update then update → update(old1 → new2)
+    // Rule 15a: update then update -> update(old1 -> new2)
     #[test]
     fn test_merge_rule15_update_then_update() {
         let mut parent_delta = empty_delta();
@@ -1280,7 +1280,7 @@ mod tests {
 
         parent_delta.merge(child_delta).unwrap();
 
-        // Rule 7: insert(3, Charlie) + update(3, Charlie→Charles) = insert(3, Charles)
+        // Rule 7: insert(3, Charlie) + update(3, Charlie->Charles) = insert(3, Charles)
         assert_eq!(parent_delta.inserts.len(), 2);
         assert_eq!(
             parent_delta.inserts[&text_cells(&["3"])],
@@ -1292,8 +1292,8 @@ mod tests {
             text_cells(&["Dave"])
         );
 
-        // Rule 9b: delete(2, Bob) + insert(2, Robert) = update(2, Bob→Robert)
-        // Rule 15: update(1, Alice→Alicia) + update(1, Alicia→Ali) = update(1, Alice→Ali)
+        // Rule 9b: delete(2, Bob) + insert(2, Robert) = update(2, Bob->Robert)
+        // Rule 15: update(1, Alice->Alicia) + update(1, Alicia->Ali) = update(1, Alice->Ali)
         assert_eq!(parent_delta.updates.len(), 2);
         let (old_value, new_value) = &parent_delta.updates[&text_cells(&["2"])];
         assert_eq!(old_value, &text_cells(&["Bob"]));
@@ -1305,7 +1305,7 @@ mod tests {
         assert!(parent_delta.deletes.is_empty());
     }
 
-    // Merge with mismatched field names → error
+    // Merge with mismatched field names -> error
     #[test]
     fn test_merge_field_mismatch_error() {
         let mut parent_delta = Delta {
