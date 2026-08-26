@@ -12,6 +12,12 @@ We call the two blocks being merged **Parent** (the earlier block) and **Child**
 (the later block). The merge produces a single **Result** delta that represents
 the combined effect of both.
 
+Merging always walks the chain oldest-first, one block at a time, with no gaps.
+Parent is therefore the accumulated result of every block up to and including
+Child's immediate predecessor, never a block further back. Several rules rely on
+this: the value a key carries in Parent is the key's value in the state Child
+was computed against, so the two sides can be cross-checked for agreement.
+
 ### Notation
 
 - `insert(key, val)` — a row with the given value was created.
@@ -81,36 +87,53 @@ exist. Inserting it again in Child is a contradiction.
 
 ---
 
-### Rule 6 — Insert then delete (cancels out)
+### Rules 6a, 6b — Insert then delete
 
-| Rule | Parent           | Child            | Result |
-| ---- | ---------------- | ---------------- | ------ |
-| 6    | `insert(key, X)` | `delete(key, X)` |        |
+| Rule | Parent              | Child               | Result       |
+| ---- | ------------------- | ------------------- | ------------ |
+| 6a   | `insert(key, val)`  | `delete(key, val)`  |              |
+| 6b   | `insert(key, val1)` | `delete(key, val2)` | `error(key)` |
 
-An insert followed by a delete always cancels out, regardless of values. The
-values may differ because intermediate operations (such as updates in blocks
-between Parent and Child) can change the value between the insert and the
-delete.
+In rule 6b, `val2 != val1`.
 
-**Example:** Parent inserts `(3, Charlie)`. Later, Charlie's name is updated to
-`Charles` (in an intermediate block that has already been squashed). Child then
-deletes `(3, Charles)`. Even though the values differ (`Charlie` vs `Charles`),
-the net effect is: the row was added and then removed — so the result is empty.
+**Rule 6a:** An insert followed by a delete cancels out. The row was added and
+then removed, so the result is empty.
+
+**Example:** Parent inserts `(3, Charlie)`. Child deletes `(3, Charlie)`.
+Result: nothing.
+
+**Rule 6b:** The delete's value must match the insert's value. Any intermediate
+block that changed the value was already folded into the insert by rule 7a, so a
+remaining mismatch means the deltas are inconsistent.
+
+**Example:** Parent inserts `(3, Charlie)`. Child deletes `(3, Charles)`.
+Result: error. The child is deleting a value the parent never left behind.
 
 ---
 
-### Rule 7 — Insert then update
+### Rules 7a, 7b — Insert then update
 
-| Rule | Parent              | Child                   | Result              |
-| ---- | ------------------- | ----------------------- | ------------------- |
-| 7    | `insert(key, val1)` | `update(key, X → val2)` | `insert(key, val2)` |
+| Rule | Parent              | Child                      | Result              |
+| ---- | ------------------- | -------------------------- | ------------------- |
+| 7a   | `insert(key, val1)` | `update(key, val1 → val2)` | `insert(key, val2)` |
+| 7b   | `insert(key, val1)` | `update(key, X → val2)`    | `error(key)`        |
 
-If a row was inserted and later updated, the combined effect is an insert with
-the final value. The update's old value does not matter for the result.
+In rule 7b, `X != val1`.
+
+**Rule 7a:** If a row was inserted and later updated, the combined effect is an
+insert with the final value.
 
 **Example:** Parent inserts `(3, Charlie)`. Child updates key `3` from `Charlie`
 to `Charles`. Result: `insert(3, Charles)` — from the perspective of the merged
 result, the row simply appeared with the name `Charles`.
+
+**Rule 7b:** The update's old value must match the insert's value, for the same
+reason as rule 6b. A mismatch means the child is updating from a state the
+parent did not produce, mirroring rule 15c's strictness about the intermediate
+value.
+
+**Example:** Parent inserts `(3, Charlie)`. Child updates key `3` from `Bob` to
+`Charles`. Result: error.
 
 ---
 
@@ -203,8 +226,10 @@ value (`Bob`) disagrees with the parent's view of the row's current value
 | 3    |          | `update`  | `update`            |
 | 4    | `insert` |           | `insert`            |
 | 5    | `insert` | `insert`  | `error`             |
-| 6    | `insert` | `delete`  |                     |
-| 7    | `insert` | `update`  | `insert(new val)`   |
+| 6a   | `insert` | `delete=` |                     |
+| 6b   | `insert` | `delete≠` | `error`             |
+| 7a   | `insert` | `update=` | `insert(new val)`   |
+| 7b   | `insert` | `update≠` | `error`             |
 | 8    | `delete` |           | `delete`            |
 | 9a   | `delete` | `insert=` |                     |
 | 9b   | `delete` | `insert≠` | `update(old → new)` |
@@ -218,8 +243,15 @@ value (`Bob`) disagrees with the parent's view of the row's current value
 | 15b  | `update` | `update=` |                     |
 | 15c  | `update` | `update⊥` | `error`             |
 
-`=` means values match, `≠` means values differ. For rule 15, the `=` / `≠`
-comparison is between the parent's `old` and the child's `new`: matching means
-the net effect across the two updates is no change, so the record is dropped.
-`⊥` means the parent's `new` (the intermediate value) disagrees with the
-child's `old`, signalling that the deltas don't compose.
+`=` means values match, `≠` means values differ. What gets compared depends on
+the rule:
+
+- Rules 6a/6b: the child's delete value against the parent's insert value.
+- Rules 7a/7b: the child's update `old` against the parent's insert value.
+- Rules 9a/9b: the child's insert value against the parent's delete value.
+- Rules 14a/14b: the child's delete value against the parent's update `new`.
+- Rules 15a/15b: the parent's `old` against the child's `new`. Matching means
+  the net effect across the two updates is no change, so the record is dropped.
+
+`⊥` means the parent's `new` (the intermediate value) disagrees with the child's
+`old`, signalling that the deltas don't compose.
