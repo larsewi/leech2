@@ -214,9 +214,18 @@ impl Delta {
     }
 
     fn merge_delete(&mut self, key: Vec<Cell>, delete_value: Vec<Cell>) -> Result<()> {
-        if self.inserts.remove(&key).is_some() {
-            // Rule 6: insert then delete → cancels out
-            log::trace!("Rule 6: insert + delete cancel out for key {:?}", key);
+        if let Some(insert_value) = self.inserts.remove(&key) {
+            if delete_value != insert_value {
+                // Rule 6b: insert then delete, values mismatch -> error
+                bail!(
+                    "rule 6b: key {:?} inserted with {:?} in parent, but deleted with {:?}",
+                    key,
+                    insert_value,
+                    delete_value
+                );
+            }
+            // Rule 6a: insert then delete -> cancels out
+            log::trace!("Rule 6a: insert + delete cancel out for key {:?}", key);
         } else if self.deletes.contains_key(&key) {
             // Rule 10: double delete → error
             bail!("rule 10: key {:?} deleted in both blocks", key);
@@ -249,8 +258,18 @@ impl Delta {
         child_new: Vec<Cell>,
     ) -> Result<()> {
         if let Some(insert_value) = self.inserts.get_mut(&key) {
-            // Rule 7: insert then update → insert(new_value)
-            log::trace!("Rule 7: insert + update becomes insert for key {:?}", key);
+            if *insert_value != child_old {
+                // Rule 7b: insert then update, values mismatch -> error
+                bail!(
+                    "rule 7b: key {:?} inserted with {:?} in parent, but child's \
+                     update expects {:?}",
+                    key,
+                    insert_value,
+                    child_old
+                );
+            }
+            // Rule 7a: insert then update -> insert(new_value)
+            log::trace!("Rule 7a: insert + update becomes insert for key {:?}", key);
             *insert_value = child_new;
         } else if self.deletes.contains_key(&key) {
             // Rule 11: update after delete → error
@@ -822,9 +841,30 @@ mod tests {
         assert!(merged_delta.is_err());
     }
 
-    // Rule 6: insert then delete → cancels out
+    // Rule 6a: insert then delete with matching value -> cancels out
     #[test]
-    fn test_merge_rule6_insert_then_delete_cancels() {
+    fn test_merge_rule6a_insert_then_delete_cancels() {
+        let mut parent_delta = empty_delta();
+        parent_delta
+            .inserts
+            .insert(text_cells(&["3"]), text_cells(&["Charlie"]));
+        let mut child_delta = empty_delta();
+        child_delta
+            .deletes
+            .insert(text_cells(&["3"]), text_cells(&["Charlie"]));
+
+        parent_delta.merge(child_delta).unwrap();
+
+        assert!(parent_delta.inserts.is_empty());
+        assert!(parent_delta.deletes.is_empty());
+        assert!(parent_delta.updates.is_empty());
+    }
+
+    // Rule 6b: insert then delete with mismatched value -> error. Blocks are
+    // merged oldest-first with no gaps, so an intermediate update would have
+    // been folded into the insert by rule 7a already.
+    #[test]
+    fn test_merge_rule6b_insert_then_delete_mismatch_errors() {
         let mut parent_delta = empty_delta();
         parent_delta
             .inserts
@@ -834,16 +874,14 @@ mod tests {
             .deletes
             .insert(text_cells(&["3"]), text_cells(&["Charles"]));
 
-        parent_delta.merge(child_delta).unwrap();
-
-        assert!(parent_delta.inserts.is_empty());
-        assert!(parent_delta.deletes.is_empty());
-        assert!(parent_delta.updates.is_empty());
+        let err = parent_delta.merge(child_delta).unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(msg.contains("rule 6b"), "got: {msg}");
     }
 
-    // Rule 7: insert then update → insert with new value
+    // Rule 7a: insert then update -> insert with new value
     #[test]
-    fn test_merge_rule7_insert_then_update() {
+    fn test_merge_rule7a_insert_then_update() {
         let mut parent_delta = empty_delta();
         parent_delta
             .inserts
@@ -863,6 +901,25 @@ mod tests {
         );
         assert!(parent_delta.deletes.is_empty());
         assert!(parent_delta.updates.is_empty());
+    }
+
+    // Rule 7b: insert then update whose old value disagrees with the insert
+    // -> error. Mirrors rule 15c's strictness about the intermediate value.
+    #[test]
+    fn test_merge_rule7b_insert_then_update_mismatch_errors() {
+        let mut parent_delta = empty_delta();
+        parent_delta
+            .inserts
+            .insert(text_cells(&["3"]), text_cells(&["Charlie"]));
+        let mut child_delta = empty_delta();
+        child_delta.updates.insert(
+            text_cells(&["3"]),
+            (text_cells(&["Bob"]), text_cells(&["Charles"])),
+        );
+
+        let err = parent_delta.merge(child_delta).unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(msg.contains("rule 7b"), "got: {msg}");
     }
 
     // Rule 8: parent delete, no child → delete stays
