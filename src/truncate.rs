@@ -23,7 +23,7 @@ struct ChainEntry {
 }
 
 /// Strips the leading `.` and trailing `.lock` from a lock file name,
-/// returning the inner block hash (e.g. `".abc123.lock"` → `"abc123"`).
+/// returning the inner block hash (e.g. `".abc123.lock"` -> `"abc123"`).
 fn strip_lock_affixes(name: &str) -> Option<&str> {
     name.strip_prefix(".")?.strip_suffix(".lock")
 }

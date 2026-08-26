@@ -109,14 +109,14 @@ fn test_head_file_deleted() {
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
     Block::create(&config, None).unwrap();
 
-    // Delete HEAD — load should return GENESIS
+    // Delete HEAD -- load should return GENESIS
     storage::remove(&config.state_dir(), "HEAD", config.file_mode, false).unwrap();
     assert_eq!(
         head::load(&config.state_dir(), config.file_mode).unwrap(),
         GENESIS_HASH
     );
 
-    // Patch from GENESIS with HEAD=GENESIS → empty patch (no blocks exist)
+    // Patch from GENESIS with HEAD=GENESIS -> empty patch (no blocks exist)
     let patch = Patch::create(&config, GENESIS_HASH).unwrap();
     assert!(patch.deltas.is_empty() && patch.states.is_empty());
     assert_eq!(patch.num_blocks, 0);
@@ -150,7 +150,7 @@ fn test_block_chain_broken() {
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n3,Charlie\n");
     let hash3 = Block::create(&config, None).unwrap();
 
-    // Delete the middle block — chain is: hash3 -> hash2 (missing) -> hash1
+    // Delete the middle block -- chain is: hash3 -> hash2 (missing) -> hash1
     storage::remove(&config.state_dir(), &hash2, config.file_mode, false).unwrap();
     assert!(!config.state_dir().join(&hash2).exists());
 
@@ -222,7 +222,7 @@ fn test_state_file_deleted_with_valid_chain() {
     common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
     let hash2 = Block::create(&config, None).unwrap();
 
-    // Delete STATE — consolidation should still work via block chain
+    // Delete STATE -- consolidation should still work via block chain
     storage::remove(&config.state_dir(), "STATE", config.file_mode, false).unwrap();
 
     let patch = Patch::create(&config, &hash1).unwrap();

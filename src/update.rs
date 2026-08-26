@@ -165,7 +165,7 @@ impl ProtoUpdate {
         }
 
         // If all columns changed, sparse encoding adds index overhead
-        // without saving any values — just drop old_value and keep
+        // without saving any values -- just drop old_value and keep
         // new_value as-is.
         self.old_value.clear();
         if changed_indices.len() == self.new_value.len() {

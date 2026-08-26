@@ -67,7 +67,7 @@ impl Block {
 
     /// Load the block header (parent hash + created timestamp) without
     /// decoding the full payload. Reads the block file and decodes it as a
-    /// [`BlockHeader`], which shares field tags with [`Block`] — prost skips
+    /// [`BlockHeader`], which shares field tags with [`Block`] -- prost skips
     /// the unknown payload field so only the parent hash and timestamp are
     /// deserialized.
     pub fn load_header(work_dir: &Path, hash: &str, mode: u32) -> Result<BlockHeader> {
@@ -84,8 +84,8 @@ impl Block {
     /// through `callbacks`. Pass `None` when every table in `config` is
     /// CSV-backed.
     ///
-    /// The write window — store the new block file, then store STATE, then
-    /// advance HEAD — is held under an exclusive lock on `.chain.lock` so a
+    /// The write window -- store the new block file, then store STATE, then
+    /// advance HEAD -- is held under an exclusive lock on `.chain.lock` so a
     /// concurrent truncation cannot observe the new block file before HEAD
     /// points at it (which would orphan-mark and delete it). Truncation runs
     /// after HEAD advances, once the lock has been released.

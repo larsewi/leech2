@@ -27,7 +27,7 @@ header = true
 "#,
     );
 
-    // CSV with header row — the header should be skipped
+    // CSV with header row -- the header should be skipped
     common::write_csv(work_dir, "users.csv", "id,name\n1,Alice\n2,Bob\n");
     let config = Config::load(work_dir).unwrap();
     Block::create(&config, None).unwrap();

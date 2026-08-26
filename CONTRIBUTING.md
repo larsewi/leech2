@@ -76,8 +76,8 @@ snapshot. Each delta records three operation types: inserts (new keys), deletes
 Tables can be sourced two ways: from a CSV file declared via a `[tables.X.csv]`
 block in the config, or from a caller-supplied callback bundle when no `[csv]`
 block is present. Both paths produce the same in-memory table representation;
-everything downstream — delta computation, layout change detection, block
-storage, truncation — is identical. Sentinels (`null` / `true` / `false`) and
+everything downstream -- delta computation, layout change detection, block
+storage, truncation -- is identical. Sentinels (`null` / `true` / `false`) and
 `filter` rules apply only on the CSV backed tables. Callback-backed tables skip
 rows by returning `LCH_SKIP_RECORD`.
 
@@ -94,7 +94,7 @@ my_read_cell`) so optional fields added in later releases default to NULL
 without breaking the initializer.
 
 When starting a fresh chain (HEAD is genesis), the block is stored with an empty
-payload — delta computation and STATE file loading are skipped entirely. The
+payload -- delta computation and STATE file loading are skipped entirely. The
 first block's deltas would never be used: a genesis reference always produces a
 full state patch from the STATE file, and non-genesis references exclude the
 first block from consolidation. This also avoids reading any stale STATE file
@@ -160,7 +160,7 @@ is missing).
 During consolidation, tables whose blocks contain a `TableChange` with no delta
 (indicating a layout change) go directly to full state without attempting to
 merge. If merging fails for a single table (e.g. an unresolvable conflict), only
-that table falls back to full state — other tables keep their consolidated
+that table falls back to full state -- other tables keep their consolidated
 deltas.
 
 After merging, each table's delta is optimized: deletes are stripped down to
@@ -234,7 +234,7 @@ position can be safely pruned.
 target database. It removes the `REPORTED` file, which forces the next
 `Patch::create()` to start from genesis and produce a full state patch
 (`TRUNCATE` + `INSERT` for all tables). This is idempotent and safe regardless
-of the current database state — the full state patch will bring the database to
+of the current database state -- the full state patch will bring the database to
 the correct state even if a previous partial application left it inconsistent.
 
 ### Truncation
@@ -357,7 +357,7 @@ Domain types have `From` impls to convert to/from their proto counterparts. All
 protobuf types implement `Display`, so you can print them directly to inspect
 their contents (e.g. `println!("{}", block)`, `println!("{}", patch)`).
 
-Each table cell on the wire is a `proto::cell::Cell` — a oneof of `null` /
+Each table cell on the wire is a `proto::cell::Cell` -- a oneof of `null` /
 `text` / `boolean` / `number` (`f64`). The type travels with the data via the
 oneof tag, so the receiver doesn't have to re-parse any strings to know the
 type.

@@ -49,7 +49,7 @@ source = "users.csv"
     );
     Block::create(&config, None).unwrap();
 
-    // Patch from hash1: 1 insert, 1 delete, 1 update — all with injected field
+    // Patch from hash1: 1 insert, 1 delete, 1 update -- all with injected field
     let patch = Patch::create(&config, &hash1).unwrap();
     let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
 

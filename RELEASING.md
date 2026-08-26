@@ -13,13 +13,13 @@ Every pull request should carry at most one of these labels. They drive both
 the auto-generated release notes (see `.github/release.yml`) and the automatic
 version bump (see `.github/scripts/bump-version.sh`):
 
-- **`breaking`** — incompatible API change; triggers a **major** bump.
+- **`breaking`** -- incompatible API change; triggers a **major** bump.
   Changes that the system self-heals from at runtime are not considered breaking.
-- **`feature`** — new user-facing feature; triggers a **minor** bump
-- **`bug`** — bug fix; triggers a **patch** bump
-- **`chore`** — internal change (tooling, refactor, docs, CI); excluded from
+- **`feature`** -- new user-facing feature; triggers a **minor** bump
+- **`bug`** -- bug fix; triggers a **patch** bump
+- **`chore`** -- internal change (tooling, refactor, docs, CI); excluded from
   release notes and counted as a **patch** bump
-- **no label** — user-visible change that is neither a new feature nor a bug
+- **no label** -- user-visible change that is neither a new feature nor a bug
   fix, such as changed or removed behavior; listed under **Other Changes** in
   the release notes and counted as a **patch** bump
 
@@ -58,7 +58,7 @@ a major other than the one declared.
 
 1. **Bump the version**
 
-   Go to **Actions** → **Version** → **Run workflow** in the GitHub UI. Leave
+   Go to **Actions** -> **Version** -> **Run workflow** in the GitHub UI. Leave
    the component on `auto` to derive the bump from PR labels merged since the
    last tag, or pick `major`/`minor`/`patch` explicitly. Click **Run workflow**.
    This will create a pull request with the version bump in `Cargo.toml` and
@@ -66,7 +66,7 @@ a major other than the one declared.
 
 2. **Trigger the release workflow**
 
-   Go to **Actions** → **Release** → **Run workflow** in the GitHub UI. Select
+   Go to **Actions** -> **Release** -> **Run workflow** in the GitHub UI. Select
    the branch to release from and click **Run workflow**.
 
 3. **Wait for the workflow to complete**

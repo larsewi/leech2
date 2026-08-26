@@ -82,7 +82,7 @@ source = "logs.csv"
     let patch = Patch::create(&config, &hash1).unwrap();
     assert_eq!(patch.num_blocks, 1);
 
-    // items should be in states (layout changed → full state).
+    // items should be in states (layout changed -> full state).
     assert!(
         patch.states.contains_key("items"),
         "items should use full state, got deltas={:?} states={:?}",
@@ -90,7 +90,7 @@ source = "logs.csv"
         patch.states.keys().collect::<Vec<_>>()
     );
 
-    // logs should be in deltas (unchanged layout → incremental).
+    // logs should be in deltas (unchanged layout -> incremental).
     assert!(
         patch.deltas.contains_key("logs"),
         "logs should use delta, got deltas={:?} states={:?}",
@@ -101,11 +101,11 @@ source = "logs.csv"
     // Verify SQL generation.
     let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
 
-    // items: state path → TRUNCATE + 3 INSERTs
+    // items: state path -> TRUNCATE + 3 INSERTs
     assert!(sql.contains(r#"TRUNCATE "items";"#));
     assert_eq!(common::count_sql(&sql, r#"INSERT INTO "items""#), 3);
 
-    // logs: delta path → 1 INSERT
+    // logs: delta path -> 1 INSERT
     assert!(sql.contains(r#"INSERT INTO "logs""#));
     assert_eq!(common::count_sql(&sql, r#"INSERT INTO "logs""#), 1);
 

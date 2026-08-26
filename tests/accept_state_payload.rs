@@ -107,8 +107,8 @@ source = "logs.csv"
     let config = Config::load(work_dir).unwrap();
     let hash1 = Block::create(&config, None).unwrap();
 
-    // Block 2: items drops to 2 rows (18 deletes → state wins),
-    //          logs adds 1 row (1 insert → delta wins).
+    // Block 2: items drops to 2 rows (18 deletes -> state wins),
+    //          logs adds 1 row (1 insert -> delta wins).
     common::write_csv(work_dir, "items.csv", "1,item1\n2,item2\n");
     logs_csv.push_str("21,log message number 21\n");
     common::write_csv(work_dir, "logs.csv", &logs_csv);
@@ -146,10 +146,10 @@ source = "logs.csv"
     // Verify SQL contains both delta and state patterns.
     let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
 
-    // logs: delta path → 1 INSERT, no TRUNCATE for logs
+    // logs: delta path -> 1 INSERT, no TRUNCATE for logs
     assert!(sql.contains(r#"INSERT INTO "logs""#));
 
-    // items: state path → TRUNCATE + 2 INSERTs
+    // items: state path -> TRUNCATE + 2 INSERTs
     assert!(sql.contains(r#"TRUNCATE "items";"#));
     assert_eq!(common::count_sql(&sql, r#"INSERT INTO "items""#), 2);
 
