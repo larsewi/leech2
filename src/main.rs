@@ -202,7 +202,7 @@ fn cmd_block_show(config: &Config, reference: Option<&str>, n: Option<u32>) -> R
     }
     let state_dir = config.ensure_state_dir()?;
     let block = Block::load(&state_dir, &hash, config.file_mode)?;
-    Ok(format!("block {}\n{}", hash, block))
+    Ok(block.to_string())
 }
 
 fn load_patch(config: &Config) -> Result<leech2::patch::Patch> {
