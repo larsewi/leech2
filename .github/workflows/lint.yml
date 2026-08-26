@@ -49,3 +49,19 @@ jobs:
           if [ -n "$FILES" ]; then
             echo "$FILES" | xargs shellcheck
           fi
+
+  ascii:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check for non-ASCII characters
+        run: |
+          FILES=$(git ls-files '*.rs' '*.c' '*.h' '*.cpp' '*.proto' '*.sh' '*.yml' '*.md' ':!:CLAUDE.md')
+          if [ -n "$FILES" ]; then
+            if echo "$FILES" | xargs grep -nPI '[^\x00-\x7F]'; then
+              echo "Found non-ASCII characters on the lines above. Use ASCII equivalents such as '->' and '--'."
+              exit 1
+            fi
+          fi
