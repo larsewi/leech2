@@ -11,7 +11,7 @@ clap_mangen = "0.3.3"
 glob = "0.3.4"
 semver = "1.0.28"
 serde = { version = "1.0.229", features = ["derive"] }
-toml = "1.1.5"
+toml = "1.1.6"
 
 [dev-dependencies]
 tempfile = "3.27.0"
