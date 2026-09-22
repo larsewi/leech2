@@ -34,6 +34,19 @@ fn main() {
     let profile_dir = profile_dir();
 
     generate_pkg_config(&manifest_dir, &profile_dir, &version);
+    set_macos_install_name();
+}
+
+// Without this, the dylib records the absolute path it was built at as its
+// install name, so programs linked against a shipped libleech2.dylib look for
+// it under the build machine's target directory and fail to load. @rpath makes
+// the library relocatable: consumers resolve it through their own rpath.
+fn set_macos_install_name() {
+    let target_os = std::env::var("CARGO_CFG_TARGET_OS")
+        .expect("cargo must set CARGO_CFG_TARGET_OS for build scripts");
+    if target_os == "macos" {
+        println!("cargo:rustc-cdylib-link-arg=-Wl,-install_name,@rpath/libleech2.dylib");
+    }
 }
 
 // target/<profile>/ (or target/<triple>/<profile>/ when --target is set)
