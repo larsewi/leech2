@@ -189,6 +189,7 @@ jobs:
           mkdir -p "dist/${DIR}"
           cp "target/${{ matrix.target }}/release/${{ steps.ext.outputs.bin }}" "dist/${DIR}/"
           cp "target/${{ matrix.target }}/release/${{ steps.ext.outputs.lib }}" "dist/${DIR}/"
+          cp "target/${{ matrix.target }}/release/${{ steps.ext.outputs.lib }}.lib" "dist/${DIR}/"
           cp include/leech2.h "dist/${DIR}/"
           cp README.md "dist/${DIR}/"
           cp LICENSE "dist/${DIR}/"
