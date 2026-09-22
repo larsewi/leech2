@@ -111,6 +111,15 @@
                             KeyPath='yes'/>
                     </Component>
 
+                    <Component Id='implib0' Guid='*'>
+                        <File
+                            Id='lib0'
+                            Name='leech2.dll.lib'
+                            DiskId='1'
+                            Source='$(var.CargoTargetBinDir)\leech2.dll.lib'
+                            KeyPath='yes'/>
+                    </Component>
+
                     <Component Id='header0' Guid='*'>
                         <File
                             Id='header0'
@@ -161,6 +170,7 @@
             
             <ComponentRef Id='binary0'/>
             <ComponentRef Id='library0'/>
+            <ComponentRef Id='implib0'/>
             <ComponentRef Id='header0'/>
 
             <Feature
