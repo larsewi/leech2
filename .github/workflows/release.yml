@@ -128,9 +128,9 @@ jobs:
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
 
-      # Only the .deb and .rpm ship man pages, so only Linux needs them.
+      # Everything but the Windows packages ships man pages.
       - name: Download man pages
-        if: runner.os == 'Linux'
+        if: runner.os != 'Windows'
         uses: actions/download-artifact@v8
         with:
           name: man-pages
@@ -175,6 +175,10 @@ jobs:
           cp "target/${{ matrix.target }}/release/${{ steps.ext.outputs.bin }}" "dist/${DIR}/"
           cp "target/${{ matrix.target }}/release/${{ steps.ext.outputs.lib }}" "dist/${DIR}/"
           cp include/leech2.h "dist/${DIR}/"
+          cp leech2.pc.in "dist/${DIR}/"
+          mkdir -p "dist/${DIR}/man"
+          cp "target/${{ matrix.target }}/release/man/"*.1 "dist/${DIR}/man/"
+          cp "target/${{ matrix.target }}/release/man/"*.3 "dist/${DIR}/man/"
           cp README.md "dist/${DIR}/"
           cp LICENSE "dist/${DIR}/"
           tar czf "dist/${DIR}.tar.gz" -C dist "${DIR}"

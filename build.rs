@@ -63,6 +63,7 @@ fn generate_pkg_config(manifest_dir: &Path, profile_dir: &Path, version: &str) {
     for (name, libdir) in [("leech2-deb.pc", "lib"), ("leech2-rpm.pc", "lib64")] {
         let content = template
             .replace("@VERSION@", version)
+            .replace("@PREFIX@", "/usr")
             .replace("@LIBDIR@", libdir);
         let out_path = profile_dir.join(name);
         std::fs::write(&out_path, content).unwrap_or_else(|e| {

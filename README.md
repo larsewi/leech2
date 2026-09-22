@@ -301,7 +301,10 @@ dir-mode = "0700"  # owner read/write/traverse only (default)
 See [`include/leech2.h`](include/leech2.h) for the full API reference.
 
 The `.deb` and `.rpm` packages install a `leech2.pc` file, so consumers can
-discover compile and link flags with `pkg-config --cflags --libs leech2`.
+discover compile and link flags with `pkg-config --cflags --libs leech2`. The
+Linux and macOS tarballs ship it as a `leech2.pc.in` template instead, since the
+install prefix is only known once you unpack them. Substitute `@PREFIX@`,
+`@LIBDIR@` and `@VERSION@` to get a usable `leech2.pc`.
 
 ```c
 lch_config_t *cfg = lch_init("/path/to/workdir");
@@ -340,8 +343,8 @@ debug builds; release builds strip them at compile time.
 ## Man pages
 
 Man pages are included in the `.deb` and `.rpm` packages, and under `man/` in
-the source tarball. After installing a package, run `man 1 lch` or
-`man 3 leech2.h` to see them.
+the source tarball and the Linux and macOS tarballs. After installing a package,
+run `man 1 lch` or `man 3 leech2.h` to see them.
 
 ## Contributing
 
