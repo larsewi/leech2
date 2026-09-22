@@ -65,7 +65,7 @@ have ...` done without changing anything on the disk:
 ## Configuration
 
 The configuration lives in either `config.toml` or `config.json`. The CLI tool
-currently expects this file to be inside a `.leech/` directory in the current
+currently expects this file to be inside a `.leech2/` directory in the current
 working directory (this may change). The C API does not care.
 
 ### State directory
