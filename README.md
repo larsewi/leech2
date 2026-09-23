@@ -11,6 +11,19 @@ into SQL statements for replaying changes on a target database.
 leech2 ships as both a Rust library with a C-compatible FFI (`libleech2.so`) and
 a CLI tool (`lch`).
 
+## Installing
+
+```sh
+# On macOS
+brew install larsewi/tap/leech2
+```
+
+On Linux and Windows, grab a package from the
+[releases](https://github.com/larsewi/leech2/releases): a `.deb` or `.rpm` for
+Linux, an `.msi` for Windows. Each release also carries a plain tarball or zip
+per platform. Nothing below is needed to install a package; the build
+dependencies only matter if you build from source.
+
 ## Build dependencies
 
 ```
@@ -300,11 +313,12 @@ dir-mode = "0700"  # owner read/write/traverse only (default)
 
 See [`include/leech2.h`](include/leech2.h) for the full API reference.
 
-The `.deb` and `.rpm` packages install a `leech2.pc` file, so consumers can
-discover compile and link flags with `pkg-config --cflags --libs leech2`. The
-Linux and macOS tarballs ship it as a `leech2.pc.in` template instead, since the
-install prefix is only known once you unpack them. Substitute `@PREFIX@`,
-`@LIBDIR@` and `@VERSION@` to get a usable `leech2.pc`.
+The `.deb` and `.rpm` packages and the Homebrew formula install a `leech2.pc`
+file, so consumers can discover compile and link flags with
+`pkg-config --cflags --libs leech2`. The Linux and macOS tarballs ship it as a
+`leech2.pc.in` template instead, since the install prefix is only known once you
+unpack them. Substitute `@PREFIX@`, `@LIBDIR@` and `@VERSION@` to get a usable
+`leech2.pc`.
 
 ```c
 lch_config_t *cfg = lch_init("/path/to/workdir");
@@ -342,9 +356,10 @@ debug builds; release builds strip them at compile time.
 
 ## Man pages
 
-Man pages are included in the `.deb` and `.rpm` packages, and under `man/` in
-the source tarball and the Linux and macOS tarballs. After installing a package,
-run `man 1 lch` or `man 3 leech2.h` to see them.
+Man pages are included in the `.deb` and `.rpm` packages and the Homebrew
+formula, and under `man/` in the source tarball and the Linux and macOS
+tarballs. After installing a package, run `man 1 lch` or `man 3 leech2.h` to see
+them.
 
 ## Contributing
 
