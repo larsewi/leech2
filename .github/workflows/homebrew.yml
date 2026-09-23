@@ -1,0 +1,46 @@
+name: Homebrew
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to point the formula at, without the leading v
+        required: true
+        type: string
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          repository: larsewi/homebrew-tap
+          token: ${{ secrets.PAT }}
+          path: homebrew-tap
+
+      - name: Bump the formula
+        working-directory: homebrew-tap
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: .github/scripts/bump-formula.sh "${{ inputs.version }}"
+
+      - name: Create pull request
+        uses: peter-evans/create-pull-request@v8
+        with:
+          token: ${{ secrets.PAT }}
+          path: homebrew-tap
+          commit-message: "Updated leech2 to ${{ inputs.version }}"
+          sign-commits: true
+          branch: auto/bump-formula
+          title: "Updated leech2 to ${{ inputs.version }}"
+          body: |
+            Points the formula at the leech2 v${{ inputs.version }} release.
+
+            Please review the changes before merging.
+          delete-branch: true
+          assignees: larsewi

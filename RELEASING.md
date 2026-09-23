@@ -91,6 +91,8 @@ a major other than the one declared.
    - Create a GitHub Release with all artifacts attached
    - Add a **Dependencies** section to the release notes (see
      [Dependency updates](#dependency-updates))
+   - Open a pull request on the Homebrew tap pointing the formula at the new
+     release (see [Homebrew tap](#homebrew-tap))
 
 4. **Verify the release**
 
@@ -110,4 +112,13 @@ a major other than the one declared.
    - `leech2_X.Y.Z-1_arm64.deb`
    - `checksums.txt`
 
+   Then review and merge the `Updated leech2 to X.Y.Z` pull request on
+   [larsewi/homebrew-tap](https://github.com/larsewi/homebrew-tap), once its CI
+   has passed.
+
    Update changelog.
+
+## Homebrew tap
+
+To bump the Homebrew formula without running a release, go to **Actions** ->
+**Homebrew** -> **Run workflow** and give it a version.

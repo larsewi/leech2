@@ -310,3 +310,12 @@ jobs:
             cat dependency-updates.md
           } >>release-notes.md
           gh release edit "v${VERSION}" --notes-file release-notes.md
+
+  # Its own workflow rather than a step in 'release': a failure here leaves the
+  # release intact, and it can be re-run on its own from the Actions tab.
+  homebrew:
+    needs: [validate, release]
+    uses: ./.github/workflows/homebrew.yml
+    with:
+      version: ${{ needs.validate.outputs.version }}
+    secrets: inherit
