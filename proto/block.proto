@@ -24,8 +24,9 @@ message Block {
 }
 
 // A single table's change within a block. When delta is present, it holds the
-// incremental changes. When absent, the table's field layout changed since the
-// previous block and a full state snapshot is needed during patch consolidation.
+// incremental changes. When absent, the table is new or its field layout changed
+// since the previous block, and a full state snapshot is needed during patch
+// consolidation.
 message TableChange {
   optional delta.Delta delta = 1;
 }

@@ -112,6 +112,10 @@ with no delta (`delta: None`), signaling that patch consolidation should use a
 full state snapshot for that table instead of attempting to merge incompatible
 deltas.
 
+Tables missing from the STATE file (e.g. newly added to the config) are recorded
+the same way. The receiver may already hold rows for such a table, so a full
+state replaces them instead of appending to them.
+
 All table changes are bundled into a block together with a parent hash and a
 timestamp, SHA-1 hashed, and stored as a file named by its hash. The `HEAD`
 pointer is then advanced to point at the new block.
@@ -128,7 +132,7 @@ Block:
         (3) Charlie, 2025-06-15
       Updates (1):
         (1) _, Alice -> Alicia, _
-    'departments' <layout changed>
+    'departments' <full state>
 ```
 
 ### Patch::create()
@@ -158,7 +162,7 @@ contains. The same fallback applies when the block chain is broken (e.g. a block
 is missing).
 
 During consolidation, tables whose blocks contain a `TableChange` with no delta
-(indicating a layout change) go directly to full state without attempting to
+(indicating a new table or a layout change) go directly to full state without attempting to
 merge. If merging fails for a single table (e.g. an unresolvable conflict), only
 that table falls back to full state -- other tables keep their consolidated
 deltas.

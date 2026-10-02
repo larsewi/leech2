@@ -111,3 +111,70 @@ source = "logs.csv"
 
     common::assert_wire_roundtrip(&config, &patch);
 }
+
+/// A table added to the config should replace whatever the receiver has for
+/// it, so the patch should use full state for it even if later blocks carry
+/// deltas for it.
+#[test]
+fn test_new_table_produces_full_state() {
+    let tmp = tempfile::tempdir().unwrap();
+    let work_dir = tmp.path();
+
+    let items_config = r#"
+[tables.items]
+fields = [
+    { name = "id", type = "NUMBER", primary-key = true },
+    { name = "name", type = "TEXT" },
+]
+
+[tables.items.csv]
+source = "items.csv"
+"#;
+    let logs_config = r#"
+[tables.logs]
+fields = [
+    { name = "seq", type = "NUMBER", primary-key = true },
+    { name = "message", type = "TEXT" },
+]
+
+[tables.logs.csv]
+source = "logs.csv"
+"#;
+
+    // Initial config: items only.
+    common::write_config(work_dir, "config.toml", items_config);
+    common::write_csv(work_dir, "items.csv", "1,apple\n");
+    let config = Config::load(work_dir).unwrap();
+    let hash1 = Block::create(&config, None).unwrap();
+
+    // Add logs to the config. items gets a new row.
+    common::write_config(
+        work_dir,
+        "config.toml",
+        &format!("{items_config}{logs_config}"),
+    );
+    common::write_csv(work_dir, "items.csv", "1,apple\n2,banana\n");
+    common::write_csv(work_dir, "logs.csv", "1,hello\n2,world\n");
+    let config = Config::load(work_dir).unwrap();
+    Block::create(&config, None).unwrap();
+
+    // A later block carries a plain delta for logs.
+    common::write_csv(work_dir, "logs.csv", "1,hello\n2,world\n3,again\n");
+    Block::create(&config, None).unwrap();
+
+    let patch = Patch::create(&config, &hash1).unwrap();
+    assert_eq!(patch.num_blocks, 2);
+    assert!(patch.states.contains_key("logs"));
+    assert!(patch.deltas.contains_key("items"));
+
+    let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
+
+    // logs: state path -> TRUNCATE + 3 INSERTs
+    assert!(sql.contains(r#"TRUNCATE "logs";"#));
+    assert_eq!(common::count_sql(&sql, r#"INSERT INTO "logs""#), 3);
+
+    // items: delta path -> 1 INSERT
+    assert_eq!(common::count_sql(&sql, r#"INSERT INTO "items""#), 1);
+
+    common::assert_wire_roundtrip(&config, &patch);
+}

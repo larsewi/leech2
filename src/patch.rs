@@ -129,8 +129,8 @@ struct DeltaCounts {
 /// `parent.merge(child)`. When `merged_deltas` is empty (first block), this
 /// simply extracts the block's deltas.
 ///
-/// Tables whose layout changed (delta is `None`) or whose merge failed are
-/// added to `skipped_tables` and fall back to full state.
+/// Tables that are new or whose layout changed (delta is `None`), or whose
+/// merge failed, are added to `skipped_tables` and fall back to full state.
 fn merge_block_deltas(
     block: Block,
     merged_deltas: &mut HashMap<String, Delta>,
@@ -142,11 +142,11 @@ fn merge_block_deltas(
             continue;
         }
 
-        // A missing delta means the table's field layout changed between
-        // blocks; skip further merging and fall back to full state.
+        // A missing delta means the table is new or its field layout changed
+        // between blocks; skip further merging and fall back to full state.
         let Some(proto_delta) = payload.delta else {
-            log::warn!(
-                "Layout changed for table '{}', falling back to full state",
+            log::info!(
+                "Table '{}' is new or its layout changed, falling back to full state",
                 table_name
             );
             merged_deltas.remove(&table_name);
@@ -242,15 +242,15 @@ fn try_consolidate(
     // Skipped tables fall back to full state. If the STATE file can't satisfy
     // one (e.g. STATE was deleted), bail so the caller falls back to a
     // full-state patch for the whole set, rather than emitting a patch that
-    // silently omits a table whose layout changed.
+    // silently omits a table that needs full state.
     for table_name in &skipped_tables {
         let state_table = state_tables.get(table_name).with_context(|| {
             format!(
-                "table '{}' needs full state (layout changed) but is not in the STATE file",
+                "table '{}' needs full state but is not in the STATE file",
                 table_name
             )
         })?;
-        log::info!("Table '{}': using full state (layout changed)", table_name);
+        log::info!("Table '{}': using full state", table_name);
         result_states.insert(table_name.clone(), state_table.clone());
     }
 

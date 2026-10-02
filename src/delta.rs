@@ -331,10 +331,12 @@ impl Delta {
 
     /// Compute deltas between a previous and current state.
     ///
-    /// Returns `None` for tables whose field layout changed (columns
-    /// added/removed/reordered), since positional record values are
-    /// not comparable across different layouts.  Callers should treat
-    /// `None` as "use full state instead of a delta".
+    /// Returns `None` for tables missing from the previous state, since the
+    /// receiver may already hold rows for them. Also returns `None` for
+    /// tables whose field layout changed (columns added/removed/reordered),
+    /// since positional record values are not comparable across different
+    /// layouts. Callers should treat `None` as "use full state instead of a
+    /// delta".
     pub fn compute(
         previous_state: Option<State>,
         current_state: &State,
@@ -347,11 +349,16 @@ impl Delta {
                 .as_ref()
                 .and_then(|state| state.tables.get(table_name));
 
+            // A new table must replace whatever the receiver has for it.
+            let Some(previous_table) = previous_table else {
+                log::info!("Table '{}': new table, will use full state", table_name);
+                deltas.insert(table_name.clone(), None);
+                continue;
+            };
+
             // If the field layout changed, a meaningful delta cannot be computed.
-            if let Some(previous_table) = previous_table
-                && (previous_table.primary_key_names != current_table.primary_key_names
-                    || previous_table.subsidiary_value_names
-                        != current_table.subsidiary_value_names)
+            if previous_table.primary_key_names != current_table.primary_key_names
+                || previous_table.subsidiary_value_names != current_table.subsidiary_value_names
             {
                 log::warn!(
                     "Table '{}': field layout changed, will use full state",
@@ -418,19 +425,12 @@ impl Delta {
     }
 
     fn diff_table(
-        previous_table: Option<&Table>,
+        previous_table: &Table,
         current_table: &Table,
     ) -> (RecordMap, RecordMap, UpdateMap) {
+        let mut inserts = HashMap::new();
         let mut deletes = HashMap::new();
         let mut updates = HashMap::new();
-
-        let Some(previous_table) = previous_table else {
-            // No previous table: all records are inserts
-            let inserts = current_table.records.clone();
-            return (inserts, deletes, updates);
-        };
-
-        let mut inserts = HashMap::new();
 
         // Keys in previous but not current -> deletes
         for (key, value) in &previous_table.records {
@@ -475,7 +475,7 @@ mod tests {
     }
 
     #[test]
-    fn test_no_previous_state_all_inserts() {
+    fn test_no_previous_state_returns_none() {
         let mut tables = HashMap::new();
         tables.insert(
             "users".to_string(),
@@ -486,10 +486,24 @@ mod tests {
         let deltas = Delta::compute(None, &current);
 
         assert_eq!(deltas.len(), 1);
-        let delta = deltas.get("users").unwrap().as_ref().unwrap();
-        assert_eq!(delta.inserts.len(), 2);
-        assert_eq!(delta.deletes.len(), 0);
-        assert_eq!(delta.updates.len(), 0);
+        assert!(deltas.get("users").unwrap().is_none());
+    }
+
+    #[test]
+    fn test_new_empty_table_returns_none() {
+        let previous_state = State {
+            tables: HashMap::new(),
+        };
+        let mut current_tables = HashMap::new();
+        current_tables.insert("users".to_string(), make_table(&[]));
+        let current_state = State {
+            tables: current_tables,
+        };
+
+        let deltas = Delta::compute(Some(previous_state), &current_state);
+
+        assert_eq!(deltas.len(), 1);
+        assert!(deltas.get("users").unwrap().is_none());
     }
 
     #[test]
@@ -594,10 +608,8 @@ mod tests {
         assert_eq!(delta_b.inserts.len(), 1);
         assert!(delta_b.inserts.contains_key(&text_cells(&["2"])));
 
-        // table_c: only in current -> all inserts
-        let delta_c = deltas.get("table_c").unwrap().as_ref().unwrap();
-        assert_eq!(delta_c.inserts.len(), 1);
-        assert_eq!(delta_c.deletes.len(), 0);
+        // table_c: only in current -> full state
+        assert!(deltas.get("table_c").unwrap().is_none());
     }
 
     #[test]
