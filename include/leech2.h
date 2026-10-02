@@ -360,7 +360,7 @@ extern int lch_patch_create(const lch_config_t *cfg, const char *hash,
  * Decodes the patch in @p patch and produces SQL that, when executed, applies
  * the patch to a downstream database:
  * - Delta payloads generate DELETE, INSERT, and UPDATE statements.
- * - State payloads generate TRUNCATE followed by INSERT statements.
+ * - State payloads generate DELETE followed by INSERT statements.
  *
  * The returned SQL is not wrapped in a transaction. Callers that need
  * atomicity should issue their own BEGIN / COMMIT and may interleave
@@ -448,7 +448,7 @@ extern int lch_patch_applied(const lch_config_t *cfg,
  * @brief Mark a patch as failed.
  *
  * Removes the REPORTED file so that the next lch_patch_create() produces a
- * full state patch (TRUNCATE + INSERT for all tables). This is safe to call
+ * full state patch (DELETE + INSERT for all tables). This is safe to call
  * regardless of whether a REPORTED file exists.
  *
  * @param cfg  Valid config handle (must not be NULL).

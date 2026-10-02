@@ -29,7 +29,7 @@ source = "users.csv"
 }
 
 /// When REPORTED points to a block that was truncated (deleted from disk),
-/// patch creation should produce a full state (TRUNCATE + INSERT) instead
+/// patch creation should produce a full state (DELETE + INSERT) instead
 /// of failing or producing unsafe delta INSERTs.
 #[test]
 fn test_reported_block_truncated() {
@@ -50,22 +50,22 @@ fn test_reported_block_truncated() {
     storage::remove(&config.state_dir(), &hash1, config.file_mode, false).unwrap();
     assert!(!config.state_dir().join(&hash1).exists());
 
-    // Patch from REPORTED should fall back to STATE (TRUNCATE + INSERT)
+    // Patch from REPORTED should fall back to STATE (DELETE + INSERT)
     let patch = Patch::create(&config, &hash1).unwrap();
     assert_eq!(patch.head, hash2);
     assert_eq!(patch.num_blocks, 0);
 
     let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
-    assert_eq!(common::count_sql(&sql, "TRUNCATE"), 1);
+    assert_eq!(common::count_sql(&sql, r#"DELETE FROM "users";"#), 1);
     assert_eq!(common::count_sql(&sql, "INSERT INTO"), 2);
-    assert_eq!(common::count_sql(&sql, "DELETE FROM"), 0);
+    assert_eq!(common::count_sql(&sql, "DELETE FROM"), 1);
     assert_eq!(common::count_sql(&sql, "UPDATE "), 0);
 
     common::assert_wire_roundtrip(&config, &patch);
 }
 
 /// When the REPORTED file is deleted, the CLI/FFI falls back to GENESIS.
-/// The patch should produce TRUNCATE + INSERT (safe for a database that
+/// The patch should produce DELETE + INSERT (safe for a database that
 /// may already contain rows).
 #[test]
 fn test_reported_file_deleted() {
@@ -91,7 +91,7 @@ fn test_reported_file_deleted() {
     assert_eq!(patch.num_blocks, 0);
 
     let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
-    assert_eq!(common::count_sql(&sql, "TRUNCATE"), 1);
+    assert_eq!(common::count_sql(&sql, r#"DELETE FROM "users";"#), 1);
     assert_eq!(common::count_sql(&sql, "INSERT INTO"), 2);
 
     common::assert_wire_roundtrip(&config, &patch);
@@ -127,14 +127,14 @@ fn test_head_file_deleted() {
     assert_eq!(patch.head, new_hash);
 
     let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
-    assert_eq!(common::count_sql(&sql, "TRUNCATE"), 1);
+    assert_eq!(common::count_sql(&sql, r#"DELETE FROM "users";"#), 1);
     assert_eq!(common::count_sql(&sql, "INSERT INTO"), 2);
 
     common::assert_wire_roundtrip(&config, &patch);
 }
 
 /// When a block in the middle of the chain is missing, consolidation fails.
-/// Patch creation should fall back to STATE (TRUNCATE + INSERT).
+/// Patch creation should fall back to STATE (DELETE + INSERT).
 #[test]
 fn test_block_chain_broken() {
     let tmp = tempfile::tempdir().unwrap();
@@ -160,16 +160,16 @@ fn test_block_chain_broken() {
     assert_eq!(patch.num_blocks, 0);
 
     let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
-    assert_eq!(common::count_sql(&sql, "TRUNCATE"), 1);
+    assert_eq!(common::count_sql(&sql, r#"DELETE FROM "users";"#), 1);
     assert_eq!(common::count_sql(&sql, "INSERT INTO"), 3);
-    assert_eq!(common::count_sql(&sql, "DELETE FROM"), 0);
+    assert_eq!(common::count_sql(&sql, "DELETE FROM"), 1);
     assert_eq!(common::count_sql(&sql, "UPDATE "), 0);
 
     common::assert_wire_roundtrip(&config, &patch);
 }
 
 /// When the agent calls reported::remove() (simulating lch_patch_failed),
-/// the next patch should produce a full state (TRUNCATE + INSERT).
+/// the next patch should produce a full state (DELETE + INSERT).
 #[test]
 fn test_patch_failed_forces_full_state() {
     let tmp = tempfile::tempdir().unwrap();
@@ -199,9 +199,9 @@ fn test_patch_failed_forces_full_state() {
     assert_eq!(patch.num_blocks, 0); // full state, no delta consolidation
 
     let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
-    assert_eq!(common::count_sql(&sql, "TRUNCATE"), 1);
+    assert_eq!(common::count_sql(&sql, r#"DELETE FROM "users";"#), 1);
     assert_eq!(common::count_sql(&sql, "INSERT INTO"), 2);
-    assert_eq!(common::count_sql(&sql, "DELETE FROM"), 0);
+    assert_eq!(common::count_sql(&sql, "DELETE FROM"), 1);
     assert_eq!(common::count_sql(&sql, "UPDATE "), 0);
 
     common::assert_wire_roundtrip(&config, &patch);
@@ -230,8 +230,8 @@ fn test_state_file_deleted_with_valid_chain() {
     assert_eq!(patch.num_blocks, 1);
 
     let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
-    // Delta path: should have INSERT for Bob, no TRUNCATE
-    assert_eq!(common::count_sql(&sql, "TRUNCATE"), 0);
+    // Delta path: should have INSERT for Bob, no DELETE
+    assert_eq!(common::count_sql(&sql, "DELETE FROM"), 0);
     assert_eq!(common::count_sql(&sql, "INSERT INTO"), 1);
     assert!(
         sql.contains(

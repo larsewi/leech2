@@ -38,7 +38,7 @@ max-field-length = 5
     common::assert_sql_statements(
         &sql,
         &[
-            r#"TRUNCATE "users";"#,
+            r#"DELETE FROM "users";"#,
             r#"INSERT INTO "users" ("id", "name") VALUES (1, 'Alice');"#,
             r#"INSERT INTO "users" ("id", "name") VALUES (3, 'Bob');"#,
         ],
@@ -84,7 +84,7 @@ exclude = "^inactive$"
     common::assert_sql_statements(
         &sql,
         &[
-            r#"TRUNCATE "users";"#,
+            r#"DELETE FROM "users";"#,
             r#"INSERT INTO "users" ("id", "name", "status") VALUES (1, 'Alice', 'active');"#,
             r#"INSERT INTO "users" ("id", "name", "status") VALUES (3, 'Charlie', 'active');"#,
         ],
@@ -129,7 +129,7 @@ exclude = "DEPRECATED"
     common::assert_sql_statements(
         &sql,
         &[
-            r#"TRUNCATE "items";"#,
+            r#"DELETE FROM "items";"#,
             r#"INSERT INTO "items" ("id", "description") VALUES (1, 'Active item');"#,
             r#"INSERT INTO "items" ("id", "description") VALUES (3, 'Another item');"#,
         ],
@@ -345,7 +345,7 @@ include = "^(active|pending)$"
     common::assert_sql_statements(
         &sql,
         &[
-            r#"TRUNCATE "users";"#,
+            r#"DELETE FROM "users";"#,
             r#"INSERT INTO "users" ("id", "name", "status") VALUES (1, 'Alice', 'active');"#,
             r#"INSERT INTO "users" ("id", "name", "status") VALUES (3, 'Charlie', 'pending');"#,
         ],
@@ -390,7 +390,7 @@ include = "PRODUCTION"
     common::assert_sql_statements(
         &sql,
         &[
-            r#"TRUNCATE "items";"#,
+            r#"DELETE FROM "items";"#,
             r#"INSERT INTO "items" ("id", "description") VALUES (1, 'PRODUCTION ready');"#,
             r#"INSERT INTO "items" ("id", "description") VALUES (3, 'PRODUCTION-grade hardware');"#,
         ],
@@ -482,7 +482,7 @@ exclude = "^pending$"
     common::assert_sql_statements(
         &sql,
         &[
-            r#"TRUNCATE "users";"#,
+            r#"DELETE FROM "users";"#,
             r#"INSERT INTO "users" ("id", "status") VALUES (1, 'active');"#,
         ],
     );

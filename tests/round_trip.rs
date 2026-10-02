@@ -389,7 +389,7 @@ impl HubSim {
     /// wrote in the source CSV).
     ///
     /// When `email_active` is false, the email column should be NULL for
-    /// every row (the most recent ship was a TRUNCATE+INSERT that did not
+    /// every row (the most recent ship was a DELETE+INSERT that did not
     /// name the column). When the agent emitted `EMAIL_NULL_SENTINEL` for
     /// a particular row, leech2 wrote NULL for that cell. psql renders
     /// NULL as the empty string in CSV mode, so the expected row formats

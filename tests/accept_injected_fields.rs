@@ -124,11 +124,8 @@ source = "users.csv"
     assert!(sql.contains(r#""host""#), "SQL should contain host column");
     assert!(sql.contains("'agent-1'"), "SQL should contain host value");
 
-    // With injected fields, should use DELETE WHERE instead of TRUNCATE
-    assert!(
-        !sql.contains("TRUNCATE"),
-        "With injected fields, state payload should use DELETE WHERE, not TRUNCATE"
-    );
+    // With injected fields, the DELETE is scoped to them
+    assert!(sql.contains(&[r#"DELETE FROM "users""#, r#"WHERE "host" = 'agent-1';"#].join("\n")));
 
     common::assert_wire_roundtrip(&config, &patch);
 }
@@ -329,12 +326,9 @@ source = "users.csv"
         "SQL should contain hostkey column"
     );
     assert!(sql.contains("'abc123'"), "SQL should contain hostkey value");
-    // Runtime injection should trigger the same state payload partitioning as
-    // static injection: DELETE WHERE instead of TRUNCATE.
-    assert!(
-        !sql.contains("TRUNCATE"),
-        "With a runtime-injected field, state payload should use DELETE WHERE"
-    );
+    // Runtime injection should scope the state payload DELETE the same way as
+    // static injection.
+    assert!(sql.contains(&[r#"DELETE FROM "users""#, r#"WHERE "hostkey" = 'abc123';"#].join("\n")));
 
     common::assert_wire_roundtrip(&config, &patch);
 }
@@ -472,11 +466,7 @@ source = "users.csv"
     let patch = Patch::create(&config, GENESIS_HASH).unwrap();
     let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
 
-    // Should use DELETE WHERE with both conditions instead of TRUNCATE
-    assert!(
-        !sql.contains("TRUNCATE"),
-        "With injected fields, should use DELETE WHERE, not TRUNCATE"
-    );
+    // Should use DELETE WHERE with both conditions
     assert!(
         sql.contains(
             &[

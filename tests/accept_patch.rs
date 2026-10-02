@@ -36,16 +36,16 @@ source = "users.csv"
     let hash2 = Block::create(&config, None).unwrap();
     assert_ne!(hash1, hash2);
 
-    // Patch from genesis: full state (TRUNCATE + INSERT), always safe
+    // Patch from genesis: full state (DELETE + INSERT), always safe
     // Current state: Alicia, Charlie, Dave
     let patch_full = Patch::create(&config, GENESIS_HASH).unwrap();
     assert_eq!(patch_full.num_blocks, 0);
     assert_eq!(patch_full.head, hash2);
 
     let sql_full = sql::patch_to_sql(&config, &patch_full).unwrap().unwrap();
-    assert_eq!(common::count_sql(&sql_full, "TRUNCATE"), 1);
+    assert_eq!(common::count_sql(&sql_full, r#"DELETE FROM "users";"#), 1);
     assert_eq!(common::count_sql(&sql_full, "INSERT INTO"), 3);
-    assert_eq!(common::count_sql(&sql_full, "DELETE FROM"), 0);
+    assert_eq!(common::count_sql(&sql_full, "DELETE FROM"), 1);
     assert_eq!(common::count_sql(&sql_full, "UPDATE "), 0);
 
     common::assert_wire_roundtrip(&config, &patch_full);
@@ -128,16 +128,19 @@ source = "users.csv"
     );
     let hash3 = Block::create(&config, None).unwrap();
 
-    // -- Patch from genesis: full state (TRUNCATE + INSERT), always safe --
+    // -- Patch from genesis: full state (DELETE + INSERT), always safe --
     // Final state: 2 rows (Alice, Charles).
     let patch_genesis = Patch::create(&config, GENESIS_HASH).unwrap();
     assert_eq!(patch_genesis.num_blocks, 0);
     assert_eq!(patch_genesis.head, hash3);
 
     let sql_genesis = sql::patch_to_sql(&config, &patch_genesis).unwrap().unwrap();
-    assert_eq!(common::count_sql(&sql_genesis, "TRUNCATE"), 1);
+    assert_eq!(
+        common::count_sql(&sql_genesis, r#"DELETE FROM "users";"#),
+        1
+    );
     assert_eq!(common::count_sql(&sql_genesis, "INSERT INTO"), 2);
-    assert_eq!(common::count_sql(&sql_genesis, "DELETE FROM"), 0);
+    assert_eq!(common::count_sql(&sql_genesis, "DELETE FROM"), 1);
     assert_eq!(common::count_sql(&sql_genesis, "UPDATE "), 0);
 
     common::assert_wire_roundtrip(&config, &patch_genesis);
@@ -154,9 +157,9 @@ source = "users.csv"
 
     let sql_from1 = sql::patch_to_sql(&config, &patch_from1).unwrap().unwrap();
 
-    if sql_from1.contains("TRUNCATE") {
-        // State path: TRUNCATE + 2 INSERTs (Alice, Charles)
-        assert_eq!(common::count_sql(&sql_from1, "TRUNCATE"), 1);
+    if patch_from1.states.contains_key("users") {
+        // State path: DELETE + 2 INSERTs (Alice, Charles)
+        assert_eq!(common::count_sql(&sql_from1, r#"DELETE FROM "users";"#), 1);
         assert_eq!(common::count_sql(&sql_from1, "INSERT INTO"), 2);
     } else {
         // Delta path: 1 INSERT (Charles), 1 DELETE (Bob), 1 UPDATE (Alice email)
@@ -196,9 +199,9 @@ source = "users.csv"
 
     let sql_from2 = sql::patch_to_sql(&config, &patch_from2).unwrap().unwrap();
 
-    if sql_from2.contains("TRUNCATE") {
-        // State path: TRUNCATE + 2 INSERTs (Alice, Charles)
-        assert_eq!(common::count_sql(&sql_from2, "TRUNCATE"), 1);
+    if patch_from2.states.contains_key("users") {
+        // State path: DELETE + 2 INSERTs (Alice, Charles)
+        assert_eq!(common::count_sql(&sql_from2, r#"DELETE FROM "users";"#), 1);
         assert_eq!(common::count_sql(&sql_from2, "INSERT INTO"), 2);
     } else {
         // Delta path: 1 DELETE (Bob), 1 UPDATE (Charlie -> Charles)
@@ -256,7 +259,7 @@ source = "products.csv"
 
     // The merge should produce a delta-path patch (not a state fallback).
     assert!(
-        !sql.contains("TRUNCATE"),
+        patch.states.is_empty(),
         "expected delta path, got state fallback:\n{sql}"
     );
     assert_eq!(common::count_sql(&sql, "UPDATE "), 1);

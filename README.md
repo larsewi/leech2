@@ -186,8 +186,8 @@ false = "^N$"
 Optional `[[injected-fields]]` entries add static columns to all generated SQL.
 Each entry becomes an extra column in INSERT statements and an extra condition
 in DELETE/UPDATE WHERE clauses. When any injected fields are configured, state
-payload patches use `DELETE FROM ... WHERE ...` instead of `TRUNCATE` so that
-other agents' data is preserved.
+payload patches scope their `DELETE FROM` with a `WHERE` clause on the injected
+fields so that other agents' data is preserved.
 
 ```toml
 [[injected-fields]]

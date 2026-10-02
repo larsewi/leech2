@@ -123,13 +123,13 @@ source = "users.csv"
     let config = Config::load(work_dir).unwrap();
     let hash1 = Block::create(&config, None).unwrap();
 
-    // Patch from genesis with empty table: no data to insert
+    // Patch from genesis with empty table: clear the table, no data to insert
     let patch = Patch::create(&config, GENESIS_HASH).unwrap();
     let sql = sql::patch_to_sql(&config, &patch).unwrap();
     // None is also acceptable: no payload at all
     if let Some(s) = sql {
         assert_eq!(common::count_sql(&s, "INSERT INTO"), 0);
-        assert_eq!(common::count_sql(&s, "DELETE FROM"), 0);
+        assert_eq!(common::count_sql(&s, "DELETE FROM"), 1);
     }
 
     // Block 2: add rows to previously empty table
@@ -197,7 +197,7 @@ source = "records.csv"
     assert!(sql_genesis.contains("'second note'"));
 
     // Patch from hash1: verify type quoting regardless of payload type.
-    // With 1 row and all fields changed, the patch may choose State (TRUNCATE+INSERT)
+    // With 1 row and all fields changed, the patch may choose State (DELETE+INSERT)
     // or Deltas (UPDATE). Either way, the SQL literals must be correctly formatted.
     let patch_partial = Patch::create(&config, &hash1).unwrap();
     let sql_partial = sql::patch_to_sql(&config, &patch_partial).unwrap().unwrap();

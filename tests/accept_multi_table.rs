@@ -52,11 +52,11 @@ source = "products.csv"
 
     let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
 
-    // Users table: 1 insert (Bob) -- may appear as delta INSERT or state TRUNCATE+INSERT
+    // Users table: 1 insert (Bob) -- may appear as delta INSERT or state DELETE+INSERT
     assert!(sql.contains(r#""users""#));
 
     // Products table: price changed 100->150
-    // Per-table size comparison may choose delta (UPDATE) or state (TRUNCATE+INSERT).
+    // Per-table size comparison may choose delta (UPDATE) or state (DELETE+INSERT).
     if sql.contains(r#"UPDATE "products""#) {
         assert!(
             sql.contains(
@@ -69,7 +69,7 @@ source = "products.csv"
             )
         );
     } else {
-        assert!(sql.contains(r#"TRUNCATE "products";"#));
+        assert!(sql.contains(r#"DELETE FROM "products";"#));
         assert!(
             sql.contains(
                 &[
