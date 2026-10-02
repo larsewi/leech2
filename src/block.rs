@@ -47,7 +47,7 @@ impl fmt::Display for Block {
                     name,
                     utils::indent(&delta.to_string(), "    ")
                 )?,
-                None => write!(f, "\n    '{}' <layout changed>", name)?,
+                None => write!(f, "\n    '{}' <full state>", name)?,
             }
         }
         Ok(())
