@@ -407,7 +407,7 @@ impl Patch {
         }
 
         // If the reference block can't be resolved or is genesis, produce a
-        // full STATE payload (TRUNCATE + INSERT) which is always safe to apply
+        // full STATE payload (DELETE + INSERT) which is always safe to apply
         // regardless of current database contents.
         let last_known = match resolved {
             Ok(hash) if hash != GENESIS_HASH => hash,

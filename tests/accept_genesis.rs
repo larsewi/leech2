@@ -103,12 +103,12 @@ source = "users.csv"
 
     let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
 
-    // Full state patch: TRUNCATE + INSERT for all rows
+    // Full state patch: DELETE + INSERT for all rows
     assert_eq!(common::count_sql(&sql, "INSERT INTO"), 2);
     common::assert_sql_statements(
         &sql,
         &[
-            r#"TRUNCATE "users";"#,
+            r#"DELETE FROM "users";"#,
             r#"INSERT INTO "users" ("id", "name") VALUES (1, 'Alice');"#,
             r#"INSERT INTO "users" ("id", "name") VALUES (2, 'Bob');"#,
         ],

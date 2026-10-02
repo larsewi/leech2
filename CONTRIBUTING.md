@@ -156,7 +156,7 @@ non-conflicting scenarios seamlessly, while others detect unresolvable conflicts
 
 When the reference hash is genesis or can't be resolved (e.g. the block chain
 was truncated or corrupted), the library skips consolidation entirely and
-produces a full state snapshot for all tables. This guarantees TRUNCATE + INSERT
+produces a full state snapshot for all tables. This guarantees DELETE + INSERT
 SQL that is safe to apply regardless of what the target database currently
 contains. The same fallback applies when the block chain is broken (e.g. a block
 is missing).
@@ -206,7 +206,8 @@ Patch:
 
 `patch_to_sql()` converts an encoded patch into SQL statements. For delta tables
 it generates `DELETE`, `INSERT`, and `UPDATE` statements. For full state tables
-it generates `TRUNCATE` followed by `INSERT` statements. Column ordering follows
+it generates `DELETE` followed by `INSERT` statements (`DELETE` rather than
+`TRUNCATE`, since SQLite has no `TRUNCATE`). Column ordering follows
 the wire's `Delta.fields`/`Table.fields` rather than the hub config's
 declaration order, so values land in the columns the agent intended even if the
 hub config declares the same fields in a different order. Schema disagreements
@@ -218,7 +219,7 @@ output (quoting for `TEXT`, bare numbers for `NUMBER`, etc.).
 When a patch carries injected fields (see `[[injected-fields]]` config section
 in [README.md](README.md)), those columns are injected into all SQL output:
 `INSERT` values include them, `DELETE`/`UPDATE`- `WHERE` clauses are scoped by
-them, and state payloads use `DELETE FROM ... WHERE ...` instead of `TRUNCATE`
+them, and state payloads scope their `DELETE FROM` with a `WHERE` clause on them
 to preserve other agents data. Injected fields can also be added or overwritten
 after the fact via `Patch::inject_field()` (and its CLI / C FFI counterparts),
 which the receiving side of a connection can use to attach authoritative values
@@ -237,7 +238,7 @@ position can be safely pruned.
 `Patch::failed()` handles the case where a patch could not be applied to the
 target database. It removes the `REPORTED` file, which forces the next
 `Patch::create()` to start from genesis and produce a full state patch
-(`TRUNCATE` + `INSERT` for all tables). This is idempotent and safe regardless
+(`DELETE` + `INSERT` for all tables). This is idempotent and safe regardless
 of the current database state -- the full state patch will bring the database to
 the correct state even if a previous partial application left it inconsistent.
 

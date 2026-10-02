@@ -470,7 +470,7 @@ fn delta_to_sql(
     Ok(())
 }
 
-/// Generate SQL statements for a single table's full state (TRUNCATE/DELETE + INSERT).
+/// Generate SQL statements for a single table's full state (DELETE + INSERT).
 fn state_table_to_sql(
     config: &Config,
     table_name: &str,
@@ -487,19 +487,17 @@ fn state_table_to_sql(
     schema.reject_injected_collisions(injected_fields, table_name)?;
     let quoted_table = quote_identifier(table_name);
 
-    if injected_fields.is_empty() {
-        out.push_str(&format!("TRUNCATE {};\n", quoted_table));
-    } else {
-        let mut conditions = Vec::new();
-        for injected in injected_fields {
-            conditions.push(injected.where_clause());
-        }
-        out.push_str(&format!(
-            "DELETE FROM {}\nWHERE {};\n",
-            quoted_table,
-            conditions.join(" AND ")
-        ));
+    // DELETE rather than TRUNCATE, since SQLite has no TRUNCATE. Injected
+    // fields scope the DELETE to this agent's rows.
+    out.push_str(&format!("DELETE FROM {}", quoted_table));
+    let mut conditions = Vec::new();
+    for injected in injected_fields {
+        conditions.push(injected.where_clause());
     }
+    if !conditions.is_empty() {
+        out.push_str(&format!("\nWHERE {}", conditions.join(" AND ")));
+    }
+    out.push_str(";\n");
 
     emit_inserts(&table.records, &schema, injected_fields, &quoted_table, out)
         .with_context(|| format!("table '{table_name}'"))?;

@@ -101,8 +101,8 @@ source = "logs.csv"
     // Verify SQL generation.
     let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
 
-    // items: state path -> TRUNCATE + 3 INSERTs
-    assert!(sql.contains(r#"TRUNCATE "items";"#));
+    // items: state path -> DELETE + 3 INSERTs
+    assert!(sql.contains(r#"DELETE FROM "items";"#));
     assert_eq!(common::count_sql(&sql, r#"INSERT INTO "items""#), 3);
 
     // logs: delta path -> 1 INSERT
@@ -169,8 +169,8 @@ source = "logs.csv"
 
     let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
 
-    // logs: state path -> TRUNCATE + 3 INSERTs
-    assert!(sql.contains(r#"TRUNCATE "logs";"#));
+    // logs: state path -> DELETE + 3 INSERTs
+    assert!(sql.contains(r#"DELETE FROM "logs";"#));
     assert_eq!(common::count_sql(&sql, r#"INSERT INTO "logs""#), 3);
 
     // items: delta path -> 1 INSERT

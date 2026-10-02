@@ -49,13 +49,16 @@ source = "users.csv"
         )
     );
 
-    // Unknown prefix should fall back to full state patch (TRUNCATE + INSERT)
+    // Unknown prefix should fall back to full state patch (DELETE + INSERT)
     let patch = Patch::create(&config, "deadbeefdeadbeef").unwrap();
     assert_eq!(patch.head, hash2);
     assert_eq!(patch.num_blocks, 0);
 
     let sql_fallback = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
-    assert_eq!(common::count_sql(&sql_fallback, "TRUNCATE"), 1);
+    assert_eq!(
+        common::count_sql(&sql_fallback, r#"DELETE FROM "users";"#),
+        1
+    );
     assert_eq!(common::count_sql(&sql_fallback, "INSERT INTO"), 2);
 
     common::assert_wire_roundtrip(&config, &patch);

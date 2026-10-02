@@ -40,8 +40,8 @@ source = "items.csv"
     let _hash2 = Block::create(&config, None).unwrap();
 
     // Patch from hash1: delta has 18 deletes, state has 2 rows.
-    // State should be smaller -> SQL uses TRUNCATE + INSERT pattern.
-    // If deltas win instead, SQL uses DELETE FROM pattern.
+    // State should be smaller -> SQL uses DELETE + INSERT pattern.
+    // If deltas win instead, SQL uses per-row DELETE pattern.
     let patch = Patch::create(&config, &hash1).unwrap();
     assert_eq!(patch.num_blocks, 1);
     assert!(
@@ -51,10 +51,10 @@ source = "items.csv"
 
     let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
 
-    if sql.contains("TRUNCATE") {
-        // State payload: TRUNCATE + 2 INSERTs
+    if !patch.states.is_empty() {
+        // State payload: DELETE + 2 INSERTs
         assert_eq!(common::count_sql(&sql, "INSERT INTO"), 2);
-        assert_eq!(common::count_sql(&sql, "DELETE FROM"), 0);
+        assert_eq!(common::count_sql(&sql, "DELETE FROM"), 1);
     } else {
         // Deltas payload: 18 DELETEs
         assert_eq!(common::count_sql(&sql, "DELETE FROM"), 18);
@@ -146,11 +146,12 @@ source = "logs.csv"
     // Verify SQL contains both delta and state patterns.
     let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
 
-    // logs: delta path -> 1 INSERT, no TRUNCATE for logs
+    // logs: delta path -> 1 INSERT, no DELETE for logs
     assert!(sql.contains(r#"INSERT INTO "logs""#));
+    assert!(!sql.contains(r#"DELETE FROM "logs""#));
 
-    // items: state path -> TRUNCATE + 2 INSERTs
-    assert!(sql.contains(r#"TRUNCATE "items";"#));
+    // items: state path -> DELETE + 2 INSERTs
+    assert!(sql.contains(r#"DELETE FROM "items";"#));
     assert_eq!(common::count_sql(&sql, r#"INSERT INTO "items""#), 2);
 
     common::assert_wire_roundtrip(&config, &patch);
