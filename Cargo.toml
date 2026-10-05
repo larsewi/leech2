@@ -42,7 +42,7 @@ toml = "1.1.6"
 zstd = "0.14.0"
 
 [dev-dependencies]
-cc = "1.5.1"
+cc = "1.6.0"
 ctor = "1.0.13"
 rand = "0.10.3"
 tempfile = "3.27.0"
