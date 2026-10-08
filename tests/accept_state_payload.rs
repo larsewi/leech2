@@ -5,6 +5,7 @@ use leech2::config::Config;
 use leech2::patch::Patch;
 use leech2::sql;
 use leech2::utils::GENESIS_HASH;
+use prost::Message;
 
 #[test]
 fn test_state_payload_when_smaller_than_deltas() {
@@ -162,4 +163,75 @@ source = "logs.csv"
     assert_eq!(patch_genesis.states.len(), 2);
 
     common::assert_wire_roundtrip(&config, &patch_genesis);
+}
+
+/// A table with `use-full-state-if-smaller = false` keeps its delta even when
+/// the full state is smaller, while a table on the default falls back to state.
+#[test]
+fn test_use_full_state_if_smaller_disabled_keeps_delta() {
+    let tmp = tempfile::tempdir().unwrap();
+    let work_dir = tmp.path();
+
+    common::write_config(
+        work_dir,
+        "config.toml",
+        r#"
+[tables.items]
+use-full-state-if-smaller = false
+fields = [
+    { name = "id", type = "NUMBER", primary-key = true },
+    { name = "name", type = "TEXT" },
+]
+
+[tables.items.csv]
+source = "items.csv"
+
+[tables.logs]
+fields = [
+    { name = "seq", type = "NUMBER", primary-key = true },
+    { name = "message", type = "TEXT" },
+]
+
+[tables.logs.csv]
+source = "logs.csv"
+"#,
+    );
+
+    // Block 1: both tables have 20 rows.
+    let mut items_csv = String::new();
+    let mut logs_csv = String::new();
+    for i in 1..=20 {
+        items_csv.push_str(&format!("{},item{}\n", i, i));
+        logs_csv.push_str(&format!("{},log message number {}\n", i, i));
+    }
+    common::write_csv(work_dir, "items.csv", &items_csv);
+    common::write_csv(work_dir, "logs.csv", &logs_csv);
+    let config = Config::load(work_dir).unwrap();
+    let hash1 = Block::create(&config, None).unwrap();
+
+    // Block 2: both tables drop to 2 rows (18 deletes -> state is smaller).
+    common::write_csv(work_dir, "items.csv", "1,item1\n2,item2\n");
+    common::write_csv(
+        work_dir,
+        "logs.csv",
+        "1,log message number 1\n2,log message number 2\n",
+    );
+    let _hash2 = Block::create(&config, None).unwrap();
+
+    let patch = Patch::create(&config, &hash1).unwrap();
+    assert!(patch.deltas.contains_key("items"));
+    assert!(!patch.states.contains_key("items"));
+    assert!(patch.states.contains_key("logs"));
+    assert!(!patch.deltas.contains_key("logs"));
+
+    // Guard the premise: the delta kept for items really is larger than its
+    // full state, so the default would have replaced it.
+    let full_state_patch = Patch::create(&config, GENESIS_HASH).unwrap();
+    assert!(patch.deltas["items"].encoded_len() > full_state_patch.states["items"].encoded_len());
+
+    let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
+    assert_eq!(common::count_sql(&sql, r#"DELETE FROM "items""#), 18);
+    assert_eq!(common::count_sql(&sql, r#"INSERT INTO "items""#), 0);
+
+    common::assert_wire_roundtrip(&config, &patch);
 }
