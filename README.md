@@ -136,6 +136,10 @@ include = ["conf.d/*.toml", "conf.d/*.json"]
 - A field may carry an optional `comment` describing what it is for. leech2
   ignores it. It exists only to document fields in `config.json`, which has no
   comment syntax of its own.
+- By default, a patch carries a table as a full state instead of a delta
+  whenever the full state is smaller. Set `use-full-state-if-smaller = false`
+  on a table to always send its delta. Full state is then only used when a delta
+  cannot be produced (e.g. a new table, a layout change, or missing blocks).
 
 ```toml
 [tables.products]

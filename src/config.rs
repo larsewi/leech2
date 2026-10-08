@@ -72,6 +72,11 @@ fn default_dir_mode() -> u32 {
     0o700
 }
 
+/// Serde default for boolean options that are enabled unless turned off.
+fn default_true() -> bool {
+    true
+}
+
 // Custom deserializer for `file-mode`: reads the field as a string and parses it
 // via `parse_file_mode`. The parsed value is range checked in `Config::validate`.
 fn deserialize_file_mode<'de, D>(deserializer: D) -> Result<u32, D::Error>
@@ -450,6 +455,12 @@ pub struct TableConfig {
     /// the table is callback-backed and rows are pulled from the FFI cell
     /// callback.
     pub csv: Option<CsvConfig>,
+    /// When true (the default), patch creation sends this table as a full
+    /// state instead of a consolidated delta whenever the full state encodes
+    /// smaller. When false, full state is only used when delta creation fails
+    /// (e.g. due to new tables, layout changes, missing blocks).
+    #[serde(rename = "use-full-state-if-smaller", default = "default_true")]
+    pub use_full_state_if_smaller: bool,
 }
 
 impl Validate for FieldConfig {

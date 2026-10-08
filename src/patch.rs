@@ -11,7 +11,7 @@ use prost_types::Timestamp;
 
 use crate::block::Block;
 use crate::cell::{Cell, parse_typed_cell};
-use crate::config::{Config, InjectedFieldConfig};
+use crate::config::{Config, InjectedFieldConfig, TableConfig};
 use crate::delta::Delta;
 use crate::head;
 use crate::proto::delta::Delta as ProtoDelta;
@@ -198,6 +198,7 @@ fn try_consolidate(
     head: &str,
     last_known: &str,
     mode: u32,
+    table_configs: &HashMap<String, TableConfig>,
 ) -> Result<ConsolidateResult> {
     let (created, block_hashes) = collect_block_hashes(work_dir, head, last_known, mode)?;
 
@@ -278,8 +279,15 @@ fn try_consolidate(
             merged_delta.deletes.len(),
         );
 
+        // A table removed from config has no setting; keep the default.
+        let use_full_state_if_smaller = match table_configs.get(&table_name) {
+            Some(table_config) => table_config.use_full_state_if_smaller,
+            None => true,
+        };
+
         // Per-table size comparison: use full state if it's smaller.
-        if let Some(state_table) = state_tables.get(&table_name)
+        if use_full_state_if_smaller
+            && let Some(state_table) = state_tables.get(&table_name)
             && state_table.encoded_len() < merged_delta.encoded_len()
         {
             log::info!(
@@ -425,7 +433,7 @@ impl Patch {
         };
 
         let (created, num_blocks, deltas, states) =
-            match try_consolidate(&state_dir, &head, &last_known, file_mode) {
+            match try_consolidate(&state_dir, &head, &last_known, file_mode, &config.tables) {
                 Ok(result) => result,
                 Err(e) => {
                     log::warn!("Consolidation failed, falling back to full state: {}", e);
