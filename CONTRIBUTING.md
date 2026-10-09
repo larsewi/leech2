@@ -376,6 +376,20 @@ Each table cell on the wire is a `proto::cell::Cell` -- a oneof of `null` /
 oneof tag, so the receiver doesn't have to re-parse any strings to know the
 type.
 
+### Compatibility
+
+A hub must be at least as new as the agents that send it patches. A new hub with
+older agents is supported. A new agent with an older hub is not, so hubs are
+upgraded first.
+
+- **Patches** must stay readable by newer hubs. Never renumber a field or reuse
+  its tag for a different meaning, and mark removed tags `reserved`. For a change
+  older agents can't produce, keep the old decoding path in the hub until those
+  agents are no longer supported.
+- **Blocks and STATE** are local to the agent. If a block can't be decoded, patch
+  creation falls back to a full state, so block format changes self-heal. Make
+  sure old blocks fail to decode instead of decoding into wrong data.
+
 ## Delta merging rules
 
 The 15 merge rules in `src/delta.rs` are fully specified in
