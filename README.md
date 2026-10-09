@@ -145,7 +145,9 @@ include = ["conf.d/*.toml", "conf.d/*.json"]
   of the last block that changed the record into that column, as an ISO 8601
   UTC literal (e.g. `'2026-10-09T08:30:00Z'`). The column must not be a field or
   an injected field, and it must be nullable: records sent as part of a full
-  state get `NULL`. To keep timestamps across patches, consider also setting
+  state get `NULL`. INSERT and UPDATE also write `NULL` when the agent does not
+  track changes (e.g. an older agent, or one without this option), replacing
+  earlier timestamps. To keep timestamps across patches, consider also setting
   `use-full-state-if-smaller = false`. Removing the option leaves the column's
   existing values in place.
 
