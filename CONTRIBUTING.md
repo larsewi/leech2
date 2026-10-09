@@ -308,9 +308,9 @@ src/
   state.rs      Snapshot of all tables, protobuf persistence
   cell.rs       Domain Cell type + conversions to/from proto::cell::Cell
   record.rs     Record type (Vec<Cell> key + value)
-  insert.rs     Insert type (key, value, change timestamp)
-  update.rs     Update type (key, changed indices, old/new values, change
-                timestamp)
+  insert.rs     Delta insert map + block/patch insert conversions
+  update.rs     Delta update map + block/patch update conversions (sparse
+                encoding)
   delta.rs      Diff computation + merge logic (see DELTA_MERGING_RULES.md)
   block.rs      Content-addressable block creation and loading
   patch.rs      Patch consolidation, per-table payload selection
@@ -370,6 +370,17 @@ Proto definitions are in `proto/`. Code is generated at build time via
 Domain types have `From` impls to convert to/from their proto counterparts. All
 protobuf types implement `Display`, so you can print them directly to inspect
 their contents (e.g. `println!("{}", block)`, `println!("{}", patch)`).
+
+Blocks and patches have their own `Delta` and `Update` messages, in
+`block.proto` and `patch.proto`. Block deltas keep the values of deletes and
+both sides of updates, which the merge rules need. Patch deltas carry key-only
+deletes and sparse updates, and are what the hub turns into SQL.
+
+Both used to be a single `delta.Delta` message, which served blocks and patches
+by convention. When it was split, each message kept the original field tags, so
+blocks and patches written by older versions still decode. Fields that one side
+never sets were dropped from that side and marked `reserved`, so their tags are
+never reused.
 
 Each table cell on the wire is a `proto::cell::Cell` -- a oneof of `null` /
 `text` / `boolean` / `number` (`f64`). The type travels with the data via the
