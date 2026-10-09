@@ -2,12 +2,13 @@ use std::collections::{HashMap, HashSet};
 use std::fmt;
 
 use anyhow::{Result, bail};
+use prost_types::Timestamp;
 
 use crate::cell::{Cell, decode_proto_cells, display_proto_cells};
 use crate::proto::cell::Cell as ProtoCell;
 use crate::proto::update::Update as ProtoUpdate;
 
-pub type UpdateMap = HashMap<Vec<Cell>, (Vec<Cell>, Vec<Cell>)>;
+pub type UpdateMap = HashMap<Vec<Cell>, (Vec<Cell>, Vec<Cell>, Option<Timestamp>)>;
 
 /// A record whose subsidiary (non-key) cells changed between two states.
 ///
@@ -20,6 +21,9 @@ pub struct Update {
     pub changed_indices: Vec<u32>,
     pub old_value: Vec<Cell>,
     pub new_value: Vec<Cell>,
+    /// Creation time of the last block that changed this record. Only set for
+    /// tables that track changes.
+    pub change_timestamp: Option<Timestamp>,
 }
 
 impl TryFrom<ProtoUpdate> for Update {
@@ -31,6 +35,7 @@ impl TryFrom<ProtoUpdate> for Update {
             changed_indices: proto.changed_indices,
             old_value: decode_proto_cells(proto.old_value)?,
             new_value: decode_proto_cells(proto.new_value)?,
+            change_timestamp: proto.change_timestamp,
         })
     }
 }
@@ -42,17 +47,23 @@ impl From<Update> for ProtoUpdate {
             changed_indices: update.changed_indices,
             old_value: update.old_value.into_iter().map(Into::into).collect(),
             new_value: update.new_value.into_iter().map(Into::into).collect(),
-            ..Default::default()
+            change_timestamp: update.change_timestamp,
         }
     }
 }
 
-impl From<(Vec<Cell>, (Vec<Cell>, Vec<Cell>))> for ProtoUpdate {
-    fn from((key, (old_value, new_value)): (Vec<Cell>, (Vec<Cell>, Vec<Cell>))) -> Self {
+impl From<(Vec<Cell>, (Vec<Cell>, Vec<Cell>, Option<Timestamp>))> for ProtoUpdate {
+    fn from(
+        (key, (old_value, new_value, change_timestamp)): (
+            Vec<Cell>,
+            (Vec<Cell>, Vec<Cell>, Option<Timestamp>),
+        ),
+    ) -> Self {
         ProtoUpdate {
             key: key.into_iter().map(Into::into).collect(),
             old_value: old_value.into_iter().map(Into::into).collect(),
             new_value: new_value.into_iter().map(Into::into).collect(),
+            change_timestamp,
             ..Default::default()
         }
     }
@@ -206,7 +217,10 @@ pub fn decode_proto_updates(protos: Vec<ProtoUpdate>, num_subsidiary: usize) -> 
     for mut proto in protos {
         proto.expand_sparse(num_subsidiary)?;
         let update = Update::try_from(proto)?;
-        updates.insert(update.key, (update.old_value, update.new_value));
+        updates.insert(
+            update.key,
+            (update.old_value, update.new_value, update.change_timestamp),
+        );
     }
     Ok(updates)
 }
@@ -342,6 +356,10 @@ mod tests {
             changed_indices: vec![0],
             old_value: vec![],
             new_value: vec!["x".into()],
+            change_timestamp: Some(Timestamp {
+                seconds: 1_700_000_000,
+                nanos: 0,
+            }),
         };
         let proto: ProtoUpdate = domain.clone().into();
         let back: Update = proto.try_into().unwrap();
