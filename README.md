@@ -140,6 +140,14 @@ include = ["conf.d/*.toml", "conf.d/*.json"]
   whenever the full state is smaller. Set `use-full-state-if-smaller = false`
   on a table to always send its delta. Full state is then only used when a delta
   cannot be produced (e.g. a new table, a layout change, or missing blocks).
+- Set `change-timestamp = "<column>"` on a table to record when each record last
+  changed. Generated INSERT and UPDATE statements then write the creation time
+  of the last block that changed the record into that column, as an ISO 8601
+  UTC literal (e.g. `'2026-10-09T08:30:00Z'`). The column must not be a field or
+  an injected field, and it must be nullable: records sent as part of a full
+  state get `NULL`. To keep timestamps across patches, consider also setting
+  `use-full-state-if-smaller = false`. Removing the option leaves the column's
+  existing values in place.
 
 ```toml
 [tables.products]
