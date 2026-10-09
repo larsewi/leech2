@@ -4,7 +4,6 @@ fn main() {
     let proto_files = [
         "proto/block.proto",
         "proto/record.proto",
-        "proto/injected.proto",
         "proto/patch.proto",
         "proto/state.proto",
         "proto/table.proto",

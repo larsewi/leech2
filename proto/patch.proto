@@ -3,7 +3,6 @@ syntax = "proto3";
 package patch;
 
 import "cell.proto";
-import "injected.proto";
 import "table.proto";
 import "google/protobuf/timestamp.proto";
 
@@ -15,13 +14,23 @@ message Patch {
   // Timestamp when the HEAD block was created.
   google.protobuf.Timestamp created = 2;
   // Static fields injected into all SQL output (extra columns in INSERT, conditions in WHERE).
-  repeated injected.Field injected_fields = 3;
+  repeated InjectedField injected_fields = 3;
   // The number of blocks that were merged to produce this patch.
   uint32 num_blocks = 4;
   // Tables with incremental changes (key = table name).
   map<string, Delta> deltas = 5;
   // Tables requiring a full state snapshot (key = table name).
   map<string, table.Table> states = 6;
+}
+
+// A static field injected into all SQL output.
+// Each injected field adds a column to INSERT statements and a condition
+// to DELETE/UPDATE WHERE clauses.
+message InjectedField {
+  // Column name in the target database (e.g. "host", "environment").
+  string name = 1;
+  // The static value. The type is carried by the oneof tag inside the Cell.
+  cell.Cell value = 2;
 }
 
 // Delta represents the consolidated changes to a single table, as sent to the

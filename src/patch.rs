@@ -14,21 +14,21 @@ use crate::cell::{Cell, parse_typed_cell};
 use crate::config::{Config, InjectedFieldConfig, TableConfig};
 use crate::delta::Delta;
 use crate::head;
-use crate::proto::injected::Field;
 use crate::proto::patch::Delta as ProtoDelta;
+use crate::proto::patch::InjectedField;
 use crate::proto::state::State as ProtoState;
 use crate::proto::table::Table as ProtoTable;
 use crate::stats::{self, Stage, StageStats};
 use crate::utils;
 use crate::utils::{GENESIS_HASH, validate_field_name};
 
-impl TryFrom<&InjectedFieldConfig> for Field {
+impl TryFrom<&InjectedFieldConfig> for InjectedField {
     type Error = anyhow::Error;
 
     fn try_from(config: &InjectedFieldConfig) -> Result<Self> {
         let value = parse_typed_cell(&config.value, config.kind)
             .with_context(|| format!("injected field '{}'", config.name))?;
-        Ok(Field {
+        Ok(InjectedField {
             name: config.name.clone(),
             value: Some(value.into()),
         })
@@ -311,12 +311,12 @@ fn try_consolidate(
 }
 
 /// Build the injected-field list from config, converting each entry to its
-/// proto `Field`. Shared by `Patch::create` and `full_state_size` so the
+/// proto `InjectedField`. Shared by `Patch::create` and `full_state_size` so the
 /// baseline and the real patch carry the same injected fields.
-fn build_injected_fields(config: &Config) -> Result<Vec<Field>> {
+fn build_injected_fields(config: &Config) -> Result<Vec<InjectedField>> {
     let mut injected_fields = Vec::with_capacity(config.injected_fields.len());
     for field_config in &config.injected_fields {
-        injected_fields.push(Field::try_from(field_config)?);
+        injected_fields.push(InjectedField::try_from(field_config)?);
     }
     Ok(injected_fields)
 }
@@ -337,7 +337,7 @@ fn full_state_size(config: &Config, num_blocks: u32) -> Result<u64> {
 fn full_state_patch(
     work_dir: &Path,
     head: &str,
-    injected_fields: Vec<Field>,
+    injected_fields: Vec<InjectedField>,
     mode: u32,
 ) -> Result<Patch> {
     let created = Block::load(work_dir, head, mode)
@@ -488,7 +488,7 @@ impl Patch {
             }
             existing.value = Some(new_value);
         } else {
-            self.injected_fields.push(Field {
+            self.injected_fields.push(InjectedField {
                 name: name.to_string(),
                 value: Some(new_value),
             });
@@ -518,7 +518,7 @@ mod tests {
         }
     }
 
-    fn injected_value(field: &Field) -> Cell {
+    fn injected_value(field: &InjectedField) -> Cell {
         Cell::try_from(field.value.as_ref().unwrap()).unwrap()
     }
 
@@ -554,7 +554,7 @@ mod tests {
     #[test]
     fn test_inject_field_overwrite_replaces_value() {
         let mut patch = empty_patch();
-        patch.injected_fields.push(Field {
+        patch.injected_fields.push(InjectedField {
             name: "host".to_string(),
             value: Some(Cell::Number(1.0).into()),
         });

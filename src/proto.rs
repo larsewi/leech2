@@ -8,9 +8,6 @@ pub mod record {
 pub mod table {
     include!(concat!(env!("OUT_DIR"), "/table.rs"));
 }
-pub mod injected {
-    include!(concat!(env!("OUT_DIR"), "/injected.rs"));
-}
 pub mod patch {
     include!(concat!(env!("OUT_DIR"), "/patch.rs"));
 }
