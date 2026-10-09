@@ -24,6 +24,9 @@ Linux, an `.msi` for Windows. Each release also carries a plain tarball or zip
 per platform. Nothing below is needed to install a package; the build
 dependencies only matter if you build from source.
 
+When upgrading, upgrade the hub before its agents. A hub reads patches from
+older agents, but an older hub may not read patches from newer agents.
+
 ## Build dependencies
 
 ```
