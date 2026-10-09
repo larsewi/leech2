@@ -108,6 +108,13 @@ A record present in both, with at least one non-key cell changed. Carries `key`,
 The change-set for _one_ table between two states: its inserts, deletes, and
 updates.
 
+### Change timestamp
+
+The creation time of the last block that changed a record. Carried on patch
+inserts and updates of tables with `change-timestamp`, and written into that
+column. Use **change timestamp** for this per-record time and **created** for a
+block's or patch's own time.
+
 ### Rule
 
 One of the 15 cases for merging a parent operation and a child operation on the

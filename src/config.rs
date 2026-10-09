@@ -461,11 +461,27 @@ pub struct TableConfig {
     /// (e.g. due to new tables, layout changes, missing blocks).
     #[serde(rename = "use-full-state-if-smaller", default = "default_true")]
     pub use_full_state_if_smaller: bool,
+    /// Name of a SQL column that receives the creation time of the last block
+    /// that changed each record. Written on INSERT and UPDATE. Records sent as
+    /// part of a full state get NULL. When absent, no such column is written.
+    #[serde(default, rename = "change-timestamp")]
+    pub change_timestamp: Option<String>,
 }
 
 impl Validate for FieldConfig {
     fn validate(&self) -> Result<()> {
         validate_field_name(&self.name)
+    }
+}
+
+impl Default for TableConfig {
+    fn default() -> Self {
+        Self {
+            fields: Vec::new(),
+            csv: None,
+            use_full_state_if_smaller: default_true(),
+            change_timestamp: None,
+        }
     }
 }
 
@@ -488,6 +504,13 @@ impl Validate for TableConfig {
             csv.validate(&seen)?;
         }
 
+        if let Some(column) = &self.change_timestamp {
+            validate_field_name(column).context("change-timestamp")?;
+            if seen.contains(column.as_str()) {
+                bail!("change-timestamp '{}' collides with a field", column);
+            }
+        }
+
         Ok(())
     }
 }
@@ -503,6 +526,11 @@ impl TableConfig {
             .filter(|field| field.primary_key)
             .map(|field| field.name.clone())
             .collect()
+    }
+
+    /// Whether patch creation tracks per-record change times for this table.
+    pub fn tracks_changes(&self) -> bool {
+        self.change_timestamp.is_some()
     }
 }
 
@@ -530,7 +558,9 @@ impl Validate for Config {
                 );
             }
             for (table_name, table) in &self.tables {
-                if table.fields.iter().any(|f| f.name == field.name) {
+                if table.fields.iter().any(|f| f.name == field.name)
+                    || table.change_timestamp.as_ref() == Some(&field.name)
+                {
                     bail!(
                         "injected-fields[{}] '{}' collides with a column in table '{}'",
                         index,
@@ -1615,5 +1645,64 @@ fields = [
 
         let config = Config::load(dir.path()).unwrap();
         assert!(config.tables.contains_key("users"));
+    }
+
+    fn load_with_change_timestamp(column: &str, injected: &str) -> Result<Config> {
+        let dir = tempfile::tempdir().unwrap();
+        let toml_input = format!(
+            r#"
+{injected}
+[tables.users]
+change-timestamp = "{column}"
+fields = [
+    {{ name = "id", type = "NUMBER", primary-key = true }},
+    {{ name = "name", type = "TEXT" }},
+]
+"#
+        );
+        fs::write(dir.path().join("config.toml"), toml_input).unwrap();
+        Config::load(dir.path())
+    }
+
+    #[test]
+    fn test_change_timestamp_accepted() {
+        let config = load_with_change_timestamp("changetimestamp", "").unwrap();
+        let table = &config.tables["users"];
+        assert_eq!(table.change_timestamp.as_deref(), Some("changetimestamp"));
+        assert!(table.tracks_changes());
+    }
+
+    #[test]
+    fn test_change_timestamp_defaults_to_none() {
+        let dir = tempfile::tempdir().unwrap();
+        let toml_input = r#"
+[tables.users]
+fields = [{ name = "id", type = "NUMBER", primary-key = true }]
+"#;
+        fs::write(dir.path().join("config.toml"), toml_input).unwrap();
+        let config = Config::load(dir.path()).unwrap();
+        assert!(!config.tables["users"].tracks_changes());
+    }
+
+    #[test]
+    fn test_change_timestamp_rejects_field_collision() {
+        let err = load_with_change_timestamp("name", "").unwrap_err();
+        let msg = format!("{:#}", err);
+        assert!(msg.contains("collides with a field"), "got: {msg}");
+    }
+
+    #[test]
+    fn test_change_timestamp_rejects_injected_field_collision() {
+        let injected = r#"injected-fields = [{ name = "changed", type = "TEXT", value = "x" }]"#;
+        let err = load_with_change_timestamp("changed", injected).unwrap_err();
+        let msg = format!("{:#}", err);
+        assert!(msg.contains("collides with a column"), "got: {msg}");
+    }
+
+    #[test]
+    fn test_change_timestamp_rejects_control_character() {
+        let err = load_with_change_timestamp("changed\\u0001", "").unwrap_err();
+        let msg = format!("{:#}", err);
+        assert!(msg.contains("control character"), "got: {msg}");
     }
 }

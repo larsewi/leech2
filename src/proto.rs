@@ -2,6 +2,9 @@
 //! These types serve as the serialization layer and are imported throughout the
 //! codebase via `use crate::proto::*`.
 
+pub mod insert {
+    include!(concat!(env!("OUT_DIR"), "/insert.rs"));
+}
 pub mod record {
     include!(concat!(env!("OUT_DIR"), "/record.rs"));
 }

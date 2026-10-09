@@ -126,13 +126,17 @@ struct DeltaCounts {
 /// Merge a single block's deltas into per-table running results. Blocks are
 /// fed in oldest-first, so the running results are the older (parent) side
 /// and the incoming block is the newer (child) side: the merge direction is
-/// `parent.merge(child)`. When `merged_deltas` is empty (first block), this
-/// simply extracts the block's deltas.
+/// `parent.merge(child)`. A table's first block is merged into an empty delta,
+/// so every block passes through the merge rules.
+///
+/// For tables that track changes, the block's creation time is passed to the
+/// merge and becomes the change timestamp of the entries it touches.
 ///
 /// Tables that are new or whose layout changed (delta is `None`), or whose
 /// merge failed, are added to `skipped_tables` and fall back to full state.
 fn merge_block_deltas(
     block: Block,
+    table_configs: &HashMap<String, TableConfig>,
     merged_deltas: &mut HashMap<String, Delta>,
     skipped_tables: &mut HashSet<String>,
     pre_counts: &mut HashMap<String, DeltaCounts>,
@@ -159,14 +163,23 @@ fn merge_block_deltas(
         counts.updates += proto_delta.updates.len();
         counts.deletes += proto_delta.deletes.len();
 
+        // A table removed from config does not track changes.
+        let created = match table_configs.get(&table_name) {
+            Some(table_config) if table_config.tracks_changes() => block.created,
+            _ => None,
+        };
+
         let result = Delta::try_from(proto_delta).and_then(|child| {
-            match merged_deltas.remove(&table_name) {
-                Some(mut parent) => {
-                    parent.merge(child)?;
-                    Ok(parent)
-                }
-                None => Ok(child),
-            }
+            let mut parent = match merged_deltas.remove(&table_name) {
+                Some(parent) => parent,
+                None => Delta {
+                    primary_key_names: child.primary_key_names.clone(),
+                    subsidiary_value_names: child.subsidiary_value_names.clone(),
+                    ..Default::default()
+                },
+            };
+            parent.merge(child, created)?;
+            Ok(parent)
         });
 
         match result {
@@ -225,6 +238,7 @@ fn try_consolidate(
         let block = Block::load(work_dir, hash, mode)?;
         merge_block_deltas(
             block,
+            table_configs,
             &mut merged_deltas,
             &mut skipped_tables,
             &mut pre_counts,
@@ -495,6 +509,11 @@ impl Patch {
 mod tests {
     use super::*;
 
+    use crate::cell::text_proto_cells;
+    use crate::proto::block::TableChange;
+    use crate::proto::insert::Insert as ProtoInsert;
+    use crate::proto::update::Update as ProtoUpdate;
+
     fn empty_patch() -> Patch {
         Patch {
             head: String::new(),
@@ -605,5 +624,105 @@ mod tests {
         let mut patch = empty_patch();
         let _ = patch.inject_field("foo", Cell::Null);
         assert!(patch.injected_fields.is_empty());
+    }
+
+    fn timestamp(seconds: i64) -> Timestamp {
+        Timestamp { seconds, nanos: 0 }
+    }
+
+    fn insert(key: &str, value: &str) -> ProtoInsert {
+        ProtoInsert {
+            key: text_proto_cells(&[key]),
+            value: text_proto_cells(&[value]),
+            ..Default::default()
+        }
+    }
+
+    fn update(key: &str, old_value: &str, new_value: &str) -> ProtoUpdate {
+        ProtoUpdate {
+            key: text_proto_cells(&[key]),
+            old_value: text_proto_cells(&[old_value]),
+            new_value: text_proto_cells(&[new_value]),
+            ..Default::default()
+        }
+    }
+
+    fn block(seconds: i64, deltas: Vec<(&str, Vec<ProtoInsert>, Vec<ProtoUpdate>)>) -> Block {
+        let mut payload = HashMap::new();
+        for (table_name, inserts, updates) in deltas {
+            let delta = ProtoDelta {
+                primary_key_names: vec!["id".to_string()],
+                subsidiary_value_names: vec!["name".to_string()],
+                inserts,
+                updates,
+                ..Default::default()
+            };
+            payload.insert(table_name.to_string(), TableChange { delta: Some(delta) });
+        }
+        Block {
+            created: Some(timestamp(seconds)),
+            payload,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn test_merge_block_deltas_change_timestamp_from_last_block() {
+        let table_configs = HashMap::from([
+            (
+                "tracked".to_string(),
+                TableConfig {
+                    change_timestamp: Some("changed".to_string()),
+                    ..Default::default()
+                },
+            ),
+            ("untracked".to_string(), TableConfig::default()),
+        ]);
+        let blocks = vec![
+            block(
+                100,
+                vec![
+                    ("tracked", vec![insert("1", "Alice")], vec![]),
+                    ("untracked", vec![insert("1", "Alice")], vec![]),
+                ],
+            ),
+            block(200, vec![("tracked", vec![insert("2", "Bob")], vec![])]),
+            block(
+                300,
+                vec![
+                    ("tracked", vec![], vec![update("1", "Alice", "Alicia")]),
+                    ("untracked", vec![], vec![update("1", "Alice", "Alicia")]),
+                ],
+            ),
+        ];
+
+        let mut merged_deltas = HashMap::new();
+        let mut skipped_tables = HashSet::new();
+        let mut pre_counts = HashMap::new();
+        for block in blocks {
+            merge_block_deltas(
+                block,
+                &table_configs,
+                &mut merged_deltas,
+                &mut skipped_tables,
+                &mut pre_counts,
+            );
+        }
+
+        assert!(skipped_tables.is_empty());
+        let tracked = &merged_deltas["tracked"];
+        assert_eq!(
+            tracked.inserts[&vec![Cell::from("1")]],
+            (vec![Cell::from("Alicia")], Some(timestamp(300)))
+        );
+        assert_eq!(
+            tracked.inserts[&vec![Cell::from("2")]],
+            (vec![Cell::from("Bob")], Some(timestamp(200)))
+        );
+        let untracked = &merged_deltas["untracked"];
+        assert_eq!(
+            untracked.inserts[&vec![Cell::from("1")]],
+            (vec![Cell::from("Alicia")], None)
+        );
     }
 }

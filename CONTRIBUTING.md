@@ -167,6 +167,13 @@ merge. If merging fails for a single table (e.g. an unresolvable conflict), only
 that table falls back to full state -- other tables keep their consolidated
 deltas.
 
+For tables with `change-timestamp`, each block's creation time is passed to the
+merge. Every block goes through the merge rules, including a table's first block,
+which is merged into an empty delta. Entries a block produces or changes take its
+time, so each insert and update in the patch carries the creation time of the
+last block that changed it (see [DELTA_MERGING_RULES.md](DELTA_MERGING_RULES.md)).
+Full states carry no timestamps.
+
 After merging, each table's delta is optimized: deletes are stripped down to
 keys only, and updates are sparse-encoded to include only changed columns. The
 library then compares each table's consolidated delta encoded size against its
@@ -301,7 +308,9 @@ src/
   state.rs      Snapshot of all tables, protobuf persistence
   cell.rs       Domain Cell type + conversions to/from proto::cell::Cell
   record.rs     Record type (Vec<Cell> key + value)
-  update.rs     Update type (key, changed indices, old/new values)
+  insert.rs     Insert type (key, value, change timestamp)
+  update.rs     Update type (key, changed indices, old/new values, change
+                timestamp)
   delta.rs      Diff computation + merge logic (see DELTA_MERGING_RULES.md)
   block.rs      Content-addressable block creation and loading
   patch.rs      Patch consolidation, per-table payload selection

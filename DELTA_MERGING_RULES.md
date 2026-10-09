@@ -217,6 +217,31 @@ value (`Bob`) disagrees with the parent's view of the row's current value
 
 ---
 
+## Change timestamps
+
+For tables with `change-timestamp`, each insert and update in the result carries
+the creation time of the last block that changed it. The merge receives Child's
+block time. A table's first block is merged into an empty delta, so it passes
+through the rules like any other block.
+
+The principle: an entry Child produces or changes takes Child's time. An entry
+only in Parent keeps Parent's time. Deletes carry no time.
+
+| Rule | Result               | Result timestamp |
+| ---- | -------------------- | ---------------- |
+| 1    | `insert`             | Child's          |
+| 3    | `update`             | Child's          |
+| 4    | `insert`             | Parent's         |
+| 7a   | `insert(new val)`    | Child's          |
+| 9b   | `update(old -> new)` | Child's          |
+| 12   | `update`             | Parent's         |
+| 15a  | `update(old -> new)` | Child's          |
+
+Rules that produce a delete (2, 8, 14a), cancel out (6a, 9a, 15b), or fail carry
+no timestamp.
+
+---
+
 ## Quick reference
 
 | Rule | Parent   | Child      | Result               |

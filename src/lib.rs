@@ -12,6 +12,7 @@ pub mod config;
 pub mod delta;
 mod ffi;
 pub mod head;
+pub mod insert;
 mod logger;
 pub mod patch;
 mod proto;
