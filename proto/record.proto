@@ -3,7 +3,6 @@ syntax = "proto3";
 package record;
 
 import "cell.proto";
-import "google/protobuf/timestamp.proto";
 
 // Record represents one row of a table, split into key and value halves.
 message Record {
@@ -11,8 +10,4 @@ message Record {
   repeated cell.Cell key = 1;
   // The subsidiary (non-key) cells.
   repeated cell.Cell value = 2;
-  // Creation time of the last block that changed this record. Only set on
-  // patch inserts, for tables with change-timestamp. Never set in blocks or
-  // STATE.
-  optional google.protobuf.Timestamp change_timestamp = 3;
 }

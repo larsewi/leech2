@@ -4,15 +4,14 @@ use anyhow::Result;
 use prost_types::Timestamp;
 
 use crate::cell::{Cell, decode_proto_cells};
-use crate::proto::record::Record as ProtoRecord;
+use crate::proto::insert::Insert as ProtoInsert;
 
 pub type InsertMap = HashMap<Vec<Cell>, (Vec<Cell>, Option<Timestamp>)>;
 
 /// A record that was added to a table.
 ///
-/// `Insert` is the domain counterpart to a `proto::record::Record` in a
-/// delta's inserts. Unlike [`crate::record::Record`], it carries the record's
-/// change timestamp.
+/// `Insert` is the domain counterpart to `proto::insert::Insert`. Unlike
+/// [`crate::record::Record`], it carries the record's change timestamp.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Insert {
     pub key: Vec<Cell>,
@@ -22,10 +21,10 @@ pub struct Insert {
     pub change_timestamp: Option<Timestamp>,
 }
 
-impl TryFrom<ProtoRecord> for Insert {
+impl TryFrom<ProtoInsert> for Insert {
     type Error = anyhow::Error;
 
-    fn try_from(proto: ProtoRecord) -> Result<Self> {
+    fn try_from(proto: ProtoInsert) -> Result<Self> {
         Ok(Insert {
             key: decode_proto_cells(proto.key)?,
             value: decode_proto_cells(proto.value)?,
@@ -34,9 +33,9 @@ impl TryFrom<ProtoRecord> for Insert {
     }
 }
 
-impl From<(Vec<Cell>, (Vec<Cell>, Option<Timestamp>))> for ProtoRecord {
+impl From<(Vec<Cell>, (Vec<Cell>, Option<Timestamp>))> for ProtoInsert {
     fn from((key, (value, change_timestamp)): (Vec<Cell>, (Vec<Cell>, Option<Timestamp>))) -> Self {
-        ProtoRecord {
+        ProtoInsert {
             key: key.into_iter().map(Into::into).collect(),
             value: value.into_iter().map(Into::into).collect(),
             change_timestamp,
@@ -44,8 +43,8 @@ impl From<(Vec<Cell>, (Vec<Cell>, Option<Timestamp>))> for ProtoRecord {
     }
 }
 
-/// Decode a `Vec<ProtoRecord>` into an [`InsertMap`] keyed by each record's key.
-pub fn decode_proto_inserts(protos: Vec<ProtoRecord>) -> Result<InsertMap> {
+/// Decode a `Vec<ProtoInsert>` into an [`InsertMap`] keyed by each insert's key.
+pub fn decode_proto_inserts(protos: Vec<ProtoInsert>) -> Result<InsertMap> {
     let mut inserts = HashMap::with_capacity(protos.len());
     for proto in protos {
         let insert = Insert::try_from(proto)?;
@@ -58,22 +57,56 @@ pub fn decode_proto_inserts(protos: Vec<ProtoRecord>) -> Result<InsertMap> {
 mod tests {
     use super::*;
 
+    use prost::Message;
+
     use crate::cell::text_proto_cells;
+    use crate::proto::record::Record as ProtoRecord;
 
     #[test]
     fn test_proto_round_trip_keeps_change_timestamp() {
-        let change_timestamp = Timestamp {
-            seconds: 1_700_000_000,
-            nanos: 0,
-        };
-        let proto = ProtoRecord {
+        let proto = ProtoInsert {
             key: text_proto_cells(&["k"]),
             value: text_proto_cells(&["v"]),
-            change_timestamp: Some(change_timestamp),
+            change_timestamp: Some(Timestamp {
+                seconds: 1_700_000_000,
+                nanos: 0,
+            }),
         };
 
         let inserts = decode_proto_inserts(vec![proto.clone()]).unwrap();
         let (key, entry) = inserts.into_iter().next().unwrap();
-        assert_eq!(ProtoRecord::from((key, entry)), proto);
+        assert_eq!(ProtoInsert::from((key, entry)), proto);
+    }
+
+    // Peers built before the Insert message decode delta inserts as Record,
+    // so the two must stay wire-compatible.
+    #[test]
+    fn test_insert_is_wire_compatible_with_record() {
+        let insert = ProtoInsert {
+            key: text_proto_cells(&["k"]),
+            value: text_proto_cells(&["v"]),
+            change_timestamp: Some(Timestamp {
+                seconds: 1_700_000_000,
+                nanos: 0,
+            }),
+        };
+        let record = ProtoRecord::decode(insert.encode_to_vec().as_slice()).unwrap();
+        assert_eq!(
+            record,
+            ProtoRecord {
+                key: text_proto_cells(&["k"]),
+                value: text_proto_cells(&["v"]),
+            }
+        );
+
+        let insert = ProtoInsert::decode(record.encode_to_vec().as_slice()).unwrap();
+        assert_eq!(
+            insert,
+            ProtoInsert {
+                key: text_proto_cells(&["k"]),
+                value: text_proto_cells(&["v"]),
+                change_timestamp: None,
+            }
+        );
     }
 }

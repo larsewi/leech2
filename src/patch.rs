@@ -511,7 +511,7 @@ mod tests {
 
     use crate::cell::text_proto_cells;
     use crate::proto::block::TableChange;
-    use crate::proto::record::Record as ProtoRecord;
+    use crate::proto::insert::Insert as ProtoInsert;
     use crate::proto::update::Update as ProtoUpdate;
 
     fn empty_patch() -> Patch {
@@ -630,8 +630,8 @@ mod tests {
         Timestamp { seconds, nanos: 0 }
     }
 
-    fn insert(key: &str, value: &str) -> ProtoRecord {
-        ProtoRecord {
+    fn insert(key: &str, value: &str) -> ProtoInsert {
+        ProtoInsert {
             key: text_proto_cells(&[key]),
             value: text_proto_cells(&[value]),
             ..Default::default()
@@ -647,7 +647,7 @@ mod tests {
         }
     }
 
-    fn block(seconds: i64, deltas: Vec<(&str, Vec<ProtoRecord>, Vec<ProtoUpdate>)>) -> Block {
+    fn block(seconds: i64, deltas: Vec<(&str, Vec<ProtoInsert>, Vec<ProtoUpdate>)>) -> Block {
         let mut payload = HashMap::new();
         for (table_name, inserts, updates) in deltas {
             let delta = ProtoDelta {

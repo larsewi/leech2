@@ -9,6 +9,7 @@ use crate::config::{Config, FieldConfig};
 use crate::proto::cell::Cell as ProtoCell;
 use crate::proto::delta::Delta as ProtoDelta;
 use crate::proto::injected::Field as ProtoInjectedField;
+use crate::proto::insert::Insert as ProtoInsert;
 use crate::proto::patch::Patch as ProtoPatch;
 use crate::proto::record::Record as ProtoRecord;
 use crate::proto::table::Table as ProtoTable;
@@ -308,56 +309,95 @@ fn emit_deletes(
     Ok(())
 }
 
-/// Generate INSERT statements for a list of records.
+/// Generate INSERT statements for a delta's inserts.
 fn emit_inserts(
+    inserts: &[ProtoInsert],
+    schema: &TableSchema,
+    injected_fields: &[InjectedField],
+    quoted_table: &str,
+    out: &mut String,
+) -> Result<()> {
+    let columns = insert_columns(schema, injected_fields);
+    // Injected values are static across the entire patch, so compute once.
+    let injected_values: Vec<String> = injected_fields.iter().map(|f| f.quoted_value()).collect();
+
+    for insert in inserts {
+        let values = insert_values(
+            &insert.key,
+            &insert.value,
+            insert.change_timestamp.as_ref(),
+            schema,
+            &injected_values,
+        )
+        .with_context(|| format!("key {:?}", insert.key))?;
+        out.push_str(&format!(
+            "INSERT INTO {} ({})\nVALUES ({});\n",
+            quoted_table, columns, values
+        ));
+    }
+
+    Ok(())
+}
+
+/// Generate INSERT statements for a full state's records. Full-state records
+/// carry no change timestamp.
+fn emit_state_inserts(
     records: &[ProtoRecord],
     schema: &TableSchema,
     injected_fields: &[InjectedField],
     quoted_table: &str,
     out: &mut String,
 ) -> Result<()> {
-    if records.is_empty() {
-        return Ok(());
+    let columns = insert_columns(schema, injected_fields);
+    // Injected values are static across the entire patch, so compute once.
+    let injected_values: Vec<String> = injected_fields.iter().map(|f| f.quoted_value()).collect();
+
+    for record in records {
+        let values = insert_values(&record.key, &record.value, None, schema, &injected_values)
+            .with_context(|| format!("key {:?}", record.key))?;
+        out.push_str(&format!(
+            "INSERT INTO {} ({})\nVALUES ({});\n",
+            quoted_table, columns, values
+        ));
     }
 
-    let mut column_parts: Vec<String> =
-        Vec::with_capacity(schema.primary_key_names.len() + schema.subsidiary_value_names.len());
+    Ok(())
+}
+
+/// Build the quoted column list of an INSERT statement: injected fields, then
+/// the table's fields, then the change-timestamp column.
+fn insert_columns(schema: &TableSchema, injected_fields: &[InjectedField]) -> String {
+    let mut columns = Vec::new();
+    for injected in injected_fields {
+        columns.push(injected.quoted_column());
+    }
     for name in schema
         .primary_key_names
         .iter()
         .chain(schema.subsidiary_value_names)
     {
-        column_parts.push(quote_identifier(name));
+        columns.push(quote_identifier(name));
     }
-
-    let injected_columns: Vec<String> = injected_fields.iter().map(|f| f.quoted_column()).collect();
-    column_parts.splice(..0, injected_columns);
     if let Some(column) = schema.change_timestamp {
-        column_parts.push(quote_identifier(column));
+        columns.push(quote_identifier(column));
     }
-    let columns = column_parts.join(", ");
+    columns.join(", ")
+}
 
-    // Injected values are static across the entire patch, so compute once.
-    let injected_values: Vec<String> = injected_fields.iter().map(|f| f.quoted_value()).collect();
-
-    for record in records {
-        let mut literals = format_row(&record.key, &record.value, schema)
-            .with_context(|| format!("key {:?}", record.key))?;
-        literals.splice(..0, injected_values.iter().cloned());
-        if schema.change_timestamp.is_some() {
-            let literal = change_timestamp_literal(record.change_timestamp.as_ref())
-                .with_context(|| format!("key {:?}", record.key))?;
-            literals.push(literal);
-        }
-        out.push_str(&format!(
-            "INSERT INTO {} ({})\nVALUES ({});\n",
-            quoted_table,
-            columns,
-            literals.join(", ")
-        ));
+/// Build the literal list of an INSERT statement, matching [`insert_columns`].
+fn insert_values(
+    key: &[ProtoCell],
+    value: &[ProtoCell],
+    change_timestamp: Option<&Timestamp>,
+    schema: &TableSchema,
+    injected_values: &[String],
+) -> Result<String> {
+    let mut literals = injected_values.to_vec();
+    literals.extend(format_row(key, value, schema)?);
+    if schema.change_timestamp.is_some() {
+        literals.push(change_timestamp_literal(change_timestamp)?);
     }
-
-    Ok(())
+    Ok(literals.join(", "))
 }
 
 /// Format a single UPDATE statement.
@@ -534,7 +574,7 @@ fn state_table_to_sql(
     }
     out.push_str(";\n");
 
-    emit_inserts(&table.records, &schema, injected_fields, &quoted_table, out)
+    emit_state_inserts(&table.records, &schema, injected_fields, &quoted_table, out)
         .with_context(|| format!("table '{table_name}'"))?;
 
     Ok(())
@@ -671,7 +711,7 @@ mod tests {
         };
 
         let mut delta = dummy_delta(&["id"], &[]);
-        delta.inserts.push(ProtoRecord {
+        delta.inserts.push(ProtoInsert {
             key: text_proto_cells(&["1"]),
             ..Default::default()
         });
@@ -694,7 +734,7 @@ mod tests {
             key: text_proto_cells(&["1"]),
             ..Default::default()
         });
-        delta.inserts.push(ProtoRecord {
+        delta.inserts.push(ProtoInsert {
             key: text_proto_cells(&["2"]),
             value: text_proto_cells(&["Bob"]),
             ..Default::default()
@@ -735,7 +775,7 @@ mod tests {
         };
 
         let mut delta = dummy_delta(&["id"], &["name"]);
-        delta.inserts.push(ProtoRecord {
+        delta.inserts.push(ProtoInsert {
             key: text_proto_cells(&["1"]),
             value: text_proto_cells(&["Alice"]),
             ..Default::default()
@@ -814,7 +854,7 @@ mod tests {
         // Wire entry as the agent would have serialized it: subsidiary values
         // laid out in the agent's declaration order, i.e. [name, email].
         let mut delta = dummy_delta(&["id"], &["name", "email"]);
-        delta.inserts.push(ProtoRecord {
+        delta.inserts.push(ProtoInsert {
             key: text_proto_cells(&["1"]),
             value: text_proto_cells(&["Alice", "alice@example.com"]),
             ..Default::default()
@@ -967,7 +1007,7 @@ mod tests {
         };
 
         let mut delta = dummy_delta(&["id"], &["score"]);
-        delta.inserts.push(ProtoRecord {
+        delta.inserts.push(ProtoInsert {
             key: text_proto_cells(&["1"]),
             value: text_proto_cells(&["not-a-number"]),
             ..Default::default()
@@ -1070,7 +1110,7 @@ mod tests {
     #[test]
     fn test_patch_to_sql_writes_change_timestamp() {
         let mut delta = dummy_delta(&["id"], &["name"]);
-        delta.inserts.push(ProtoRecord {
+        delta.inserts.push(ProtoInsert {
             key: text_proto_cells(&["1"]),
             value: text_proto_cells(&["Alice"]),
             change_timestamp: Some(CHANGED),
@@ -1102,7 +1142,7 @@ mod tests {
     #[test]
     fn test_patch_to_sql_writes_null_without_change_timestamp() {
         let mut delta = dummy_delta(&["id"], &["name"]);
-        delta.inserts.push(ProtoRecord {
+        delta.inserts.push(ProtoInsert {
             key: text_proto_cells(&["1"]),
             value: text_proto_cells(&["Alice"]),
             ..Default::default()
@@ -1136,7 +1176,6 @@ mod tests {
             records: vec![ProtoRecord {
                 key: text_proto_cells(&["1"]),
                 value: text_proto_cells(&["Alice"]),
-                ..Default::default()
             }],
         };
         let mut patch = dummy_patch(HashMap::new());
@@ -1166,7 +1205,7 @@ mod tests {
             ..Default::default()
         };
         let mut delta = dummy_delta(&["id"], &["name"]);
-        delta.inserts.push(ProtoRecord {
+        delta.inserts.push(ProtoInsert {
             key: text_proto_cells(&["1"]),
             value: text_proto_cells(&["Alice"]),
             change_timestamp: Some(CHANGED),
@@ -1187,7 +1226,7 @@ mod tests {
     #[test]
     fn test_patch_to_sql_rejects_injected_field_colliding_with_change_timestamp() {
         let mut delta = dummy_delta(&["id"], &["name"]);
-        delta.inserts.push(ProtoRecord {
+        delta.inserts.push(ProtoInsert {
             key: text_proto_cells(&["1"]),
             value: text_proto_cells(&["Alice"]),
             ..Default::default()
@@ -1206,7 +1245,7 @@ mod tests {
     #[test]
     fn test_patch_to_sql_rejects_out_of_range_change_timestamp() {
         let mut delta = dummy_delta(&["id"], &["name"]);
-        delta.inserts.push(ProtoRecord {
+        delta.inserts.push(ProtoInsert {
             key: text_proto_cells(&["1"]),
             value: text_proto_cells(&["Alice"]),
             change_timestamp: Some(Timestamp {

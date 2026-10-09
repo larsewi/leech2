@@ -40,7 +40,6 @@ impl From<Record> for ProtoRecord {
         ProtoRecord {
             key: record.key.into_iter().map(Into::into).collect(),
             value: record.value.into_iter().map(Into::into).collect(),
-            ..Default::default()
         }
     }
 }
@@ -50,7 +49,6 @@ impl From<(Vec<Cell>, Vec<Cell>)> for ProtoRecord {
         ProtoRecord {
             key: key.into_iter().map(Into::into).collect(),
             value: value.into_iter().map(Into::into).collect(),
-            ..Default::default()
         }
     }
 }

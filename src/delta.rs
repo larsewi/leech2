@@ -1521,7 +1521,6 @@ mod tests {
 
         assert_eq!(proto.inserts[0].change_timestamp, Some(timestamp(100)));
         assert_eq!(proto.updates[0].change_timestamp, Some(timestamp(100)));
-        assert_eq!(proto.deletes[0].change_timestamp, None);
     }
 
     // ---- TryFrom<ProtoDelta> self-consistency tests ----
@@ -1532,14 +1531,22 @@ mod tests {
     // into the merge logic in iteration-order-dependent ways.
 
     use crate::cell::text_proto_cells;
+    use crate::proto::insert::Insert as ProtoInsert;
     use crate::proto::record::Record as ProtoRecord;
     use crate::proto::update::Update as ProtoUpdate;
+
+    fn proto_insert(key: &[&str], value: &[&str]) -> ProtoInsert {
+        ProtoInsert {
+            key: text_proto_cells(key),
+            value: text_proto_cells(value),
+            ..Default::default()
+        }
+    }
 
     fn proto_record(key: &[&str], value: &[&str]) -> ProtoRecord {
         ProtoRecord {
             key: text_proto_cells(key),
             value: text_proto_cells(value),
-            ..Default::default()
         }
     }
 
@@ -1548,7 +1555,7 @@ mod tests {
         let proto = ProtoDelta {
             primary_key_names: vec!["id".to_string()],
             subsidiary_value_names: vec!["name".to_string()],
-            inserts: vec![proto_record(&["1"], &["Alice"])],
+            inserts: vec![proto_insert(&["1"], &["Alice"])],
             deletes: vec![proto_record(&["1"], &["Alice"])],
             updates: vec![],
         };
@@ -1562,7 +1569,7 @@ mod tests {
         let proto = ProtoDelta {
             primary_key_names: vec!["id".to_string()],
             subsidiary_value_names: vec!["name".to_string()],
-            inserts: vec![proto_record(&["1"], &["Alice"])],
+            inserts: vec![proto_insert(&["1"], &["Alice"])],
             deletes: vec![],
             updates: vec![ProtoUpdate {
                 key: text_proto_cells(&["1"]),

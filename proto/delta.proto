@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package delta;
 
+import "insert.proto";
 import "record.proto";
 import "update.proto";
 
@@ -13,7 +14,7 @@ message Delta {
   // The subsidiary (non-key) field names, in tuple order.
   repeated string subsidiary_value_names = 2;
   // Records that were added (new keys).
-  repeated record.Record inserts = 3;
+  repeated insert.Insert inserts = 3;
   // Records that were removed (keys no longer present).
   repeated record.Record deletes = 4;
   // Records that were modified (existing keys with changed values).
