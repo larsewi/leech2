@@ -639,7 +639,7 @@ mod tests {
         let mut delta = dummy_delta(&["id"], &[]);
         delta.inserts.push(ProtoRecord {
             key: text_proto_cells(&["1"]),
-            value: vec![],
+            ..Default::default()
         });
         let patch = dummy_patch(HashMap::from([("test_table".to_string(), delta)]));
 
@@ -658,17 +658,19 @@ mod tests {
         let mut delta = dummy_delta(&["id"], &["name"]);
         delta.deletes.push(ProtoRecord {
             key: text_proto_cells(&["1"]),
-            value: vec![],
+            ..Default::default()
         });
         delta.inserts.push(ProtoRecord {
             key: text_proto_cells(&["2"]),
             value: text_proto_cells(&["Bob"]),
+            ..Default::default()
         });
         delta.updates.push(ProtoUpdate {
             key: text_proto_cells(&["3"]),
             changed_indices: vec![0],
             old_value: text_proto_cells(&["Carol"]),
             new_value: text_proto_cells(&["Caroline"]),
+            ..Default::default()
         });
         let patch = dummy_patch(HashMap::from([("users".to_string(), delta)]));
 
@@ -702,6 +704,7 @@ mod tests {
         delta.inserts.push(ProtoRecord {
             key: text_proto_cells(&["1"]),
             value: text_proto_cells(&["Alice"]),
+            ..Default::default()
         });
         let mut patch = dummy_patch(HashMap::from([("test_table".to_string(), delta)]));
         patch.injected_fields.push(ProtoInjectedField {
@@ -728,9 +731,7 @@ mod tests {
         let mut delta = dummy_delta(&["id", "host"], &[]);
         delta.updates.push(ProtoUpdate {
             key: text_proto_cells(&["1", "h"]),
-            changed_indices: vec![],
-            old_value: vec![],
-            new_value: vec![],
+            ..Default::default()
         });
         let patch = dummy_patch(HashMap::from([("test_table".to_string(), delta)]));
 
@@ -753,8 +754,8 @@ mod tests {
         delta.updates.push(ProtoUpdate {
             key: text_proto_cells(&["1"]),
             changed_indices: vec![5],
-            old_value: vec![],
             new_value: text_proto_cells(&["x"]),
+            ..Default::default()
         });
         let patch = dummy_patch(HashMap::from([("test_table".to_string(), delta)]));
 
@@ -782,6 +783,7 @@ mod tests {
         delta.inserts.push(ProtoRecord {
             key: text_proto_cells(&["1"]),
             value: text_proto_cells(&["Alice", "alice@example.com"]),
+            ..Default::default()
         });
 
         let patch = dummy_patch(HashMap::from([("users".to_string(), delta)]));
@@ -934,6 +936,7 @@ mod tests {
         delta.inserts.push(ProtoRecord {
             key: text_proto_cells(&["1"]),
             value: text_proto_cells(&["not-a-number"]),
+            ..Default::default()
         });
         let patch = dummy_patch(HashMap::from([("t".to_string(), delta)]));
 
@@ -956,6 +959,7 @@ mod tests {
             changed_indices: vec![0, 1],
             old_value: text_proto_cells(&["x", "y"]),
             new_value: text_proto_cells(&["only-one"]),
+            ..Default::default()
         });
         let patch = dummy_patch(HashMap::from([("t".to_string(), delta)]));
 
@@ -975,7 +979,7 @@ mod tests {
         let mut delta = dummy_delta(&["id", "host"], &["name"]);
         delta.deletes.push(ProtoRecord {
             key: text_proto_cells(&["1"]),
-            value: vec![],
+            ..Default::default()
         });
         let patch = dummy_patch(HashMap::from([("t".to_string(), delta)]));
 
@@ -997,10 +1001,10 @@ mod tests {
 
         let mut delta = dummy_delta(&["id"], &["name"]);
         delta.updates.push(ProtoUpdate {
-            key: vec![],
             changed_indices: vec![0],
             old_value: text_proto_cells(&["before"]),
             new_value: text_proto_cells(&["after"]),
+            ..Default::default()
         });
         let patch = dummy_patch(HashMap::from([("t".to_string(), delta)]));
 

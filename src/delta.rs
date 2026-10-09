@@ -1384,6 +1384,7 @@ mod tests {
         ProtoRecord {
             key: text_proto_cells(key),
             value: text_proto_cells(value),
+            ..Default::default()
         }
     }
 
@@ -1410,9 +1411,9 @@ mod tests {
             deletes: vec![],
             updates: vec![ProtoUpdate {
                 key: text_proto_cells(&["1"]),
-                changed_indices: vec![],
                 old_value: text_proto_cells(&["Alice"]),
                 new_value: text_proto_cells(&["Alicia"]),
+                ..Default::default()
             }],
         };
         let err = Delta::try_from(proto).unwrap_err();
@@ -1429,9 +1430,9 @@ mod tests {
             deletes: vec![proto_record(&["1"], &["Alice"])],
             updates: vec![ProtoUpdate {
                 key: text_proto_cells(&["1"]),
-                changed_indices: vec![],
                 old_value: text_proto_cells(&["Alice"]),
                 new_value: text_proto_cells(&["Alicia"]),
+                ..Default::default()
             }],
         };
         let err = Delta::try_from(proto).unwrap_err();

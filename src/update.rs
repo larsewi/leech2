@@ -42,6 +42,7 @@ impl From<Update> for ProtoUpdate {
             changed_indices: update.changed_indices,
             old_value: update.old_value.into_iter().map(Into::into).collect(),
             new_value: update.new_value.into_iter().map(Into::into).collect(),
+            ..Default::default()
         }
     }
 }
@@ -50,9 +51,9 @@ impl From<(Vec<Cell>, (Vec<Cell>, Vec<Cell>))> for ProtoUpdate {
     fn from((key, (old_value, new_value)): (Vec<Cell>, (Vec<Cell>, Vec<Cell>))) -> Self {
         ProtoUpdate {
             key: key.into_iter().map(Into::into).collect(),
-            changed_indices: Vec::new(),
             old_value: old_value.into_iter().map(Into::into).collect(),
             new_value: new_value.into_iter().map(Into::into).collect(),
+            ..Default::default()
         }
     }
 }
@@ -240,6 +241,7 @@ mod tests {
             changed_indices: changed_indices.to_vec(),
             old_value: text_proto_cells(old_value),
             new_value: text_proto_cells(new_value),
+            ..Default::default()
         }
     }
 
