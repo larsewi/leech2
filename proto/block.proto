@@ -2,7 +2,8 @@ syntax = "proto3";
 
 package block;
 
-import "delta.proto";
+import "cell.proto";
+import "record.proto";
 import "google/protobuf/timestamp.proto";
 
 // Lightweight view of a Block for reading only the chain metadata without
@@ -28,5 +29,35 @@ message Block {
 // since the previous block, and a full state snapshot is needed during patch
 // consolidation.
 message TableChange {
-  optional delta.Delta delta = 1;
+  optional Delta delta = 1;
+}
+
+// Delta represents the changes to a single table between two states, as
+// stored in a block. Deletes and updates keep their values so that blocks can
+// be merged. Field tags match patch.Delta.
+message Delta {
+  // The primary-key field names, in tuple order.
+  repeated string primary_key_names = 1;
+  // The subsidiary (non-key) field names, in tuple order.
+  repeated string subsidiary_value_names = 2;
+  // Records that were added (new keys).
+  repeated record.Record inserts = 3;
+  // Records that were removed (keys no longer present), with their values.
+  repeated record.Record deletes = 4;
+  // Records that were modified (existing keys with changed values).
+  repeated Update updates = 5;
+}
+
+// Update represents a row whose subsidiary (non-key) cells changed between two
+// states.
+message Update {
+  // The cells that make up the composite primary key.
+  repeated cell.Cell key = 1;
+  // Tag 2 held changed_indices when blocks and patches shared one Update
+  // message. Blocks never set it.
+  reserved 2;
+  // The subsidiary cells before the change.
+  repeated cell.Cell old_value = 3;
+  // The subsidiary cells after the change.
+  repeated cell.Cell new_value = 4;
 }

@@ -7,13 +7,14 @@ use prost_types::Timestamp;
 use crate::cell::{Cell, Kind};
 use crate::config::{Config, FieldConfig};
 use crate::proto::cell::Cell as ProtoCell;
-use crate::proto::delta::Delta as ProtoDelta;
-use crate::proto::injected::Field as ProtoInjectedField;
-use crate::proto::insert::Insert as ProtoInsert;
+use crate::proto::patch::Delete as ProtoDelete;
+use crate::proto::patch::Delta as ProtoDelta;
+use crate::proto::patch::InjectedField as ProtoInjectedField;
+use crate::proto::patch::Insert as ProtoInsert;
 use crate::proto::patch::Patch as ProtoPatch;
+use crate::proto::patch::Update as ProtoUpdate;
 use crate::proto::record::Record as ProtoRecord;
 use crate::proto::table::Table as ProtoTable;
-use crate::proto::update::Update as ProtoUpdate;
 use crate::utils::validate_field_name;
 
 /// Schema information for a single table, derived from the wire-declared
@@ -290,17 +291,17 @@ fn format_row(key: &[ProtoCell], value: &[ProtoCell], schema: &TableSchema) -> R
     Ok(literals)
 }
 
-/// Generate DELETE statements for a list of records.
+/// Generate DELETE statements for a delta's deletes.
 fn emit_deletes(
-    records: &[ProtoRecord],
+    deletes: &[ProtoDelete],
     schema: &TableSchema,
     injected_fields: &[InjectedField],
     quoted_table: &str,
     out: &mut String,
 ) -> Result<()> {
-    for record in records {
-        let where_clause = primary_key_where_clause(&record.key, schema, injected_fields)
-            .with_context(|| format!("key {:?}", record.key))?;
+    for delete in deletes {
+        let where_clause = primary_key_where_clause(&delete.key, schema, injected_fields)
+            .with_context(|| format!("key {:?}", delete.key))?;
         out.push_str(&format!(
             "DELETE FROM {}\nWHERE {};\n",
             quoted_table, where_clause
@@ -730,9 +731,8 @@ mod tests {
         };
 
         let mut delta = dummy_delta(&["id"], &["name"]);
-        delta.deletes.push(ProtoRecord {
+        delta.deletes.push(ProtoDelete {
             key: text_proto_cells(&["1"]),
-            ..Default::default()
         });
         delta.inserts.push(ProtoInsert {
             key: text_proto_cells(&["2"]),
@@ -742,7 +742,6 @@ mod tests {
         delta.updates.push(ProtoUpdate {
             key: text_proto_cells(&["3"]),
             changed_indices: vec![0],
-            old_value: text_proto_cells(&["Carol"]),
             new_value: text_proto_cells(&["Caroline"]),
             ..Default::default()
         });
@@ -1031,7 +1030,6 @@ mod tests {
         delta.updates.push(ProtoUpdate {
             key: text_proto_cells(&["1"]),
             changed_indices: vec![0, 1],
-            old_value: text_proto_cells(&["x", "y"]),
             new_value: text_proto_cells(&["only-one"]),
             ..Default::default()
         });
@@ -1051,9 +1049,8 @@ mod tests {
         };
 
         let mut delta = dummy_delta(&["id", "host"], &["name"]);
-        delta.deletes.push(ProtoRecord {
+        delta.deletes.push(ProtoDelete {
             key: text_proto_cells(&["1"]),
-            ..Default::default()
         });
         let patch = dummy_patch(HashMap::from([("t".to_string(), delta)]));
 
@@ -1076,7 +1073,6 @@ mod tests {
         let mut delta = dummy_delta(&["id"], &["name"]);
         delta.updates.push(ProtoUpdate {
             changed_indices: vec![0],
-            old_value: text_proto_cells(&["before"]),
             new_value: text_proto_cells(&["after"]),
             ..Default::default()
         });
