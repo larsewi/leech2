@@ -8,8 +8,9 @@
 //!    patch to that agent's rows in the consolidated view.
 //!
 //! After every ship both targets are queried and the rows are compared
-//! to the agent's in-memory model. Mutations include rare schema changes
-//! that exercise the layout-fallback path.
+//! to the agent's in-memory model, including each row's change timestamp.
+//! Mutations include rare schema changes that exercise the layout-fallback
+//! path.
 //!
 //! Gated on `PGHOST`. Locally the test no-ops; CI sets the env vars.
 
@@ -53,6 +54,7 @@ CREATE TABLE "users" (
     "name" TEXT,
     "email" TEXT,
     "active" BOOLEAN,
+    "changed" TIMESTAMPTZ,
     PRIMARY KEY ("id")
 );
 "#;
@@ -67,6 +69,7 @@ CREATE TABLE "users" (
     "name" TEXT,
     "email" TEXT,
     "active" BOOLEAN,
+    "changed" TIMESTAMPTZ,
     PRIMARY KEY ("host", "id")
 );
 "#;
@@ -78,6 +81,7 @@ CREATE TABLE "users" (
 fn config_toml(email_active: bool) -> String {
     let mut s = String::from(
         r#"[tables.users]
+change-timestamp = "changed"
 fields = [
     { name = "id", type = "NUMBER", primary-key = true },
     { name = "name", type = "TEXT" },
@@ -114,6 +118,14 @@ struct AgentSim {
     /// Whether the `email` column is currently part of the schema. Toggled
     /// by `MutationKind::SchemaChange` to exercise the layout-fallback path.
     email_active: bool,
+    /// CSV rows as of the last block, to detect which rows a block changed.
+    block_rows: BTreeMap<i64, String>,
+    /// Creation time (seconds) of the last block that changed each row.
+    last_changed: BTreeMap<i64, i64>,
+    /// CSV rows as of the last ship, to detect which rows a patch changes.
+    shipped_rows: BTreeMap<i64, String>,
+    /// The `changed` value the hub should hold for each row (`None` = NULL).
+    hub_changed: BTreeMap<i64, Option<i64>>,
 }
 
 impl AgentSim {
@@ -125,6 +137,10 @@ impl AgentSim {
             work_dir: work_dir.to_path_buf(),
             model: BTreeMap::new(),
             email_active: true,
+            block_rows: BTreeMap::new(),
+            last_changed: BTreeMap::new(),
+            shipped_rows: BTreeMap::new(),
+            hub_changed: BTreeMap::new(),
         };
         agent.write_config()?;
         std::fs::write(work_dir.join("users.csv"), "").context("failed to write users.csv")?;
@@ -142,24 +158,67 @@ impl AgentSim {
         Ok(())
     }
 
+    /// Render the in-memory model as CSV rows keyed by id. The column set
+    /// tracks `email_active`; `active` is always present. Comparing these
+    /// rows tells whether leech2 sees a row as changed.
+    fn csv_rows(&self) -> BTreeMap<i64, String> {
+        let mut rows = BTreeMap::new();
+        for (id, row) in &self.model {
+            let line = if self.email_active {
+                format!("{},{},{},{}", id, row.name, row.email, row.active)
+            } else {
+                format!("{},{},{}", id, row.name, row.active)
+            };
+            rows.insert(*id, line);
+        }
+        rows
+    }
+
     /// Serialize the in-memory model to `users.csv` so the next
-    /// `Block::create` call observes the post-mutation state. The CSV
-    /// column set tracks `email_active`; `active` is always present.
+    /// `Block::create` call observes the post-mutation state.
     fn write_csv(&self) -> Result<()> {
         let mut content = String::new();
-        for (id, row) in &self.model {
-            if self.email_active {
-                content.push_str(&format!(
-                    "{},{},{},{}\n",
-                    id, row.name, row.email, row.active
-                ));
-            } else {
-                content.push_str(&format!("{},{},{}\n", id, row.name, row.active));
-            }
+        for line in self.csv_rows().values() {
+            content.push_str(line);
+            content.push('\n');
         }
         std::fs::write(self.work_dir.join("users.csv"), content)
             .context("failed to write users.csv")?;
         Ok(())
+    }
+
+    /// Record a new block created at `created` (seconds): every row that
+    /// differs from the previous block takes it as its last change time.
+    fn record_block(&mut self, created: i64) {
+        let rows = self.csv_rows();
+        for (id, line) in &rows {
+            if self.block_rows.get(id) != Some(line) {
+                self.last_changed.insert(*id, created);
+            }
+        }
+        self.last_changed.retain(|id, _| rows.contains_key(id));
+        self.block_rows = rows;
+    }
+
+    /// Record a ship and update the `changed` values the hub should hold.
+    /// A full state writes NULL for every row. A delta writes the last change
+    /// time of each row that differs from the previous ship; other rows keep
+    /// their value, since merging cancels changes that net out to nothing.
+    fn record_ship(&mut self, full_state: bool) {
+        let rows = self.csv_rows();
+        let mut hub_changed = BTreeMap::new();
+        for (id, line) in &rows {
+            let changed = if full_state {
+                None
+            } else if self.shipped_rows.get(id) == Some(line) {
+                self.hub_changed.get(id).copied().flatten()
+            } else {
+                self.last_changed.get(id).copied()
+            };
+            hub_changed.insert(*id, changed);
+        }
+        self.hub_changed = hub_changed;
+        self.shipped_rows = rows;
     }
 
     /// Apply one weighted random mutation (insert/update/delete/no-op) to the
@@ -395,6 +454,9 @@ impl HubSim {
     /// NULL as the empty string in CSV mode, so the expected row formats
     /// with an empty email field in both cases.
     ///
+    /// The `changed` column is compared as epoch seconds against the agent's
+    /// expected change timestamps, with NULL rendered as the empty string.
+    ///
     /// The optional `host_filter` scopes the query to a single agent's
     /// rows in the shared hub schema.
     fn assert_matches(&self, agent: &AgentSim, host_filter: Option<&str>) -> Result<()> {
@@ -403,21 +465,26 @@ impl HubSim {
             None => String::new(),
         };
         let csv = self.psql(&format!(
-            "SELECT id, name, email, active::text FROM \"users\"{where_clause} ORDER BY id;\n"
+            "SELECT id, name, email, active::text, extract(epoch FROM changed)::bigint \
+             FROM \"users\"{where_clause} ORDER BY id;\n"
         ))?;
         let hub_rows: Vec<String> = csv.lines().map(|s| s.to_string()).collect();
-        let want_rows: Vec<String> = agent
-            .model
-            .iter()
-            .map(|(id, r)| {
-                let email = if agent.email_active && r.email != EMAIL_NULL_SENTINEL {
-                    r.email.as_str()
-                } else {
-                    ""
-                };
-                format!("{},{},{},{}", id, r.name, email, r.active)
-            })
-            .collect();
+        let mut want_rows = Vec::with_capacity(agent.model.len());
+        for (id, r) in &agent.model {
+            let email = if agent.email_active && r.email != EMAIL_NULL_SENTINEL {
+                r.email.as_str()
+            } else {
+                ""
+            };
+            let changed = match agent.hub_changed.get(id).copied().flatten() {
+                Some(seconds) => seconds.to_string(),
+                None => String::new(),
+            };
+            want_rows.push(format!(
+                "{},{},{},{},{}",
+                id, r.name, email, r.active, changed
+            ));
+        }
         if hub_rows != want_rows {
             bail!(
                 "row mismatch:\n  hub:  {:#?}\n  want: {:#?}",
@@ -552,6 +619,8 @@ fn run_round_for_agent(
     );
     run.agent.write_csv().unwrap();
     let head = Block::create(&config, None).unwrap();
+    let header = Block::load_header(&config.state_dir(), &head, config.file_mode).unwrap();
+    run.agent.record_block(header.created.unwrap().seconds);
 
     let force_ship = round + 1 == ROUNDS;
     if !force_ship && !rng.random_bool(SHIP_PROBABILITY) {
@@ -573,6 +642,7 @@ fn run_round_for_agent(
         head,
     );
     let mut patch = Patch::create(&config, &run.last_known).unwrap();
+    run.agent.record_ship(patch.states.contains_key("users"));
 
     // Exercise the full ship pipeline (encode) so the compression stage is
     // recorded, then finalize the run into the STATS file.
