@@ -14,8 +14,8 @@ use crate::cell::{Cell, parse_typed_cell};
 use crate::config::{Config, InjectedFieldConfig, TableConfig};
 use crate::delta::Delta;
 use crate::head;
-use crate::proto::delta::Delta as ProtoDelta;
 use crate::proto::injected::Field;
+use crate::proto::patch::Delta as ProtoDelta;
 use crate::proto::state::State as ProtoState;
 use crate::proto::table::Table as ProtoTable;
 use crate::stats::{self, Stage, StageStats};
@@ -270,15 +270,7 @@ fn try_consolidate(
     }
 
     for (table_name, merged) in merged_deltas {
-        let mut merged_delta = ProtoDelta::from(merged);
-
-        // Strip data the receiver doesn't need.
-        for delete in &mut merged_delta.deletes {
-            delete.value.clear();
-        }
-        for update in &mut merged_delta.updates {
-            update.sparse_encode();
-        }
+        let merged_delta = ProtoDelta::from(merged);
 
         let pre = pre_counts.get(&table_name).copied().unwrap_or_default();
         log::info!(
@@ -510,9 +502,10 @@ mod tests {
     use super::*;
 
     use crate::cell::text_proto_cells;
+    use crate::proto::block::Delta as ProtoBlockDelta;
     use crate::proto::block::TableChange;
-    use crate::proto::insert::Insert as ProtoInsert;
-    use crate::proto::update::Update as ProtoUpdate;
+    use crate::proto::block::Update as ProtoBlockUpdate;
+    use crate::proto::record::Record as ProtoRecord;
 
     fn empty_patch() -> Patch {
         Patch {
@@ -630,27 +623,25 @@ mod tests {
         Timestamp { seconds, nanos: 0 }
     }
 
-    fn insert(key: &str, value: &str) -> ProtoInsert {
-        ProtoInsert {
+    fn insert(key: &str, value: &str) -> ProtoRecord {
+        ProtoRecord {
             key: text_proto_cells(&[key]),
             value: text_proto_cells(&[value]),
-            ..Default::default()
         }
     }
 
-    fn update(key: &str, old_value: &str, new_value: &str) -> ProtoUpdate {
-        ProtoUpdate {
+    fn update(key: &str, old_value: &str, new_value: &str) -> ProtoBlockUpdate {
+        ProtoBlockUpdate {
             key: text_proto_cells(&[key]),
             old_value: text_proto_cells(&[old_value]),
             new_value: text_proto_cells(&[new_value]),
-            ..Default::default()
         }
     }
 
-    fn block(seconds: i64, deltas: Vec<(&str, Vec<ProtoInsert>, Vec<ProtoUpdate>)>) -> Block {
+    fn block(seconds: i64, deltas: Vec<(&str, Vec<ProtoRecord>, Vec<ProtoBlockUpdate>)>) -> Block {
         let mut payload = HashMap::new();
         for (table_name, inserts, updates) in deltas {
-            let delta = ProtoDelta {
+            let delta = ProtoBlockDelta {
                 primary_key_names: vec!["id".to_string()],
                 subsidiary_value_names: vec!["name".to_string()],
                 inserts,

@@ -10,8 +10,8 @@ use crate::callbacks::Callbacks;
 use crate::config::Config;
 use crate::delta;
 use crate::head;
+use crate::proto::block::Delta as ProtoBlockDelta;
 use crate::proto::block::{BlockHeader, TableChange};
-use crate::proto::delta::Delta as ProtoDelta;
 use crate::state;
 use crate::storage;
 use crate::truncate;
@@ -22,7 +22,7 @@ pub use crate::proto::block::Block;
 impl From<Option<delta::Delta>> for TableChange {
     fn from(delta: Option<delta::Delta>) -> Self {
         TableChange {
-            delta: delta.map(ProtoDelta::from),
+            delta: delta.map(ProtoBlockDelta::from),
         }
     }
 }

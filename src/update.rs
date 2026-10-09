@@ -1,368 +1,174 @@
 use std::collections::{HashMap, HashSet};
-use std::fmt;
 
-use anyhow::{Result, bail};
+use anyhow::Result;
 use prost_types::Timestamp;
 
-use crate::cell::{Cell, decode_proto_cells, display_proto_cells};
+use crate::cell::{Cell, decode_proto_cells};
+use crate::proto::block::Update as ProtoBlockUpdate;
 use crate::proto::cell::Cell as ProtoCell;
-use crate::proto::update::Update as ProtoUpdate;
+use crate::proto::patch::Update as ProtoPatchUpdate;
 
 pub type UpdateMap = HashMap<Vec<Cell>, (Vec<Cell>, Vec<Cell>, Option<Timestamp>)>;
 
-/// A record whose subsidiary (non-key) cells changed between two states.
-///
-/// `Update` is the domain counterpart to `proto::update::Update`. The proto
-/// representation carries `Vec<proto::cell::Cell>`; the domain type unwraps
-/// each proto cell into a typed domain `Cell`.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Update {
-    pub key: Vec<Cell>,
-    pub changed_indices: Vec<u32>,
-    pub old_value: Vec<Cell>,
-    pub new_value: Vec<Cell>,
-    /// Creation time of the last block that changed this record. Only set for
-    /// tables that track changes.
-    pub change_timestamp: Option<Timestamp>,
-}
-
-impl TryFrom<ProtoUpdate> for Update {
-    type Error = anyhow::Error;
-
-    fn try_from(proto: ProtoUpdate) -> Result<Self> {
-        Ok(Update {
-            key: decode_proto_cells(proto.key)?,
-            changed_indices: proto.changed_indices,
-            old_value: decode_proto_cells(proto.old_value)?,
-            new_value: decode_proto_cells(proto.new_value)?,
-            change_timestamp: proto.change_timestamp,
-        })
-    }
-}
-
-impl From<Update> for ProtoUpdate {
-    fn from(update: Update) -> Self {
-        ProtoUpdate {
-            key: update.key.into_iter().map(Into::into).collect(),
-            changed_indices: update.changed_indices,
-            old_value: update.old_value.into_iter().map(Into::into).collect(),
-            new_value: update.new_value.into_iter().map(Into::into).collect(),
-            change_timestamp: update.change_timestamp,
+impl From<(Vec<Cell>, (Vec<Cell>, Vec<Cell>, Option<Timestamp>))> for ProtoBlockUpdate {
+    fn from(
+        (key, (old_value, new_value, _)): (Vec<Cell>, (Vec<Cell>, Vec<Cell>, Option<Timestamp>)),
+    ) -> Self {
+        // Blocks carry no change timestamps.
+        ProtoBlockUpdate {
+            key: key.into_iter().map(Into::into).collect(),
+            old_value: old_value.into_iter().map(Into::into).collect(),
+            new_value: new_value.into_iter().map(Into::into).collect(),
         }
     }
 }
 
-impl From<(Vec<Cell>, (Vec<Cell>, Vec<Cell>, Option<Timestamp>))> for ProtoUpdate {
+impl From<(Vec<Cell>, (Vec<Cell>, Vec<Cell>, Option<Timestamp>))> for ProtoPatchUpdate {
+    /// Sparse-encode the update: keep only the indices and new values of the
+    /// columns that changed, and drop the old values.
     fn from(
         (key, (old_value, new_value, change_timestamp)): (
             Vec<Cell>,
             (Vec<Cell>, Vec<Cell>, Option<Timestamp>),
         ),
     ) -> Self {
-        ProtoUpdate {
-            key: key.into_iter().map(Into::into).collect(),
-            old_value: old_value.into_iter().map(Into::into).collect(),
-            new_value: new_value.into_iter().map(Into::into).collect(),
-            change_timestamp,
-            ..Default::default()
-        }
-    }
-}
-
-impl ProtoUpdate {
-    /// Expand a sparse `new_value` back to a full-length vector in place.
-    /// Positions not in `changed_indices` are filled with `Cell::Null`.
-    ///
-    /// Expects the shape produced by `sparse_encode`: `new_value` length
-    /// equals `changed_indices` length, `old_value` is empty, and every
-    /// `changed_indices` entry is a valid column position in `0..num_values`.
-    /// Returns an error if the wire data violates any of these invariants.
-    pub fn expand_sparse(&mut self, num_values: usize) -> Result<()> {
-        if self.changed_indices.is_empty() {
-            return Ok(());
-        }
-
-        let num_changed = self.changed_indices.len();
-        if self.new_value.len() != num_changed {
-            bail!(
-                "update: new_value has {} entries, expected {}",
-                self.new_value.len(),
-                num_changed
-            );
-        }
-        // sparse_encode always clears old_value, so a sparse update on the
-        // wire should have it empty. A populated old_value means the proto
-        // was corrupted in transit or produced by a buggy peer.
-        if !self.old_value.is_empty() {
-            bail!(
-                "update: old_value has {} entries on a sparse update, expected 0",
-                self.old_value.len()
-            );
-        }
-
-        // Move each sparse value into its true column position. Unchanged
-        // columns become `Cell::Null`. Bounds-check column_index inside
-        // the loop so we fail fast on the first bad index.
-        let null_value: ProtoCell = Cell::Null.into();
-        let mut new_expanded = vec![null_value.clone(); num_values];
-        for (sparse_index, &column_index) in self.changed_indices.iter().enumerate() {
-            if (column_index as usize) >= num_values {
-                bail!(
-                    "update: changed_indices[{}] = {} is out of range (table has {} columns)",
-                    sparse_index,
-                    column_index,
-                    num_values
-                );
-            }
-            new_expanded[column_index as usize] =
-                std::mem::replace(&mut self.new_value[sparse_index], null_value.clone());
-        }
-        self.new_value = new_expanded;
-        self.changed_indices.clear();
-        Ok(())
-    }
-
-    /// Format column values for display.
-    ///
-    /// Returns a vector of formatted column strings. Full updates (no
-    /// `changed_indices`) compare old and new positionally. Sparse updates
-    /// show only changed columns, with `"_"` for unchanged ones.
-    pub fn format_columns(&self, num_subsidiary: usize) -> Vec<String> {
-        let has_old = !self.old_value.is_empty();
-        if self.changed_indices.is_empty() {
-            return self.format_full_columns(num_subsidiary, has_old);
-        }
-        self.format_sparse_columns(num_subsidiary, has_old)
-    }
-
-    fn format_full_columns(&self, num_subsidiary: usize, has_old: bool) -> Vec<String> {
-        let mut columns = Vec::with_capacity(num_subsidiary);
-        for i in 0..num_subsidiary {
-            let new = self.new_value.get(i);
-            let old = if has_old { self.old_value.get(i) } else { None };
-            columns.push(format_update_column(new, old, has_old));
-        }
-        columns
-    }
-
-    fn format_sparse_columns(&self, num_subsidiary: usize, has_old: bool) -> Vec<String> {
-        let changed: HashSet<u32> = self.changed_indices.iter().copied().collect();
-        let mut new_iter = self.new_value.iter();
-        let mut old_iter = self.old_value.iter();
-        let mut columns = Vec::with_capacity(num_subsidiary);
-        for i in 0..num_subsidiary as u32 {
-            if !changed.contains(&i) {
-                columns.push("_".to_string());
-                continue;
-            }
-            let new = new_iter.next();
-            let old = if has_old { old_iter.next() } else { None };
-            columns.push(format_update_column(new, old, has_old));
-        }
-        columns
-    }
-
-    /// Sparse-encode an update: keep only the indices and values of columns that
-    /// actually changed, and discard the old values.
-    pub fn sparse_encode(&mut self) {
         let mut changed_indices = Vec::new();
         let mut sparse_new = Vec::new();
-
-        let pairs = self.old_value.iter().zip(self.new_value.iter());
-        for (i, (old_value, new_value)) in pairs.enumerate() {
-            if old_value != new_value {
-                changed_indices.push(i as u32);
-                sparse_new.push(new_value.clone());
+        for (index, (old, new)) in old_value.iter().zip(&new_value).enumerate() {
+            if old != new {
+                changed_indices.push(index as u32);
+                sparse_new.push(new.clone());
             }
         }
 
-        // If all columns changed, sparse encoding adds index overhead
-        // without saving any values -- just drop old_value and keep
-        // new_value as-is.
-        self.old_value.clear();
-        if changed_indices.len() == self.new_value.len() {
-            return;
+        // If all columns changed, the indices add overhead without saving any
+        // values, so send the full new value instead.
+        let new_value = if changed_indices.len() == new_value.len() {
+            changed_indices.clear();
+            new_value
+        } else {
+            sparse_new
+        };
+
+        ProtoPatchUpdate {
+            key: key.into_iter().map(Into::into).collect(),
+            changed_indices,
+            new_value: new_value.into_iter().map(Into::into).collect(),
+            change_timestamp,
+        }
+    }
+}
+
+impl ProtoBlockUpdate {
+    /// Format each subsidiary column for display: `"old -> new"` when it
+    /// changed, `"_"` when it didn't.
+    pub fn format_columns(&self, num_subsidiary: usize) -> Vec<String> {
+        let mut columns = Vec::with_capacity(num_subsidiary);
+        for index in 0..num_subsidiary {
+            let old = format_cell(self.old_value.get(index));
+            let new = format_cell(self.new_value.get(index));
+            if old == new {
+                columns.push("_".to_string());
+            } else {
+                columns.push(format!("{} -> {}", old, new));
+            }
+        }
+        columns
+    }
+}
+
+impl ProtoPatchUpdate {
+    /// Format each subsidiary column for display: the new value when it
+    /// changed, `"_"` when it didn't. An update with no `changed_indices`
+    /// changed every column.
+    pub fn format_columns(&self, num_subsidiary: usize) -> Vec<String> {
+        let mut columns = Vec::with_capacity(num_subsidiary);
+        if self.changed_indices.is_empty() {
+            for index in 0..num_subsidiary {
+                columns.push(format_cell(self.new_value.get(index)));
+            }
+            return columns;
         }
 
-        self.changed_indices = changed_indices;
-        self.new_value = sparse_new;
+        let changed: HashSet<u32> = self.changed_indices.iter().copied().collect();
+        let mut new_values = self.new_value.iter();
+        for index in 0..num_subsidiary as u32 {
+            if changed.contains(&index) {
+                columns.push(format_cell(new_values.next()));
+            } else {
+                columns.push("_".to_string());
+            }
+        }
+        columns
     }
 }
 
-/// Format a single column value for update display.
-///
-/// When `old` is provided and differs from `new`, shows `"old -> new"`.
-/// When `old` equals `new`, shows `"_"` (unchanged).
-/// When there is no old value (i.e. due to sparse encoding), shows just `new`.
-fn format_update_column(new: Option<&ProtoCell>, old: Option<&ProtoCell>, has_old: bool) -> String {
-    let new_str = new.map_or("<missing>".to_string(), ProtoCell::to_string);
-    if !has_old {
-        return new_str;
-    }
-    let old_str = old.map_or("<missing>".to_string(), ProtoCell::to_string);
-    if old_str == new_str {
-        "_".to_string()
-    } else {
-        format!("{} -> {}", old_str, new_str)
-    }
+fn format_cell(cell: Option<&ProtoCell>) -> String {
+    cell.map_or("<missing>".to_string(), ProtoCell::to_string)
 }
 
-/// Decode a `Vec<ProtoUpdate>` into a `HashMap` keyed by each record's key.
-///
-/// Updates are stored sparsely on the wire: only changed column indices and
-/// their values are included. Expand them back to full-width value vectors
-/// (one element per subsidiary column).
-pub fn decode_proto_updates(protos: Vec<ProtoUpdate>, num_subsidiary: usize) -> Result<UpdateMap> {
+/// Decode a block's updates into an [`UpdateMap`] keyed by each record's key.
+pub fn decode_proto_updates(protos: Vec<ProtoBlockUpdate>) -> Result<UpdateMap> {
     let mut updates = HashMap::with_capacity(protos.len());
-    for mut proto in protos {
-        proto.expand_sparse(num_subsidiary)?;
-        let update = Update::try_from(proto)?;
-        updates.insert(
-            update.key,
-            (update.old_value, update.new_value, update.change_timestamp),
-        );
+    for proto in protos {
+        let key = decode_proto_cells(proto.key)?;
+        let old_value = decode_proto_cells(proto.old_value)?;
+        let new_value = decode_proto_cells(proto.new_value)?;
+        updates.insert(key, (old_value, new_value, None));
     }
     Ok(updates)
-}
-
-impl fmt::Display for ProtoUpdate {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "[{}] [cols {:?}]: [{}] -> [{}]",
-            display_proto_cells(&self.key),
-            self.changed_indices,
-            display_proto_cells(&self.old_value),
-            display_proto_cells(&self.new_value)
-        )
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    use crate::cell::{decode_proto_cells, text_proto_cells};
+    use crate::cell::text_proto_cells;
 
-    fn make_proto_update(
-        key: &[&str],
-        changed_indices: &[u32],
-        old_value: &[&str],
-        new_value: &[&str],
-    ) -> ProtoUpdate {
-        ProtoUpdate {
-            key: text_proto_cells(key),
-            changed_indices: changed_indices.to_vec(),
-            old_value: text_proto_cells(old_value),
-            new_value: text_proto_cells(new_value),
-            ..Default::default()
-        }
+    fn text_cells(values: &[&str]) -> Vec<Cell> {
+        values.iter().map(|&value| value.into()).collect()
+    }
+
+    fn patch_update(old_value: &[&str], new_value: &[&str]) -> ProtoPatchUpdate {
+        ProtoPatchUpdate::from((
+            text_cells(&["k"]),
+            (text_cells(old_value), text_cells(new_value), None),
+        ))
     }
 
     #[test]
-    fn test_expand_sparse() {
-        // Sparse-encoded shape: empty old_value, sparse new_value.
-        let mut update = make_proto_update(&["k"], &[0, 2], &[], &["x", "y"]);
-        update.expand_sparse(3).unwrap();
-        assert!(update.old_value.is_empty());
-        assert!(update.changed_indices.is_empty());
-        let decoded = decode_proto_cells(update.new_value).unwrap();
-        assert_eq!(decoded, vec!["x".into(), Cell::Null, "y".into()]);
-    }
-
-    #[test]
-    fn test_expand_sparse_no_changed_indices() {
-        let mut update = make_proto_update(&["k"], &[], &["a", "b"], &["a", "b"]);
-        update.expand_sparse(2).unwrap();
-        assert_eq!(update.old_value.len(), 2);
-        assert_eq!(update.new_value.len(), 2);
-    }
-
-    #[test]
-    fn test_expand_sparse_rejects_populated_old_value() {
-        let mut update = make_proto_update(&["k"], &[0, 2], &["a", "b"], &["x", "y"]);
-        let err = update.expand_sparse(3).unwrap_err();
-        assert!(err.to_string().contains("old_value"));
-    }
-
-    #[test]
-    fn test_expand_sparse_rejects_new_value_length_mismatch() {
-        let mut update = make_proto_update(&["k"], &[0, 2], &[], &["x"]);
-        let err = update.expand_sparse(3).unwrap_err();
-        assert!(err.to_string().contains("new_value"));
-    }
-
-    #[test]
-    fn test_expand_sparse_rejects_index_out_of_range() {
-        let mut update = make_proto_update(&["k"], &[0, 5], &[], &["x", "y"]);
-        let err = update.expand_sparse(3).unwrap_err();
-        assert!(err.to_string().contains("out of range"));
-    }
-
-    #[test]
-    fn test_sparse_encode() {
-        let mut update = make_proto_update(&["k"], &[], &["a", "b", "c"], &["a", "x", "c"]);
-        update.sparse_encode();
+    fn test_patch_update_is_sparse() {
+        let update = patch_update(&["a", "b", "c"], &["a", "x", "c"]);
         assert_eq!(update.changed_indices, vec![1]);
-        assert!(update.old_value.is_empty());
-        let decoded = decode_proto_cells(update.new_value).unwrap();
-        assert_eq!(decoded, vec!["x".into()]);
+        assert_eq!(update.new_value, text_proto_cells(&["x"]));
     }
 
     #[test]
-    fn test_sparse_encode_all_changed() {
-        let mut update = make_proto_update(&["k"], &[], &["a", "b"], &["x", "y"]);
-        update.sparse_encode();
+    fn test_patch_update_all_changed_is_full() {
+        let update = patch_update(&["a", "b"], &["x", "y"]);
         assert!(update.changed_indices.is_empty());
-        assert!(update.old_value.is_empty());
-        assert_eq!(update.new_value.len(), 2);
+        assert_eq!(update.new_value, text_proto_cells(&["x", "y"]));
     }
 
     #[test]
-    fn test_format_full_columns_with_old() {
-        let update = make_proto_update(&["k"], &[], &["a", "b", "c"], &["a", "x", "c"]);
-        let columns = update.format_columns(3);
-        assert_eq!(columns, vec!["_", r#""b" -> "x""#, "_"]);
-    }
-
-    #[test]
-    fn test_format_full_columns_without_old() {
-        let update = make_proto_update(&["k"], &[], &[], &["a", "x", "c"]);
-        let columns = update.format_columns(3);
-        assert_eq!(columns, vec![r#""a""#, r#""x""#, r#""c""#]);
-    }
-
-    // Note: sparse_encode() always clears old_value, so leech2 itself never
-    // produces this combination. The proto wire format allows it, however, so
-    // we verify that the display logic handles it correctly.
-    #[test]
-    fn test_format_sparse_columns_with_old() {
-        let update = make_proto_update(&["k"], &[1], &["b"], &["x"]);
-        let columns = update.format_columns(3);
-        assert_eq!(columns, vec!["_", r#""b" -> "x""#, "_"]);
-    }
-
-    #[test]
-    fn test_format_sparse_columns_without_old() {
-        let update = make_proto_update(&["k"], &[1], &[], &["x"]);
-        let columns = update.format_columns(3);
-        assert_eq!(columns, vec!["_", r#""x""#, "_"]);
-    }
-
-    #[test]
-    fn test_proto_round_trip() {
-        let domain = Update {
-            key: vec!["k".into()],
-            changed_indices: vec![0],
-            old_value: vec![],
-            new_value: vec!["x".into()],
-            change_timestamp: Some(Timestamp {
-                seconds: 1_700_000_000,
-                nanos: 0,
-            }),
+    fn test_block_update_format_columns() {
+        let update = ProtoBlockUpdate {
+            key: text_proto_cells(&["k"]),
+            old_value: text_proto_cells(&["a", "b", "c"]),
+            new_value: text_proto_cells(&["a", "x", "c"]),
         };
-        let proto: ProtoUpdate = domain.clone().into();
-        let back: Update = proto.try_into().unwrap();
-        assert_eq!(domain, back);
+        assert_eq!(update.format_columns(3), vec!["_", r#""b" -> "x""#, "_"]);
+    }
+
+    #[test]
+    fn test_patch_update_format_full_columns() {
+        let update = patch_update(&["a", "b", "c"], &["x", "y", "z"]);
+        assert_eq!(update.format_columns(3), vec![r#""x""#, r#""y""#, r#""z""#]);
+    }
+
+    #[test]
+    fn test_patch_update_format_sparse_columns() {
+        let update = patch_update(&["a", "b", "c"], &["a", "x", "c"]);
+        assert_eq!(update.format_columns(3), vec!["_", r#""x""#, "_"]);
     }
 }

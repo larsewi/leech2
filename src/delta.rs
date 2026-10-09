@@ -7,7 +7,10 @@ use prost_types::Timestamp;
 use crate::cell::Cell;
 use crate::cell::display_proto_cells;
 use crate::insert::{InsertMap, decode_proto_inserts};
-use crate::proto::delta::Delta as ProtoDelta;
+use crate::proto::block::Delta as ProtoBlockDelta;
+use crate::proto::cell::Cell as ProtoCell;
+use crate::proto::patch::Delete as ProtoDelete;
+use crate::proto::patch::Delta as ProtoPatchDelta;
 use crate::record::RecordMap;
 use crate::record::decode_proto_records;
 use crate::state::State;
@@ -31,16 +34,13 @@ pub struct Delta {
     pub updates: UpdateMap,
 }
 
-impl TryFrom<ProtoDelta> for Delta {
+impl TryFrom<ProtoBlockDelta> for Delta {
     type Error = anyhow::Error;
 
-    fn try_from(proto: ProtoDelta) -> Result<Self> {
-        let num_subsidiary = proto.subsidiary_value_names.len();
-
+    fn try_from(proto: ProtoBlockDelta) -> Result<Self> {
         let inserts = decode_proto_inserts(proto.inserts).context("decoding delta inserts")?;
         let deletes = decode_proto_records(proto.deletes).context("decoding delta deletes")?;
-        let updates = decode_proto_updates(proto.updates, num_subsidiary)
-            .context("decoding delta updates")?;
+        let updates = decode_proto_updates(proto.updates).context("decoding delta updates")?;
 
         // The three operation maps must be pairwise key-disjoint.
         // `Delta::compute` produces them this way by construction; this
@@ -72,97 +72,120 @@ impl TryFrom<ProtoDelta> for Delta {
     }
 }
 
-impl From<Delta> for ProtoDelta {
+impl From<Delta> for ProtoBlockDelta {
     fn from(delta: Delta) -> Self {
-        ProtoDelta {
+        let mut inserts = Vec::with_capacity(delta.inserts.len());
+        // Blocks carry no change timestamps.
+        for (key, (value, _)) in delta.inserts {
+            inserts.push((key, value).into());
+        }
+        ProtoBlockDelta {
             primary_key_names: delta.primary_key_names,
             subsidiary_value_names: delta.subsidiary_value_names,
-            inserts: delta.inserts.into_iter().map(Into::into).collect(),
+            inserts,
             deletes: delta.deletes.into_iter().map(Into::into).collect(),
             updates: delta.updates.into_iter().map(Into::into).collect(),
         }
     }
 }
 
-impl ProtoDelta {
-    fn fmt_inserts(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.inserts.is_empty() {
-            return Ok(());
+impl From<Delta> for ProtoPatchDelta {
+    /// Convert a merged delta into the shape sent to the hub: deletes carry
+    /// only their key, and updates are sparse-encoded.
+    fn from(delta: Delta) -> Self {
+        let mut deletes = Vec::with_capacity(delta.deletes.len());
+        for key in delta.deletes.into_keys() {
+            deletes.push(ProtoDelete {
+                key: key.into_iter().map(Into::into).collect(),
+            });
         }
+        ProtoPatchDelta {
+            primary_key_names: delta.primary_key_names,
+            subsidiary_value_names: delta.subsidiary_value_names,
+            inserts: delta.inserts.into_iter().map(Into::into).collect(),
+            deletes,
+            updates: delta.updates.into_iter().map(Into::into).collect(),
+        }
+    }
+}
 
-        write!(f, "\n  Inserts ({}):", self.inserts.len())?;
+impl fmt::Display for ProtoBlockDelta {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt_field_names(&self.primary_key_names, &self.subsidiary_value_names, f)?;
+        let num_subsidiary = self.subsidiary_value_names.len();
+
+        fmt_section("Inserts", self.inserts.len(), f)?;
         for record in &self.inserts {
-            write!(
-                f,
-                "\n    ({}) {}",
-                display_proto_cells(&record.key),
-                display_proto_cells(&record.value)
-            )?;
-            fmt_change_timestamp(record.change_timestamp.as_ref(), f)?;
-        }
-        Ok(())
-    }
-
-    fn fmt_deletes(&self, f: &mut fmt::Formatter<'_>, num_subsidiary: usize) -> fmt::Result {
-        if self.deletes.is_empty() {
-            return Ok(());
+            fmt_row(&record.key, &display_proto_cells(&record.value), f)?;
         }
 
-        write!(f, "\n  Deletes ({}):", self.deletes.len())?;
+        fmt_section("Deletes", self.deletes.len(), f)?;
         for record in &self.deletes {
-            let values = if record.value.is_empty() {
-                vec!["_"; num_subsidiary].join(", ")
-            } else {
-                display_proto_cells(&record.value)
-            };
-            write!(f, "\n    ({}) {}", display_proto_cells(&record.key), values)?;
-        }
-        Ok(())
-    }
-
-    /// Format updates. Updates come in two wire formats:
-    /// - **Full** (blocks): `changed_indices` is empty and all `num_subsidiary`
-    ///   columns are present in `new_value`/`old_value` positionally.
-    /// - **Sparse** (patches): only the columns listed in `changed_indices`
-    ///   appear in `new_value`/`old_value`; unchanged columns show as `"_"`.
-    fn fmt_updates(&self, f: &mut fmt::Formatter<'_>, num_subsidiary: usize) -> fmt::Result {
-        if self.updates.is_empty() {
-            return Ok(());
+            fmt_row(&record.key, &display_proto_cells(&record.value), f)?;
         }
 
-        write!(f, "\n  Updates ({}):", self.updates.len())?;
+        fmt_section("Updates", self.updates.len(), f)?;
         for update in &self.updates {
             let columns = update.format_columns(num_subsidiary);
-            write!(
-                f,
-                "\n    ({}) {}",
-                display_proto_cells(&update.key),
-                columns.join(", ")
-            )?;
+            fmt_row(&update.key, &columns.join(", "), f)?;
+        }
+        Ok(())
+    }
+}
+
+impl fmt::Display for ProtoPatchDelta {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt_field_names(&self.primary_key_names, &self.subsidiary_value_names, f)?;
+        let num_subsidiary = self.subsidiary_value_names.len();
+
+        fmt_section("Inserts", self.inserts.len(), f)?;
+        for insert in &self.inserts {
+            fmt_row(&insert.key, &display_proto_cells(&insert.value), f)?;
+            fmt_change_timestamp(insert.change_timestamp.as_ref(), f)?;
+        }
+
+        // Deletes carry only their key; show each value column as "_".
+        fmt_section("Deletes", self.deletes.len(), f)?;
+        for delete in &self.deletes {
+            fmt_row(&delete.key, &vec!["_"; num_subsidiary].join(", "), f)?;
+        }
+
+        fmt_section("Updates", self.updates.len(), f)?;
+        for update in &self.updates {
+            let columns = update.format_columns(num_subsidiary);
+            fmt_row(&update.key, &columns.join(", "), f)?;
             fmt_change_timestamp(update.change_timestamp.as_ref(), f)?;
         }
         Ok(())
     }
 }
 
+fn fmt_field_names(
+    primary_key_names: &[String],
+    subsidiary_value_names: &[String],
+    f: &mut fmt::Formatter<'_>,
+) -> fmt::Result {
+    let mut field_names = primary_key_names.to_vec();
+    field_names.extend_from_slice(subsidiary_value_names);
+    write!(f, "[{}]", field_names.join(", "))
+}
+
+/// Write a section header such as "Inserts (2):", or nothing when empty.
+fn fmt_section(label: &str, count: usize, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    if count == 0 {
+        return Ok(());
+    }
+    write!(f, "\n  {} ({}):", label, count)
+}
+
+fn fmt_row(key: &[ProtoCell], values: &str, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    write!(f, "\n    ({}) {}", display_proto_cells(key), values)
+}
+
 fn fmt_change_timestamp(timestamp: Option<&Timestamp>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     match timestamp {
         Some(timestamp) => write!(f, " @ {}", utils::format_timestamp(timestamp)),
         None => Ok(()),
-    }
-}
-
-impl fmt::Display for ProtoDelta {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut field_names = self.primary_key_names.clone();
-        field_names.extend_from_slice(&self.subsidiary_value_names);
-        write!(f, "[{}]", field_names.join(", "))?;
-
-        let num_subsidiary = self.subsidiary_value_names.len();
-        self.fmt_inserts(f)?;
-        self.fmt_deletes(f, num_subsidiary)?;
-        self.fmt_updates(f, num_subsidiary)?;
-        Ok(())
     }
 }
 
@@ -1519,31 +1542,22 @@ mod tests {
             .deletes
             .insert(text_cells(&["3"]), text_cells(&["Carol"]));
 
-        let proto = ProtoDelta::from(delta);
+        let proto = ProtoPatchDelta::from(delta);
 
         assert_eq!(proto.inserts[0].change_timestamp, Some(timestamp(100)));
         assert_eq!(proto.updates[0].change_timestamp, Some(timestamp(100)));
     }
 
-    // ---- TryFrom<ProtoDelta> self-consistency tests ----
+    // ---- TryFrom<ProtoBlockDelta> self-consistency tests ----
     //
     // Production code never produces a delta with the same key in two
-    // operation sets, but a peer that sends a malformed wire delta should be
-    // rejected at the proto -> domain boundary rather than getting absorbed
-    // into the merge logic in iteration-order-dependent ways.
+    // operation sets, but a malformed block delta should be rejected at the
+    // proto -> domain boundary rather than getting absorbed into the merge
+    // logic in iteration-order-dependent ways.
 
     use crate::cell::text_proto_cells;
-    use crate::proto::insert::Insert as ProtoInsert;
+    use crate::proto::block::Update as ProtoBlockUpdate;
     use crate::proto::record::Record as ProtoRecord;
-    use crate::proto::update::Update as ProtoUpdate;
-
-    fn proto_insert(key: &[&str], value: &[&str]) -> ProtoInsert {
-        ProtoInsert {
-            key: text_proto_cells(key),
-            value: text_proto_cells(value),
-            ..Default::default()
-        }
-    }
 
     fn proto_record(key: &[&str], value: &[&str]) -> ProtoRecord {
         ProtoRecord {
@@ -1554,10 +1568,10 @@ mod tests {
 
     #[test]
     fn test_try_from_proto_delta_rejects_insert_delete_overlap() {
-        let proto = ProtoDelta {
+        let proto = ProtoBlockDelta {
             primary_key_names: vec!["id".to_string()],
             subsidiary_value_names: vec!["name".to_string()],
-            inserts: vec![proto_insert(&["1"], &["Alice"])],
+            inserts: vec![proto_record(&["1"], &["Alice"])],
             deletes: vec![proto_record(&["1"], &["Alice"])],
             updates: vec![],
         };
@@ -1568,16 +1582,15 @@ mod tests {
 
     #[test]
     fn test_try_from_proto_delta_rejects_insert_update_overlap() {
-        let proto = ProtoDelta {
+        let proto = ProtoBlockDelta {
             primary_key_names: vec!["id".to_string()],
             subsidiary_value_names: vec!["name".to_string()],
-            inserts: vec![proto_insert(&["1"], &["Alice"])],
+            inserts: vec![proto_record(&["1"], &["Alice"])],
             deletes: vec![],
-            updates: vec![ProtoUpdate {
+            updates: vec![ProtoBlockUpdate {
                 key: text_proto_cells(&["1"]),
                 old_value: text_proto_cells(&["Alice"]),
                 new_value: text_proto_cells(&["Alicia"]),
-                ..Default::default()
             }],
         };
         let err = Delta::try_from(proto).unwrap_err();
@@ -1587,16 +1600,15 @@ mod tests {
 
     #[test]
     fn test_try_from_proto_delta_rejects_delete_update_overlap() {
-        let proto = ProtoDelta {
+        let proto = ProtoBlockDelta {
             primary_key_names: vec!["id".to_string()],
             subsidiary_value_names: vec!["name".to_string()],
             inserts: vec![],
             deletes: vec![proto_record(&["1"], &["Alice"])],
-            updates: vec![ProtoUpdate {
+            updates: vec![ProtoBlockUpdate {
                 key: text_proto_cells(&["1"]),
                 old_value: text_proto_cells(&["Alice"]),
                 new_value: text_proto_cells(&["Alicia"]),
-                ..Default::default()
             }],
         };
         let err = Delta::try_from(proto).unwrap_err();
