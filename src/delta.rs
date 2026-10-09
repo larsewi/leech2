@@ -187,6 +187,8 @@ impl Delta {
             );
         }
 
+        // Block deltas carry no change timestamps, so the child's are ignored
+        // in favor of `created`.
         for (key, (value, _)) in child.inserts {
             self.merge_insert(key, value, created)
                 .context("failed to merge inserts")?;
