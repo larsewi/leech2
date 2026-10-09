@@ -558,8 +558,7 @@ mod tests {
                     ..Default::default()
                 })
                 .collect(),
-            csv: None,
-            use_full_state_if_smaller: true,
+            ..Default::default()
         }
     }
 

@@ -469,6 +469,16 @@ impl Validate for FieldConfig {
     }
 }
 
+impl Default for TableConfig {
+    fn default() -> Self {
+        Self {
+            fields: Vec::new(),
+            csv: None,
+            use_full_state_if_smaller: default_true(),
+        }
+    }
+}
+
 impl Validate for TableConfig {
     fn validate(&self) -> Result<()> {
         let num_primary_keys = self.fields.iter().filter(|field| field.primary_key).count();

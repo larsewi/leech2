@@ -452,7 +452,7 @@ mod tests {
         TableConfig {
             fields,
             csv: Some(make_csv(header)),
-            use_full_state_if_smaller: true,
+            ..Default::default()
         }
     }
 
@@ -460,7 +460,7 @@ mod tests {
         TableConfig {
             fields,
             csv: Some(csv),
-            use_full_state_if_smaller: true,
+            ..Default::default()
         }
     }
 
@@ -1002,8 +1002,7 @@ mod tests {
     fn typed_config(fields: Vec<FieldConfig>) -> TableConfig {
         TableConfig {
             fields,
-            csv: None,
-            use_full_state_if_smaller: true,
+            ..Default::default()
         }
     }
 
