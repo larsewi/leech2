@@ -1466,6 +1466,8 @@ mod tests {
         assert!(!sql.contains("userslog"), "got:\n{sql}");
     }
 
+    /// Entries lack a change timestamp when the agent does not track changes
+    /// for the table while the hub is configured to write a change log.
     #[test]
     fn test_patch_to_sql_change_log_writes_null_without_change_timestamp() {
         let mut delta = dummy_delta(&["id"], &["name", "email"]);
