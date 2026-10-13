@@ -1,14 +1,10 @@
-use std::collections::HashMap;
-
-use anyhow::Result;
 use prost_types::Timestamp;
 
 use crate::cell::Cell;
 use crate::proto::patch::Insert as ProtoInsert;
-use crate::proto::record::Record as ProtoRecord;
-use crate::record::Record;
+use crate::record::TimestampedRecordMap;
 
-pub type InsertMap = HashMap<Vec<Cell>, (Vec<Cell>, Option<Timestamp>)>;
+pub type InsertMap = TimestampedRecordMap;
 
 impl From<(Vec<Cell>, (Vec<Cell>, Option<Timestamp>))> for ProtoInsert {
     fn from((key, (value, change_timestamp)): (Vec<Cell>, (Vec<Cell>, Option<Timestamp>))) -> Self {
@@ -20,21 +16,13 @@ impl From<(Vec<Cell>, (Vec<Cell>, Option<Timestamp>))> for ProtoInsert {
     }
 }
 
-/// Decode a block's inserts into an [`InsertMap`] keyed by each record's key.
-pub fn decode_proto_inserts(protos: Vec<ProtoRecord>) -> Result<InsertMap> {
-    let mut inserts = HashMap::with_capacity(protos.len());
-    for proto in protos {
-        let record = Record::try_from(proto)?;
-        inserts.insert(record.key, (record.value, None));
-    }
-    Ok(inserts)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     use prost::Message;
+
+    use crate::proto::record::Record as ProtoRecord;
 
     use crate::cell::text_proto_cells;
 

@@ -444,6 +444,89 @@ impl Default for FieldConfig {
     }
 }
 
+/// Values written into a change log's operation column, one per operation.
+#[derive(Debug, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct LogOperations {
+    pub insert: String,
+    pub update: String,
+    pub delete: String,
+}
+
+impl Default for LogOperations {
+    fn default() -> Self {
+        Self {
+            insert: "INSERT".to_string(),
+            update: "UPDATE".to_string(),
+            delete: "DELETE".to_string(),
+        }
+    }
+}
+
+fn default_log_operation_field() -> String {
+    "operation".to_string()
+}
+
+fn default_log_timestamp_field() -> String {
+    "timestamp".to_string()
+}
+
+/// Opt-in change log for a table. Each insert, update and delete applied to
+/// the table is also recorded as a row in the log table. Full states are not
+/// logged.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LogConfig {
+    /// Name of the log table.
+    pub table: String,
+    /// Log column that receives the operation (see `operations`).
+    #[serde(default = "default_log_operation_field", rename = "operation-field")]
+    pub operation_field: String,
+    /// Log column that receives the record's change timestamp.
+    #[serde(default = "default_log_timestamp_field", rename = "timestamp-field")]
+    pub timestamp_field: String,
+    /// Values written into `operation-field` for each operation.
+    #[serde(default)]
+    pub operations: LogOperations,
+    /// Fields of the table that the log table does not have.
+    #[serde(default)]
+    pub exclude: Vec<String>,
+}
+
+impl LogConfig {
+    fn validate(&self, fields: &[FieldConfig]) -> Result<()> {
+        validate_field_name(&self.table).context("log.table")?;
+        validate_field_name(&self.operation_field).context("log.operation-field")?;
+        validate_field_name(&self.timestamp_field).context("log.timestamp-field")?;
+        if self.operation_field == self.timestamp_field {
+            bail!(
+                "log.operation-field and log.timestamp-field are both '{}'",
+                self.operation_field
+            );
+        }
+
+        for column in [&self.operation_field, &self.timestamp_field] {
+            if fields.iter().any(|field| &field.name == column) {
+                bail!("log column '{}' collides with a field", column);
+            }
+        }
+
+        let mut excluded = HashSet::new();
+        for name in &self.exclude {
+            let Some(field) = fields.iter().find(|field| &field.name == name) else {
+                bail!("log.exclude references unknown field '{}'", name);
+            };
+            if field.primary_key {
+                bail!("log.exclude must not contain primary-key field '{}'", name);
+            }
+            if !excluded.insert(name.as_str()) {
+                bail!("log.exclude contains '{}' more than once", name);
+            }
+        }
+        Ok(())
+    }
+}
+
 /// Configure where the table data comes from and how its columns map to SQL.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -466,6 +549,9 @@ pub struct TableConfig {
     /// part of a full state get NULL. When absent, no such column is written.
     #[serde(default, rename = "change-timestamp")]
     pub change_timestamp: Option<String>,
+    /// Opt-in change log. When absent, no log is written.
+    #[serde(default)]
+    pub log: Option<LogConfig>,
 }
 
 impl Validate for FieldConfig {
@@ -481,6 +567,7 @@ impl Default for TableConfig {
             csv: None,
             use_full_state_if_smaller: default_true(),
             change_timestamp: None,
+            log: None,
         }
     }
 }
@@ -511,6 +598,10 @@ impl Validate for TableConfig {
             }
         }
 
+        if let Some(log) = &self.log {
+            log.validate(&self.fields)?;
+        }
+
         Ok(())
     }
 }
@@ -530,7 +621,7 @@ impl TableConfig {
 
     /// Whether patch creation tracks per-record change times for this table.
     pub fn tracks_changes(&self) -> bool {
-        self.change_timestamp.is_some()
+        self.change_timestamp.is_some() || self.log.is_some()
     }
 }
 
@@ -543,6 +634,15 @@ impl Validate for Config {
             table
                 .validate()
                 .with_context(|| format!("table '{}'", name))?;
+            if let Some(log) = &table.log
+                && self.tables.contains_key(&log.table)
+            {
+                bail!(
+                    "table '{}': log.table '{}' is also declared as a table",
+                    name,
+                    log.table
+                );
+            }
         }
 
         let mut injected_names = HashSet::new();
@@ -558,8 +658,12 @@ impl Validate for Config {
                 );
             }
             for (table_name, table) in &self.tables {
+                let collides_with_log = table.log.as_ref().is_some_and(|log| {
+                    log.operation_field == field.name || log.timestamp_field == field.name
+                });
                 if table.fields.iter().any(|f| f.name == field.name)
                     || table.change_timestamp.as_ref() == Some(&field.name)
+                    || collides_with_log
                 {
                     bail!(
                         "injected-fields[{}] '{}' collides with a column in table '{}'",
@@ -1704,5 +1808,135 @@ fields = [{ name = "id", type = "NUMBER", primary-key = true }]
         let err = load_with_change_timestamp("changed\\u0001", "").unwrap_err();
         let msg = format!("{:#}", err);
         assert!(msg.contains("control character"), "got: {msg}");
+    }
+
+    fn load_with_log(log: &str, injected: &str) -> Result<Config> {
+        let dir = tempfile::tempdir().unwrap();
+        let toml_input = format!(
+            r#"
+{injected}
+[tables.users]
+fields = [
+    {{ name = "id", type = "NUMBER", primary-key = true }},
+    {{ name = "name", type = "TEXT" }},
+    {{ name = "email", type = "TEXT" }},
+]
+
+[tables.users.log]
+{log}
+"#
+        );
+        fs::write(dir.path().join("config.toml"), toml_input).unwrap();
+        Config::load(dir.path())
+    }
+
+    const LOG_TABLE: &str = "table = \"userslog\"\n";
+
+    fn load_log_error(extra: &str, injected: &str) -> String {
+        let err = load_with_log(&format!("{LOG_TABLE}{extra}"), injected).unwrap_err();
+        format!("{:#}", err)
+    }
+
+    #[test]
+    fn test_log_accepted() {
+        let log = format!(
+            r#"{LOG_TABLE}
+operation-field = "op"
+timestamp-field = "ts"
+operations = {{ insert = "ADD", update = "CHANGE", delete = "REMOVE" }}
+exclude = ["email"]
+"#
+        );
+        let config = load_with_log(&log, "").unwrap();
+        let table = &config.tables["users"];
+        let log = table.log.as_ref().unwrap();
+        assert_eq!(log.table, "userslog");
+        assert_eq!(log.operation_field, "op");
+        assert_eq!(log.timestamp_field, "ts");
+        assert_eq!(log.operations.insert, "ADD");
+        assert_eq!(log.operations.update, "CHANGE");
+        assert_eq!(log.operations.delete, "REMOVE");
+        assert_eq!(log.exclude, vec!["email".to_string()]);
+        assert!(table.tracks_changes());
+    }
+
+    #[test]
+    fn test_log_defaults() {
+        let config = load_with_log(LOG_TABLE, "").unwrap();
+        let log = config.tables["users"].log.as_ref().unwrap();
+        assert_eq!(log.operation_field, "operation");
+        assert_eq!(log.timestamp_field, "timestamp");
+        assert_eq!(log.operations.insert, "INSERT");
+        assert_eq!(log.operations.update, "UPDATE");
+        assert_eq!(log.operations.delete, "DELETE");
+        assert!(log.exclude.is_empty());
+    }
+
+    #[test]
+    fn test_log_operations_partial_override() {
+        let log = format!("{LOG_TABLE}operations = {{ delete = \"REMOVE\" }}\n");
+        let config = load_with_log(&log, "").unwrap();
+        let log = config.tables["users"].log.as_ref().unwrap();
+        assert_eq!(log.operations.insert, "INSERT");
+        assert_eq!(log.operations.update, "UPDATE");
+        assert_eq!(log.operations.delete, "REMOVE");
+    }
+
+    #[test]
+    fn test_log_requires_table() {
+        let msg = format!("{:#}", load_with_log("", "").unwrap_err());
+        assert!(msg.contains("missing field `table`"), "got: {msg}");
+    }
+
+    #[test]
+    fn test_log_rejects_unknown_key() {
+        let msg = load_log_error("full-state = \"insert\"\n", "");
+        assert!(msg.contains("unknown field `full-state`"), "got: {msg}");
+    }
+
+    #[test]
+    fn test_log_rejects_field_collision() {
+        let msg = load_log_error("operation-field = \"name\"\n", "");
+        assert!(msg.contains("collides with a field"), "got: {msg}");
+    }
+
+    #[test]
+    fn test_log_rejects_same_operation_and_timestamp_field() {
+        let msg = load_log_error("operation-field = \"timestamp\"\n", "");
+        assert!(msg.contains("are both 'timestamp'"), "got: {msg}");
+    }
+
+    #[test]
+    fn test_log_rejects_unknown_exclude() {
+        let msg = load_log_error("exclude = [\"missing\"]\n", "");
+        assert!(msg.contains("unknown field 'missing'"), "got: {msg}");
+    }
+
+    #[test]
+    fn test_log_rejects_primary_key_exclude() {
+        let msg = load_log_error("exclude = [\"id\"]\n", "");
+        assert!(msg.contains("primary-key field 'id'"), "got: {msg}");
+    }
+
+    #[test]
+    fn test_log_rejects_duplicate_exclude() {
+        let msg = load_log_error("exclude = [\"email\", \"email\"]\n", "");
+        assert!(msg.contains("more than once"), "got: {msg}");
+    }
+
+    #[test]
+    fn test_log_rejects_table_name_of_declared_table() {
+        let msg = format!(
+            "{:#}",
+            load_with_log("table = \"users\"\n", "").unwrap_err()
+        );
+        assert!(msg.contains("also declared as a table"), "got: {msg}");
+    }
+
+    #[test]
+    fn test_log_rejects_injected_field_collision() {
+        let injected = r#"injected-fields = [{ name = "operation", type = "TEXT", value = "x" }]"#;
+        let msg = load_log_error("", injected);
+        assert!(msg.contains("collides with a column"), "got: {msg}");
     }
 }

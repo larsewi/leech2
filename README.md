@@ -198,6 +198,37 @@ true  = "^Y$"
 false = "^N$"
 ```
 
+### Change logs
+
+Add a `[tables.X.log]` section to keep a history of changes to a table. For each
+insert, update and delete, leech2 also adds a row to the log table. Tables
+without the section are not affected. Only `table` is required.
+
+```toml
+[tables.users.log]
+table           = "users_log"  # name of the log table
+operation-field = "operation"  # column that receives the operation (default)
+timestamp-field = "timestamp"  # column that receives the change timestamp (default)
+exclude         = ["email"]    # fields the log table does not have (default: [])
+operations      = { insert = "INSERT", update = "UPDATE", delete = "DELETE" } # (default)
+```
+
+- The log table has the same column names as the table, minus `exclude`, plus
+  any injected fields, `operation-field` and `timestamp-field`. The table's
+  `change-timestamp` column is not copied.
+- For an insert, the log row takes its values from the patch. For an update or
+  delete, the patch only carries the changed columns or the key. So the log row
+  is copied from the table, after the UPDATE or before the DELETE.
+- `timestamp-field` gets the creation time of the last block that changed the
+  record. It gets `NULL` when the agent does not send it (e.g. agents older than
+  leech2 5.7.0).
+- Full states are not logged. Consider setting
+  `use-full-state-if-smaller = false` on tables with a log, so changes are not
+  lost to a full state.
+- `exclude` must name existing non-primary-key fields. `operation-field` and
+  `timestamp-field` must not be fields or injected fields.
+- leech2 only appends to the log table. Retention is up to you.
+
 ### Injected fields
 
 Optional `[[injected-fields]]` entries add static columns to all generated SQL.

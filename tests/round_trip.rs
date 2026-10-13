@@ -9,6 +9,7 @@
 //!
 //! After every ship both targets are queried and the rows are compared
 //! to the agent's in-memory model, including each row's change timestamp.
+//! The change log in `users_log` is compared to the log the model expects.
 //! Mutations include rare schema changes that exercise the layout-fallback
 //! path.
 //!
@@ -57,6 +58,14 @@ CREATE TABLE "users" (
     "changed" TIMESTAMPTZ,
     PRIMARY KEY ("id")
 );
+CREATE TABLE "users_log" (
+    "id" DOUBLE PRECISION,
+    "name" TEXT,
+    "email" TEXT,
+    "active" BOOLEAN,
+    "operation" TEXT,
+    "timestamp" TIMESTAMPTZ
+);
 "#;
 
 /// Shared hub schema DDL: same columns as the per-agent schema plus a
@@ -71,6 +80,15 @@ CREATE TABLE "users" (
     "active" BOOLEAN,
     "changed" TIMESTAMPTZ,
     PRIMARY KEY ("host", "id")
+);
+CREATE TABLE "users_log" (
+    "host" TEXT,
+    "id" DOUBLE PRECISION,
+    "name" TEXT,
+    "email" TEXT,
+    "active" BOOLEAN,
+    "operation" TEXT,
+    "timestamp" TIMESTAMPTZ
 );
 "#;
 
@@ -95,6 +113,7 @@ fields = [
     s.push_str("[tables.users.csv]\n");
     s.push_str("source = \"users.csv\"\n");
     s.push_str(&format!("null = \"^{EMAIL_NULL_SENTINEL}$\"\n"));
+    s.push_str("\n[tables.users.log]\ntable = \"users_log\"\n");
     s.push_str("\n[stats]\nenable = true\n");
     s
 }
@@ -122,10 +141,17 @@ struct AgentSim {
     block_rows: BTreeMap<i64, String>,
     /// Creation time (seconds) of the last block that changed each row.
     last_changed: BTreeMap<i64, i64>,
+    /// Creation time (seconds) of the last block that deleted each row.
+    deleted_at: BTreeMap<i64, i64>,
     /// CSV rows as of the last ship, to detect which rows a patch changes.
     shipped_rows: BTreeMap<i64, String>,
+    /// Model rows as of the last ship. A delete's log row copies these.
+    shipped_model: BTreeMap<i64, Row>,
     /// The `changed` value the hub should hold for each row (`None` = NULL).
     hub_changed: BTreeMap<i64, Option<i64>>,
+    /// The rows the hub's change log should hold, formatted like the
+    /// `users_log` query in [`HubSim::assert_log_matches`].
+    log: Vec<String>,
 }
 
 impl AgentSim {
@@ -139,8 +165,11 @@ impl AgentSim {
             email_active: true,
             block_rows: BTreeMap::new(),
             last_changed: BTreeMap::new(),
+            deleted_at: BTreeMap::new(),
             shipped_rows: BTreeMap::new(),
+            shipped_model: BTreeMap::new(),
             hub_changed: BTreeMap::new(),
+            log: Vec::new(),
         };
         agent.write_config()?;
         std::fs::write(work_dir.join("users.csv"), "").context("failed to write users.csv")?;
@@ -196,6 +225,11 @@ impl AgentSim {
                 self.last_changed.insert(*id, created);
             }
         }
+        for id in self.block_rows.keys() {
+            if !rows.contains_key(id) {
+                self.deleted_at.insert(*id, created);
+            }
+        }
         self.last_changed.retain(|id, _| rows.contains_key(id));
         self.block_rows = rows;
     }
@@ -204,6 +238,9 @@ impl AgentSim {
     /// A full state writes NULL for every row. A delta writes the last change
     /// time of each row that differs from the previous ship; other rows keep
     /// their value, since merging cancels changes that net out to nothing.
+    ///
+    /// A delta also extends the expected change log with one row per
+    /// inserted, updated or deleted record. A full state is not logged.
     fn record_ship(&mut self, full_state: bool) {
         let rows = self.csv_rows();
         let mut hub_changed = BTreeMap::new();
@@ -217,8 +254,52 @@ impl AgentSim {
             };
             hub_changed.insert(*id, changed);
         }
+
+        if !full_state {
+            for (id, line) in &rows {
+                let operation = match self.shipped_rows.get(id) {
+                    None => "INSERT",
+                    Some(shipped) if shipped != line => "UPDATE",
+                    Some(_) => continue,
+                };
+                let entry = self.log_entry(*id, &self.model[id], operation, self.last_changed[id]);
+                self.log.push(entry);
+            }
+            for id in self.shipped_rows.keys() {
+                if !rows.contains_key(id) {
+                    let entry =
+                        self.log_entry(*id, &self.shipped_model[id], "DELETE", self.deleted_at[id]);
+                    self.log.push(entry);
+                }
+            }
+        }
+
         self.hub_changed = hub_changed;
         self.shipped_rows = rows;
+        self.shipped_model = self.model.clone();
+    }
+
+    /// The email the hub should hold for `row`: empty (NULL) when the column
+    /// is inactive or the row uses `EMAIL_NULL_SENTINEL`.
+    fn expected_email<'a>(&self, row: &'a Row) -> &'a str {
+        if self.email_active && row.email != EMAIL_NULL_SENTINEL {
+            row.email.as_str()
+        } else {
+            ""
+        }
+    }
+
+    /// Format one expected change log row.
+    fn log_entry(&self, id: i64, row: &Row, operation: &str, timestamp: i64) -> String {
+        format!(
+            "{},{},{},{},{},{}",
+            id,
+            row.name,
+            self.expected_email(row),
+            row.active,
+            operation,
+            timestamp
+        )
     }
 
     /// Apply one weighted random mutation (insert/update/delete/no-op) to the
@@ -471,11 +552,7 @@ impl HubSim {
         let hub_rows: Vec<String> = csv.lines().map(|s| s.to_string()).collect();
         let mut want_rows = Vec::with_capacity(agent.model.len());
         for (id, r) in &agent.model {
-            let email = if agent.email_active && r.email != EMAIL_NULL_SENTINEL {
-                r.email.as_str()
-            } else {
-                ""
-            };
+            let email = agent.expected_email(r);
             let changed = match agent.hub_changed.get(id).copied().flatten() {
                 Some(seconds) => seconds.to_string(),
                 None => String::new(),
@@ -488,6 +565,35 @@ impl HubSim {
         if hub_rows != want_rows {
             bail!(
                 "row mismatch:\n  hub:  {:#?}\n  want: {:#?}",
+                hub_rows,
+                want_rows
+            );
+        }
+        Ok(())
+    }
+
+    /// Query every change log row (optionally filtered by host) and assert
+    /// it equals the agent's expected log. Both sides are sorted before the
+    /// comparison: the order of statements within a patch follows map
+    /// iteration order, and rows can repeat because block times are whole
+    /// seconds.
+    fn assert_log_matches(&self, agent: &AgentSim, host_filter: Option<&str>) -> Result<()> {
+        let where_clause = match host_filter {
+            Some(host) => format!(" WHERE \"host\" = '{host}'"),
+            None => String::new(),
+        };
+        let csv = self.psql(&format!(
+            "SELECT id, name, email, active::text, operation, \
+             extract(epoch FROM \"timestamp\")::bigint \
+             FROM \"users_log\"{where_clause};\n"
+        ))?;
+        let mut hub_rows: Vec<String> = csv.lines().map(|s| s.to_string()).collect();
+        hub_rows.sort();
+        let mut want_rows = agent.log.clone();
+        want_rows.sort();
+        if hub_rows != want_rows {
+            bail!(
+                "log mismatch:\n  hub:  {:#?}\n  want: {:#?}",
                 hub_rows,
                 want_rows
             );
@@ -584,6 +690,7 @@ fn ship_and_verify(
         target.apply(sql)?;
     }
     target.assert_matches(agent, host_filter)?;
+    target.assert_log_matches(agent, host_filter)?;
     Ok(())
 }
 

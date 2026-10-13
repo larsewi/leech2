@@ -170,8 +170,9 @@ deltas.
 For tables with `change-timestamp`, each block's creation time is passed to the
 merge. Every block goes through the merge rules, including a table's first block,
 which is merged into an empty delta. Entries a block produces or changes take its
-time, so each insert and update in the patch carries the creation time of the
-last block that changed it (see [DELTA_MERGING_RULES.md](DELTA_MERGING_RULES.md)).
+time, so each insert, update and delete in the patch carries the creation time
+of the last block that changed it (see
+[DELTA_MERGING_RULES.md](DELTA_MERGING_RULES.md)).
 Full states carry no timestamps.
 
 After merging, each table's delta is optimized: deletes are stripped down to
@@ -277,7 +278,8 @@ a real PostgreSQL instance. The acceptance tests under `tests/accept_*.rs`
 verify SQL **shape** (counts of `INSERT` / `UPDATE` / `DELETE`); the round-trip
 test additionally verifies SQL **semantics** by applying the generated SQL
 through `psql` and asserting that the hub's row state, including each row's
-change timestamp, matches the agent's in-memory model after every ship.
+change timestamp, matches the agent's in-memory model after every ship. It also
+checks the table's change log against the log the model expects.
 
 The test is `#[ignore]`d so `cargo test` skips it locally. CI runs it via the
 `Round-trip` workflow with a Postgres 16 service container. To run locally:

@@ -5,7 +5,7 @@ use chrono::DateTime;
 use prost_types::Timestamp;
 
 use crate::cell::{Cell, Kind};
-use crate::config::{Config, FieldConfig};
+use crate::config::{Config, FieldConfig, LogConfig};
 use crate::proto::cell::Cell as ProtoCell;
 use crate::proto::patch::Delete as ProtoDelete;
 use crate::proto::patch::Delta as ProtoDelta;
@@ -34,6 +34,8 @@ struct TableSchema<'a> {
     /// Hub-config column that receives each record's change timestamp, if
     /// any.
     change_timestamp: Option<&'a str>,
+    /// Hub-config change log, if any.
+    log: Option<&'a LogConfig>,
 }
 
 impl<'a> TableSchema<'a> {
@@ -113,7 +115,15 @@ impl<'a> TableSchema<'a> {
             subsidiary_value_names: wire_subsidiary_value_names,
             field_configs,
             change_timestamp: table_config.change_timestamp.as_deref(),
+            log: table_config.log.as_ref(),
         })
+    }
+
+    /// Field names in wire order: primary keys, then subsidiary values.
+    fn field_names(&self) -> impl Iterator<Item = &'a String> {
+        self.primary_key_names
+            .iter()
+            .chain(self.subsidiary_value_names)
     }
 
     /// Look up the hub `FieldConfig` for a wire field name. The wire-field
@@ -137,8 +147,12 @@ impl<'a> TableSchema<'a> {
         table_name: &str,
     ) -> Result<()> {
         for injected in injected_fields {
+            let collides_with_log = self.log.is_some_and(|log| {
+                log.operation_field == injected.name || log.timestamp_field == injected.name
+            });
             if self.field_configs.contains_key(injected.name.as_str())
                 || self.change_timestamp == Some(injected.name.as_str())
+                || collides_with_log
             {
                 bail!(
                     "injected field '{}' collides with a column of table '{}'",
@@ -302,6 +316,18 @@ fn emit_deletes(
     for delete in deletes {
         let where_clause = primary_key_where_clause(&delete.key, schema, injected_fields)
             .with_context(|| format!("key {:?}", delete.key))?;
+        // Log before deleting, while the row is still there to copy.
+        if let Some(log) = schema.log {
+            out.push_str(&format_log_select(
+                log,
+                &log.operations.delete,
+                delete.change_timestamp.as_ref(),
+                schema,
+                injected_fields,
+                quoted_table,
+                &where_clause,
+            )?);
+        }
         out.push_str(&format!(
             "DELETE FROM {}\nWHERE {};\n",
             quoted_table, where_clause
@@ -323,18 +349,24 @@ fn emit_inserts(
     let injected_values: Vec<String> = injected_fields.iter().map(|f| f.quoted_value()).collect();
 
     for insert in inserts {
-        let values = insert_values(
-            &insert.key,
-            &insert.value,
-            insert.change_timestamp.as_ref(),
-            schema,
-            &injected_values,
-        )
-        .with_context(|| format!("key {:?}", insert.key))?;
+        let row = format_row(&insert.key, &insert.value, schema)
+            .with_context(|| format!("key {:?}", insert.key))?;
+        let change_timestamp = insert.change_timestamp.as_ref();
+        let values = insert_values(&row, change_timestamp, schema, &injected_values)?;
         out.push_str(&format!(
             "INSERT INTO {} ({})\nVALUES ({});\n",
             quoted_table, columns, values
         ));
+        if let Some(log) = schema.log {
+            out.push_str(&format_log_insert(
+                log,
+                &row,
+                change_timestamp,
+                schema,
+                injected_fields,
+                &injected_values,
+            )?);
+        }
     }
 
     Ok(())
@@ -354,8 +386,9 @@ fn emit_state_inserts(
     let injected_values: Vec<String> = injected_fields.iter().map(|f| f.quoted_value()).collect();
 
     for record in records {
-        let values = insert_values(&record.key, &record.value, None, schema, &injected_values)
+        let row = format_row(&record.key, &record.value, schema)
             .with_context(|| format!("key {:?}", record.key))?;
+        let values = insert_values(&row, None, schema, &injected_values)?;
         out.push_str(&format!(
             "INSERT INTO {} ({})\nVALUES ({});\n",
             quoted_table, columns, values
@@ -372,11 +405,7 @@ fn insert_columns(schema: &TableSchema, injected_fields: &[InjectedField]) -> St
     for injected in injected_fields {
         columns.push(injected.quoted_column());
     }
-    for name in schema
-        .primary_key_names
-        .iter()
-        .chain(schema.subsidiary_value_names)
-    {
+    for name in schema.field_names() {
         columns.push(quote_identifier(name));
     }
     if let Some(column) = schema.change_timestamp {
@@ -386,28 +415,107 @@ fn insert_columns(schema: &TableSchema, injected_fields: &[InjectedField]) -> St
 }
 
 /// Build the literal list of an INSERT statement, matching [`insert_columns`].
+/// `row` holds the field literals from [`format_row`].
 fn insert_values(
-    key: &[ProtoCell],
-    value: &[ProtoCell],
+    row: &[String],
     change_timestamp: Option<&Timestamp>,
     schema: &TableSchema,
     injected_values: &[String],
 ) -> Result<String> {
     let mut literals = injected_values.to_vec();
-    literals.extend(format_row(key, value, schema)?);
+    literals.extend_from_slice(row);
     if schema.change_timestamp.is_some() {
         literals.push(change_timestamp_literal(change_timestamp)?);
     }
     Ok(literals.join(", "))
 }
 
-/// Format a single UPDATE statement.
+/// Quoted names of the columns a log row copies from the table: injected
+/// fields, then the fields not in `log.exclude`.
+fn log_copied_columns(
+    log: &LogConfig,
+    schema: &TableSchema,
+    injected_fields: &[InjectedField],
+) -> Vec<String> {
+    let mut columns: Vec<String> = injected_fields
+        .iter()
+        .map(InjectedField::quoted_column)
+        .collect();
+    for name in schema.field_names() {
+        if !log.exclude.contains(name) {
+            columns.push(quote_identifier(name));
+        }
+    }
+    columns
+}
+
+/// Build the quoted column list of a log INSERT: the copied columns, then the
+/// operation and timestamp columns.
+fn log_columns(log: &LogConfig, schema: &TableSchema, injected_fields: &[InjectedField]) -> String {
+    let mut columns = log_copied_columns(log, schema, injected_fields);
+    columns.push(quote_identifier(&log.operation_field));
+    columns.push(quote_identifier(&log.timestamp_field));
+    columns.join(", ")
+}
+
+/// Format a log INSERT for an inserted record, using the values from the
+/// patch. `row` holds the field literals from [`format_row`].
+fn format_log_insert(
+    log: &LogConfig,
+    row: &[String],
+    change_timestamp: Option<&Timestamp>,
+    schema: &TableSchema,
+    injected_fields: &[InjectedField],
+    injected_values: &[String],
+) -> Result<String> {
+    let mut literals = injected_values.to_vec();
+    for (name, literal) in schema.field_names().zip(row) {
+        if !log.exclude.contains(name) {
+            literals.push(literal.clone());
+        }
+    }
+    literals.push(quote_literal(&Cell::Text(log.operations.insert.clone())));
+    literals.push(change_timestamp_literal(change_timestamp)?);
+    Ok(format!(
+        "INSERT INTO {} ({})\nVALUES ({});\n",
+        quote_identifier(&log.table),
+        log_columns(log, schema, injected_fields),
+        literals.join(", ")
+    ))
+}
+
+/// Format a log INSERT that copies the record matching `where_clause` from the
+/// table. Updates and deletes are sparse on the wire, so the full row comes
+/// from the table.
+fn format_log_select(
+    log: &LogConfig,
+    operation: &str,
+    change_timestamp: Option<&Timestamp>,
+    schema: &TableSchema,
+    injected_fields: &[InjectedField],
+    quoted_table: &str,
+    where_clause: &str,
+) -> Result<String> {
+    let mut selected = log_copied_columns(log, schema, injected_fields);
+    selected.push(quote_literal(&Cell::Text(operation.to_string())));
+    selected.push(change_timestamp_literal(change_timestamp)?);
+    Ok(format!(
+        "INSERT INTO {} ({})\nSELECT {}\nFROM {}\nWHERE {};\n",
+        quote_identifier(&log.table),
+        log_columns(log, schema, injected_fields),
+        selected.join(", "),
+        quoted_table,
+        where_clause
+    ))
+}
+
+/// Format a single UPDATE statement for the record matching `where_clause`.
 fn format_update(
     update: &ProtoUpdate,
     subsidiary_names: &[String],
     schema: &TableSchema,
-    injected_fields: &[InjectedField],
     quoted_table: &str,
+    where_clause: &str,
 ) -> Result<String> {
     // Sparse updates list changed column indices explicitly; full
     // updates (empty changed_indices) include all subsidiary columns.
@@ -455,8 +563,6 @@ fn format_update(
         ));
     }
 
-    let where_clause = primary_key_where_clause(&update.key, schema, injected_fields)?;
-
     Ok(format!(
         "UPDATE {}\nSET {}\nWHERE {};\n",
         quoted_table,
@@ -474,15 +580,29 @@ fn emit_updates(
     out: &mut String,
 ) -> Result<()> {
     for update in updates {
+        let where_clause = primary_key_where_clause(&update.key, schema, injected_fields)
+            .with_context(|| format!("key {:?}", update.key))?;
         let stmt = format_update(
             update,
             schema.subsidiary_value_names,
             schema,
-            injected_fields,
             quoted_table,
+            &where_clause,
         )
         .with_context(|| format!("key {:?}", update.key))?;
         out.push_str(&stmt);
+        // Log after updating, so the copied row holds the new values.
+        if let Some(log) = schema.log {
+            out.push_str(&format_log_select(
+                log,
+                &log.operations.update,
+                update.change_timestamp.as_ref(),
+                schema,
+                injected_fields,
+                quoted_table,
+                &where_clause,
+            )?);
+        }
     }
 
     Ok(())
@@ -733,6 +853,7 @@ mod tests {
         let mut delta = dummy_delta(&["id"], &["name"]);
         delta.deletes.push(ProtoDelete {
             key: text_proto_cells(&["1"]),
+            change_timestamp: None,
         });
         delta.inserts.push(ProtoInsert {
             key: text_proto_cells(&["2"]),
@@ -1051,6 +1172,7 @@ mod tests {
         let mut delta = dummy_delta(&["id", "host"], &["name"]);
         delta.deletes.push(ProtoDelete {
             key: text_proto_cells(&["1"]),
+            change_timestamp: None,
         });
         let patch = dummy_patch(HashMap::from([("t".to_string(), delta)]));
 
@@ -1254,5 +1376,140 @@ mod tests {
         let err = patch_to_sql(&change_timestamp_config(), &patch).unwrap_err();
         let msg = format!("{:#}", err);
         assert!(msg.contains("out of range"), "got: {msg}");
+    }
+
+    /// A `users` table with a change-timestamp column and a change log that
+    /// excludes `email`.
+    fn log_config() -> Config {
+        let mut table_config = dummy_table(&[("id", true), ("name", false), ("email", false)]);
+        table_config.change_timestamp = Some("changed".to_string());
+        table_config.log = Some(LogConfig {
+            table: "userslog".to_string(),
+            operation_field: "operation".to_string(),
+            timestamp_field: "timestamp".to_string(),
+            operations: Default::default(),
+            exclude: vec!["email".to_string()],
+        });
+        Config {
+            tables: HashMap::from([("users".to_string(), table_config)]),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn test_patch_to_sql_writes_change_log() {
+        let mut delta = dummy_delta(&["id"], &["name", "email"]);
+        delta.deletes.push(ProtoDelete {
+            key: text_proto_cells(&["1"]),
+            change_timestamp: Some(CHANGED),
+        });
+        delta.inserts.push(ProtoInsert {
+            key: text_proto_cells(&["2"]),
+            value: text_proto_cells(&["Bob", "bob@example.com"]),
+            change_timestamp: Some(CHANGED),
+        });
+        delta.updates.push(ProtoUpdate {
+            key: text_proto_cells(&["3"]),
+            changed_indices: vec![0],
+            new_value: text_proto_cells(&["Caroline"]),
+            change_timestamp: Some(CHANGED),
+        });
+        let mut patch = dummy_patch(HashMap::from([("users".to_string(), delta)]));
+        patch.injected_fields.push(ProtoInjectedField {
+            name: "host".to_string(),
+            value: Some(ProtoCell::from(Cell::Text("h1".into()))),
+        });
+
+        let sql = patch_to_sql(&log_config(), &patch).unwrap().unwrap();
+
+        let log_columns =
+            r#"INSERT INTO "userslog" ("host", "id", "name", "operation", "timestamp")"#;
+        let expected = [
+            log_columns,
+            r#"SELECT "host", "id", "name", 'DELETE', '2026-10-09T08:30:00Z'"#,
+            r#"FROM "users""#,
+            r#"WHERE "id" = '1' AND "host" = 'h1';"#,
+            r#"DELETE FROM "users""#,
+            r#"WHERE "id" = '1' AND "host" = 'h1';"#,
+            r#"INSERT INTO "users" ("host", "id", "name", "email", "changed")"#,
+            r#"VALUES ('h1', '2', 'Bob', 'bob@example.com', '2026-10-09T08:30:00Z');"#,
+            log_columns,
+            r#"VALUES ('h1', '2', 'Bob', 'INSERT', '2026-10-09T08:30:00Z');"#,
+            r#"UPDATE "users""#,
+            r#"SET "name" = 'Caroline', "changed" = '2026-10-09T08:30:00Z'"#,
+            r#"WHERE "id" = '3' AND "host" = 'h1';"#,
+            log_columns,
+            r#"SELECT "host", "id", "name", 'UPDATE', '2026-10-09T08:30:00Z'"#,
+            r#"FROM "users""#,
+            r#"WHERE "id" = '3' AND "host" = 'h1';"#,
+        ]
+        .join("\n")
+            + "\n";
+        assert_eq!(sql, expected);
+    }
+
+    #[test]
+    fn test_patch_to_sql_full_state_writes_no_change_log() {
+        let table = ProtoTable {
+            primary_key_names: vec!["id".to_string()],
+            subsidiary_value_names: vec!["name".to_string(), "email".to_string()],
+            records: vec![ProtoRecord {
+                key: text_proto_cells(&["1"]),
+                value: text_proto_cells(&["Alice", "alice@example.com"]),
+            }],
+        };
+        let mut patch = dummy_patch(HashMap::new());
+        patch.states.insert("users".to_string(), table);
+
+        let sql = patch_to_sql(&log_config(), &patch).unwrap().unwrap();
+
+        assert!(!sql.contains("userslog"), "got:\n{sql}");
+    }
+
+    /// Entries lack a change timestamp when the agent does not track changes
+    /// for the table while the hub is configured to write a change log.
+    #[test]
+    fn test_patch_to_sql_change_log_writes_null_without_change_timestamp() {
+        let mut delta = dummy_delta(&["id"], &["name", "email"]);
+        delta.deletes.push(ProtoDelete {
+            key: text_proto_cells(&["1"]),
+            change_timestamp: None,
+        });
+        delta.inserts.push(ProtoInsert {
+            key: text_proto_cells(&["2"]),
+            value: text_proto_cells(&["Bob", "bob@example.com"]),
+            ..Default::default()
+        });
+        let patch = dummy_patch(HashMap::from([("users".to_string(), delta)]));
+
+        let sql = patch_to_sql(&log_config(), &patch).unwrap().unwrap();
+
+        assert!(
+            sql.contains(r#"SELECT "id", "name", 'DELETE', NULL"#),
+            "got:\n{sql}"
+        );
+        assert!(
+            sql.contains(r#"VALUES ('2', 'Bob', 'INSERT', NULL);"#),
+            "got:\n{sql}"
+        );
+    }
+
+    #[test]
+    fn test_patch_to_sql_rejects_injected_field_colliding_with_log_column() {
+        let mut delta = dummy_delta(&["id"], &["name", "email"]);
+        delta.inserts.push(ProtoInsert {
+            key: text_proto_cells(&["1"]),
+            value: text_proto_cells(&["Alice", "alice@example.com"]),
+            ..Default::default()
+        });
+        let mut patch = dummy_patch(HashMap::from([("users".to_string(), delta)]));
+        patch.injected_fields.push(ProtoInjectedField {
+            name: "operation".to_string(),
+            value: Some(ProtoCell::from(Cell::Text("agent-1".into()))),
+        });
+
+        let err = patch_to_sql(&log_config(), &patch).unwrap_err();
+        let msg = format!("{:#}", err);
+        assert!(msg.contains("collides with a column"), "got: {msg}");
     }
 }
