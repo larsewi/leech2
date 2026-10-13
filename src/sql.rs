@@ -733,6 +733,7 @@ mod tests {
         let mut delta = dummy_delta(&["id"], &["name"]);
         delta.deletes.push(ProtoDelete {
             key: text_proto_cells(&["1"]),
+            change_timestamp: None,
         });
         delta.inserts.push(ProtoInsert {
             key: text_proto_cells(&["2"]),
@@ -1051,6 +1052,7 @@ mod tests {
         let mut delta = dummy_delta(&["id", "host"], &["name"]);
         delta.deletes.push(ProtoDelete {
             key: text_proto_cells(&["1"]),
+            change_timestamp: None,
         });
         let patch = dummy_patch(HashMap::from([("t".to_string(), delta)]));
 

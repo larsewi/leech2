@@ -170,8 +170,9 @@ deltas.
 For tables with `change-timestamp`, each block's creation time is passed to the
 merge. Every block goes through the merge rules, including a table's first block,
 which is merged into an empty delta. Entries a block produces or changes take its
-time, so each insert and update in the patch carries the creation time of the
-last block that changed it (see [DELTA_MERGING_RULES.md](DELTA_MERGING_RULES.md)).
+time, so each insert, update and delete in the patch carries the creation time
+of the last block that changed it (see
+[DELTA_MERGING_RULES.md](DELTA_MERGING_RULES.md)).
 Full states carry no timestamps.
 
 After merging, each table's delta is optimized: deletes are stripped down to

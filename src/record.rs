@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::fmt;
 
 use anyhow::Result;
+use prost_types::Timestamp;
 
 use crate::cell::Cell;
 use crate::cell::{decode_proto_cells, display_proto_cells};
@@ -50,6 +51,14 @@ impl From<(Vec<Cell>, Vec<Cell>)> for ProtoRecord {
             key: key.into_iter().map(Into::into).collect(),
             value: value.into_iter().map(Into::into).collect(),
         }
+    }
+}
+
+/// Converts an insert or delete entry into a block record. Blocks carry no
+/// change timestamps, so the timestamp is dropped.
+impl From<(Vec<Cell>, (Vec<Cell>, Option<Timestamp>))> for ProtoRecord {
+    fn from((key, (value, _)): (Vec<Cell>, (Vec<Cell>, Option<Timestamp>))) -> Self {
+        (key, value).into()
     }
 }
 

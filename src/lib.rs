@@ -9,6 +9,7 @@ pub mod block;
 mod callbacks;
 pub mod cell;
 pub mod config;
+pub mod delete;
 pub mod delta;
 mod ffi;
 pub mod head;

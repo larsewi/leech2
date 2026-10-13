@@ -111,8 +111,8 @@ updates.
 ### Change timestamp
 
 The creation time of the last block that changed a record. Carried on patch
-inserts and updates of tables with `change-timestamp`, and written into that
-column. Use **change timestamp** for this per-record time and **created** for a
+inserts, updates and deletes of tables with `change-timestamp`. Inserts and
+updates write it into that column. Use **change timestamp** for this per-record time and **created** for a
 block's or patch's own time.
 
 ### Rule

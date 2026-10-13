@@ -6,13 +6,11 @@ use prost_types::Timestamp;
 
 use crate::cell::Cell;
 use crate::cell::display_proto_cells;
+use crate::delete::{DeleteMap, decode_proto_deletes};
 use crate::insert::{InsertMap, decode_proto_inserts};
 use crate::proto::block::Delta as ProtoBlockDelta;
 use crate::proto::cell::Cell as ProtoCell;
-use crate::proto::patch::Delete as ProtoDelete;
 use crate::proto::patch::Delta as ProtoPatchDelta;
-use crate::record::RecordMap;
-use crate::record::decode_proto_records;
 use crate::state::State;
 use crate::table::Table;
 use crate::update::UpdateMap;
@@ -28,8 +26,8 @@ pub struct Delta {
     pub subsidiary_value_names: Vec<String>,
     /// Records that were added (key -> (value, change_timestamp)).
     pub inserts: InsertMap,
-    /// Records that were removed (key -> value).
-    pub deletes: RecordMap,
+    /// Records that were removed (key -> (value, change_timestamp)).
+    pub deletes: DeleteMap,
     /// Records that were modified (key -> (old_value, new_value, change_timestamp)).
     pub updates: UpdateMap,
 }
@@ -39,7 +37,7 @@ impl TryFrom<ProtoBlockDelta> for Delta {
 
     fn try_from(proto: ProtoBlockDelta) -> Result<Self> {
         let inserts = decode_proto_inserts(proto.inserts).context("decoding delta inserts")?;
-        let deletes = decode_proto_records(proto.deletes).context("decoding delta deletes")?;
+        let deletes = decode_proto_deletes(proto.deletes).context("decoding delta deletes")?;
         let updates = decode_proto_updates(proto.updates).context("decoding delta updates")?;
 
         // The three operation maps must be pairwise key-disjoint.
@@ -74,15 +72,10 @@ impl TryFrom<ProtoBlockDelta> for Delta {
 
 impl From<Delta> for ProtoBlockDelta {
     fn from(delta: Delta) -> Self {
-        let mut inserts = Vec::with_capacity(delta.inserts.len());
-        // Blocks carry no change timestamps.
-        for (key, (value, _)) in delta.inserts {
-            inserts.push((key, value).into());
-        }
         ProtoBlockDelta {
             primary_key_names: delta.primary_key_names,
             subsidiary_value_names: delta.subsidiary_value_names,
-            inserts,
+            inserts: delta.inserts.into_iter().map(Into::into).collect(),
             deletes: delta.deletes.into_iter().map(Into::into).collect(),
             updates: delta.updates.into_iter().map(Into::into).collect(),
         }
@@ -93,17 +86,11 @@ impl From<Delta> for ProtoPatchDelta {
     /// Convert a merged delta into the shape sent to the hub: deletes carry
     /// only their key, and updates are sparse-encoded.
     fn from(delta: Delta) -> Self {
-        let mut deletes = Vec::with_capacity(delta.deletes.len());
-        for key in delta.deletes.into_keys() {
-            deletes.push(ProtoDelete {
-                key: key.into_iter().map(Into::into).collect(),
-            });
-        }
         ProtoPatchDelta {
             primary_key_names: delta.primary_key_names,
             subsidiary_value_names: delta.subsidiary_value_names,
             inserts: delta.inserts.into_iter().map(Into::into).collect(),
-            deletes,
+            deletes: delta.deletes.into_iter().map(Into::into).collect(),
             updates: delta.updates.into_iter().map(Into::into).collect(),
         }
     }
@@ -148,6 +135,7 @@ impl fmt::Display for ProtoPatchDelta {
         fmt_section("Deletes", self.deletes.len(), f)?;
         for delete in &self.deletes {
             fmt_row(&delete.key, &vec!["_"; num_subsidiary].join(", "), f)?;
+            fmt_change_timestamp(delete.change_timestamp.as_ref(), f)?;
         }
 
         fmt_section("Updates", self.updates.len(), f)?;
@@ -216,8 +204,8 @@ impl Delta {
             self.merge_insert(key, value, created)
                 .context("failed to merge inserts")?;
         }
-        for (key, value) in child.deletes {
-            self.merge_delete(key, value)
+        for (key, (value, _)) in child.deletes {
+            self.merge_delete(key, value, created)
                 .context("failed to merge deletes")?;
         }
         for (key, (child_old, child_new, _)) in child.updates {
@@ -236,7 +224,7 @@ impl Delta {
         if self.inserts.contains_key(&key) {
             // Rule 5: double insert -> error
             bail!("rule 5: key {:?} inserted in both blocks", key);
-        } else if let Some(delete_value) = self.deletes.remove(&key) {
+        } else if let Some((delete_value, _)) = self.deletes.remove(&key) {
             if delete_value == insert_value {
                 // Rule 9a: delete then insert with same value -> cancels out
                 log::trace!("Rule 9a: delete + insert cancel out for key {:?}", key);
@@ -260,7 +248,12 @@ impl Delta {
         Ok(())
     }
 
-    fn merge_delete(&mut self, key: Vec<Cell>, delete_value: Vec<Cell>) -> Result<()> {
+    fn merge_delete(
+        &mut self,
+        key: Vec<Cell>,
+        delete_value: Vec<Cell>,
+        change_timestamp: Option<Timestamp>,
+    ) -> Result<()> {
         if let Some((insert_value, _)) = self.inserts.remove(&key) {
             if delete_value != insert_value {
                 // Rule 6b: insert then delete, values mismatch -> error
@@ -280,7 +273,7 @@ impl Delta {
             if delete_value == new_value {
                 // Rule 14a: update then delete, values match -> delete(old)
                 log::trace!("Rule 14a: update + delete becomes delete for key {:?}", key);
-                self.deletes.insert(key, old_value);
+                self.deletes.insert(key, (old_value, change_timestamp));
             } else {
                 // Rule 14b: update then delete, values mismatch -> error
                 bail!(
@@ -293,7 +286,7 @@ impl Delta {
         } else {
             // Rule 2: pass through
             log::trace!("Rule 2: delete passes through for key {:?}", key);
-            self.deletes.insert(key, delete_value);
+            self.deletes.insert(key, (delete_value, change_timestamp));
         }
         Ok(())
     }
@@ -465,7 +458,11 @@ impl Delta {
                         primary_key_names: table.primary_key_names.clone(),
                         subsidiary_value_names: table.subsidiary_value_names.clone(),
                         inserts: HashMap::new(),
-                        deletes: table.records.clone(),
+                        deletes: table
+                            .records
+                            .iter()
+                            .map(|(key, value)| (key.clone(), (value.clone(), None)))
+                            .collect(),
                         updates: HashMap::new(),
                     }),
                 );
@@ -478,7 +475,7 @@ impl Delta {
     fn diff_table(
         previous_table: &Table,
         current_table: &Table,
-    ) -> (InsertMap, RecordMap, UpdateMap) {
+    ) -> (InsertMap, DeleteMap, UpdateMap) {
         let mut inserts = HashMap::new();
         let mut deletes = HashMap::new();
         let mut updates = HashMap::new();
@@ -486,7 +483,7 @@ impl Delta {
         // Keys in previous but not current -> deletes
         for (key, value) in &previous_table.records {
             if !current_table.records.contains_key(key) {
-                deletes.insert(key.clone(), value.clone());
+                deletes.insert(key.clone(), (value.clone(), None));
             }
         }
 
@@ -840,14 +837,14 @@ mod tests {
         let mut child_delta = empty_delta();
         child_delta
             .deletes
-            .insert(text_cells(&["2"]), text_cells(&["Bob"]));
+            .insert(text_cells(&["2"]), (text_cells(&["Bob"]), None));
 
         parent_delta.merge(child_delta, None).unwrap();
 
         assert_eq!(parent_delta.deletes.len(), 1);
         assert_eq!(
             parent_delta.deletes[&text_cells(&["2"])],
-            text_cells(&["Bob"])
+            (text_cells(&["Bob"]), None)
         );
         assert!(parent_delta.inserts.is_empty());
         assert!(parent_delta.updates.is_empty());
@@ -917,7 +914,7 @@ mod tests {
         let mut child_delta = empty_delta();
         child_delta
             .deletes
-            .insert(text_cells(&["3"]), text_cells(&["Charlie"]));
+            .insert(text_cells(&["3"]), (text_cells(&["Charlie"]), None));
 
         parent_delta.merge(child_delta, None).unwrap();
 
@@ -938,7 +935,7 @@ mod tests {
         let mut child_delta = empty_delta();
         child_delta
             .deletes
-            .insert(text_cells(&["3"]), text_cells(&["Charles"]));
+            .insert(text_cells(&["3"]), (text_cells(&["Charles"]), None));
 
         let err = parent_delta.merge(child_delta, None).unwrap_err();
         let msg = format!("{err:#}");
@@ -994,7 +991,7 @@ mod tests {
         let mut parent_delta = empty_delta();
         parent_delta
             .deletes
-            .insert(text_cells(&["2"]), text_cells(&["Bob"]));
+            .insert(text_cells(&["2"]), (text_cells(&["Bob"]), None));
         let child_delta = empty_delta();
 
         parent_delta.merge(child_delta, None).unwrap();
@@ -1002,7 +999,7 @@ mod tests {
         assert_eq!(parent_delta.deletes.len(), 1);
         assert_eq!(
             parent_delta.deletes[&text_cells(&["2"])],
-            text_cells(&["Bob"])
+            (text_cells(&["Bob"]), None)
         );
     }
 
@@ -1012,7 +1009,7 @@ mod tests {
         let mut parent_delta = empty_delta();
         parent_delta
             .deletes
-            .insert(text_cells(&["2"]), text_cells(&["Bob"]));
+            .insert(text_cells(&["2"]), (text_cells(&["Bob"]), None));
         let mut child_delta = empty_delta();
         child_delta
             .inserts
@@ -1031,7 +1028,7 @@ mod tests {
         let mut parent_delta = empty_delta();
         parent_delta
             .deletes
-            .insert(text_cells(&["2"]), text_cells(&["Bob"]));
+            .insert(text_cells(&["2"]), (text_cells(&["Bob"]), None));
         let mut child_delta = empty_delta();
         child_delta
             .inserts
@@ -1053,11 +1050,11 @@ mod tests {
         let mut parent_delta = empty_delta();
         parent_delta
             .deletes
-            .insert(text_cells(&["2"]), text_cells(&["Bob"]));
+            .insert(text_cells(&["2"]), (text_cells(&["Bob"]), None));
         let mut child_delta = empty_delta();
         child_delta
             .deletes
-            .insert(text_cells(&["2"]), text_cells(&["Bob"]));
+            .insert(text_cells(&["2"]), (text_cells(&["Bob"]), None));
 
         let merged_delta = parent_delta.merge(child_delta, None);
         assert!(merged_delta.is_err());
@@ -1069,7 +1066,7 @@ mod tests {
         let mut parent_delta = empty_delta();
         parent_delta
             .deletes
-            .insert(text_cells(&["2"]), text_cells(&["Bob"]));
+            .insert(text_cells(&["2"]), (text_cells(&["Bob"]), None));
         let mut child_delta = empty_delta();
         child_delta.updates.insert(
             text_cells(&["2"]),
@@ -1126,7 +1123,7 @@ mod tests {
         let mut child_delta = empty_delta();
         child_delta
             .deletes
-            .insert(text_cells(&["1"]), text_cells(&["Alicia"]));
+            .insert(text_cells(&["1"]), (text_cells(&["Alicia"]), None));
 
         parent_delta.merge(child_delta, None).unwrap();
 
@@ -1135,7 +1132,7 @@ mod tests {
         assert_eq!(parent_delta.deletes.len(), 1);
         assert_eq!(
             parent_delta.deletes[&text_cells(&["1"])],
-            text_cells(&["Alice"])
+            (text_cells(&["Alice"]), None)
         );
     }
 
@@ -1150,7 +1147,7 @@ mod tests {
         let mut child_delta = empty_delta();
         child_delta
             .deletes
-            .insert(text_cells(&["1"]), text_cells(&["Alice"]));
+            .insert(text_cells(&["1"]), (text_cells(&["Alice"]), None));
 
         let merged_delta = parent_delta.merge(child_delta, None);
         assert!(merged_delta.is_err());
@@ -1322,7 +1319,7 @@ mod tests {
             .insert(text_cells(&["3"]), (text_cells(&["Charlie"]), None)); // will be updated (rule 7)
         parent_delta
             .deletes
-            .insert(text_cells(&["2"]), text_cells(&["Bob"])); // will be re-inserted different (rule 9b)
+            .insert(text_cells(&["2"]), (text_cells(&["Bob"]), None)); // will be re-inserted different (rule 9b)
         parent_delta.updates.insert(
             text_cells(&["1"]),
             (text_cells(&["Alice"]), text_cells(&["Alicia"]), None),
@@ -1430,7 +1427,7 @@ mod tests {
     }
 
     // Merging into an empty delta is how the first block enters a merge, so
-    // every insert and update takes that block's time.
+    // every insert, update and delete takes that block's time.
     #[test]
     fn test_merge_into_empty_sets_change_timestamps() {
         let mut child_delta = empty_delta();
@@ -1441,6 +1438,9 @@ mod tests {
             text_cells(&["2"]),
             (text_cells(&["Bob"]), text_cells(&["Robert"]), None),
         );
+        child_delta
+            .deletes
+            .insert(text_cells(&["3"]), (text_cells(&["Carol"]), None));
 
         let mut merged_delta = empty_delta();
         merged_delta
@@ -1459,6 +1459,10 @@ mod tests {
                 Some(timestamp(100))
             )
         );
+        assert_eq!(
+            merged_delta.deletes[&text_cells(&["3"])],
+            (text_cells(&["Carol"]), Some(timestamp(100)))
+        );
     }
 
     // Entries the child touched take the child's time. Entries only in the
@@ -1474,7 +1478,7 @@ mod tests {
             .insert(text_cells(&["2"]), (text_cells(&["a"]), None)); // rule 7a
         first_block
             .deletes
-            .insert(text_cells(&["3"]), text_cells(&["a"])); // rule 9b
+            .insert(text_cells(&["3"]), (text_cells(&["a"]), None)); // rule 9b
         first_block.updates.insert(
             text_cells(&["4"]),
             (text_cells(&["a"]), text_cells(&["b"]), None),
@@ -1483,6 +1487,13 @@ mod tests {
             text_cells(&["5"]),
             (text_cells(&["a"]), text_cells(&["b"]), None),
         ); // rule 15a
+        first_block
+            .deletes
+            .insert(text_cells(&["8"]), (text_cells(&["a"]), None)); // rule 8
+        first_block.updates.insert(
+            text_cells(&["9"]),
+            (text_cells(&["a"]), text_cells(&["b"]), None),
+        ); // rule 14a
         let mut parent_delta = empty_delta();
         parent_delta
             .merge(first_block, Some(timestamp(100)))
@@ -1507,6 +1518,12 @@ mod tests {
             text_cells(&["7"]),
             (text_cells(&["a"]), text_cells(&["b"]), None),
         ); // rule 3
+        child_delta
+            .deletes
+            .insert(text_cells(&["9"]), (text_cells(&["b"]), None)); // rule 14a
+        child_delta
+            .deletes
+            .insert(text_cells(&["10"]), (text_cells(&["a"]), None)); // rule 2
 
         parent_delta
             .merge(child_delta, Some(timestamp(200)))
@@ -1514,6 +1531,7 @@ mod tests {
 
         let insert_time = |key: &str| parent_delta.inserts[&text_cells(&[key])].1;
         let update_time = |key: &str| parent_delta.updates[&text_cells(&[key])].2;
+        let delete_time = |key: &str| parent_delta.deletes[&text_cells(&[key])].1;
         assert_eq!(insert_time("1"), Some(timestamp(100)));
         assert_eq!(insert_time("2"), Some(timestamp(200)));
         assert_eq!(update_time("3"), Some(timestamp(200)));
@@ -1521,6 +1539,9 @@ mod tests {
         assert_eq!(update_time("5"), Some(timestamp(200)));
         assert_eq!(insert_time("6"), Some(timestamp(200)));
         assert_eq!(update_time("7"), Some(timestamp(200)));
+        assert_eq!(delete_time("8"), Some(timestamp(100)));
+        assert_eq!(delete_time("9"), Some(timestamp(200)));
+        assert_eq!(delete_time("10"), Some(timestamp(200)));
     }
 
     #[test]
@@ -1538,14 +1559,16 @@ mod tests {
                 Some(timestamp(100)),
             ),
         );
-        delta
-            .deletes
-            .insert(text_cells(&["3"]), text_cells(&["Carol"]));
+        delta.deletes.insert(
+            text_cells(&["3"]),
+            (text_cells(&["Carol"]), Some(timestamp(100))),
+        );
 
         let proto = ProtoPatchDelta::from(delta);
 
         assert_eq!(proto.inserts[0].change_timestamp, Some(timestamp(100)));
         assert_eq!(proto.updates[0].change_timestamp, Some(timestamp(100)));
+        assert_eq!(proto.deletes[0].change_timestamp, Some(timestamp(100)));
     }
 
     // ---- TryFrom<ProtoBlockDelta> self-consistency tests ----

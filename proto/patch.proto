@@ -66,6 +66,9 @@ message Delete {
   // Tag 2 held the deleted value when deletes were a record.Record. Patches
   // never set it.
   reserved 2;
+  // Creation time of the block that deleted this record. Only set for tables
+  // with change-timestamp.
+  optional google.protobuf.Timestamp change_timestamp = 3;
 }
 
 // Update represents a row whose subsidiary (non-key) cells changed.
