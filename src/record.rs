@@ -10,6 +10,9 @@ use crate::proto::record::Record as ProtoRecord;
 
 pub type RecordMap = HashMap<Vec<Cell>, Vec<Cell>>;
 
+/// Records keyed by key, each with an optional change timestamp.
+pub type TimestampedRecordMap = HashMap<Vec<Cell>, (Vec<Cell>, Option<Timestamp>)>;
+
 /// One row of a table, split into key and value halves.
 ///
 /// `Record` is the domain counterpart to `proto::record::Record`.
@@ -90,6 +93,20 @@ pub fn decode_proto_records(protos: Vec<ProtoRecord>) -> Result<HashMap<Vec<Cell
     Ok(records)
 }
 
+/// Decode a block's inserts or deletes into a map keyed by each record's key.
+/// Blocks carry no change timestamps, so every entry gets `None`.
+pub fn decode_proto_records_without_timestamps(
+    protos: Vec<ProtoRecord>,
+) -> Result<TimestampedRecordMap> {
+    protos
+        .into_iter()
+        .map(|proto| {
+            let record = Record::try_from(proto)?;
+            Ok((record.key, (record.value, None)))
+        })
+        .collect()
+}
+
 impl fmt::Display for ProtoRecord {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
@@ -129,5 +146,12 @@ mod tests {
         let proto: ProtoRecord = record.clone().into();
         let back: Record = proto.try_into().unwrap();
         assert_eq!(record, back);
+    }
+
+    #[test]
+    fn decode_without_timestamps() {
+        let proto: ProtoRecord = Record::new(vec!["k".into()], vec!["v".into()]).into();
+        let records = decode_proto_records_without_timestamps(vec![proto]).unwrap();
+        assert_eq!(records[&vec!["k".into()]], (vec!["v".into()], None));
     }
 }

@@ -1,14 +1,10 @@
-use std::collections::HashMap;
-
-use anyhow::Result;
 use prost_types::Timestamp;
 
 use crate::cell::Cell;
 use crate::proto::patch::Delete as ProtoDelete;
-use crate::proto::record::Record as ProtoRecord;
-use crate::record::Record;
+use crate::record::TimestampedRecordMap;
 
-pub type DeleteMap = HashMap<Vec<Cell>, (Vec<Cell>, Option<Timestamp>)>;
+pub type DeleteMap = TimestampedRecordMap;
 
 /// Patches carry only the key of a delete, so the deleted value is dropped.
 impl From<(Vec<Cell>, (Vec<Cell>, Option<Timestamp>))> for ProtoDelete {
@@ -18,16 +14,6 @@ impl From<(Vec<Cell>, (Vec<Cell>, Option<Timestamp>))> for ProtoDelete {
             change_timestamp,
         }
     }
-}
-
-/// Decode a block's deletes into a [`DeleteMap`] keyed by each record's key.
-pub fn decode_proto_deletes(protos: Vec<ProtoRecord>) -> Result<DeleteMap> {
-    let mut deletes = HashMap::with_capacity(protos.len());
-    for proto in protos {
-        let record = Record::try_from(proto)?;
-        deletes.insert(record.key, (record.value, None));
-    }
-    Ok(deletes)
 }
 
 #[cfg(test)]
@@ -65,15 +51,5 @@ mod tests {
         let decoded = ProtoDelete::decode(old.encode_to_vec().as_slice()).unwrap();
         assert_eq!(decoded.change_timestamp, None);
         assert_eq!(decoded.key, text_proto_cells(&["k"]));
-    }
-
-    #[test]
-    fn test_decode_proto_deletes_has_no_change_timestamp() {
-        let deletes = decode_proto_deletes(vec![ProtoRecord {
-            key: text_proto_cells(&["k"]),
-            value: text_proto_cells(&["v"]),
-        }])
-        .unwrap();
-        assert_eq!(deletes[&text_cells(&["k"])], (text_cells(&["v"]), None));
     }
 }

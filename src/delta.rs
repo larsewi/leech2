@@ -6,11 +6,12 @@ use prost_types::Timestamp;
 
 use crate::cell::Cell;
 use crate::cell::display_proto_cells;
-use crate::delete::{DeleteMap, decode_proto_deletes};
-use crate::insert::{InsertMap, decode_proto_inserts};
+use crate::delete::DeleteMap;
+use crate::insert::InsertMap;
 use crate::proto::block::Delta as ProtoBlockDelta;
 use crate::proto::cell::Cell as ProtoCell;
 use crate::proto::patch::Delta as ProtoPatchDelta;
+use crate::record::decode_proto_records_without_timestamps;
 use crate::state::State;
 use crate::table::Table;
 use crate::update::UpdateMap;
@@ -36,8 +37,10 @@ impl TryFrom<ProtoBlockDelta> for Delta {
     type Error = anyhow::Error;
 
     fn try_from(proto: ProtoBlockDelta) -> Result<Self> {
-        let inserts = decode_proto_inserts(proto.inserts).context("decoding delta inserts")?;
-        let deletes = decode_proto_deletes(proto.deletes).context("decoding delta deletes")?;
+        let inserts = decode_proto_records_without_timestamps(proto.inserts)
+            .context("decoding delta inserts")?;
+        let deletes = decode_proto_records_without_timestamps(proto.deletes)
+            .context("decoding delta deletes")?;
         let updates = decode_proto_updates(proto.updates).context("decoding delta updates")?;
 
         // The three operation maps must be pairwise key-disjoint.
