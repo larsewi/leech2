@@ -509,13 +509,13 @@ fn format_log_select(
     ))
 }
 
-/// Format a single UPDATE statement.
+/// Format a single UPDATE statement for the record matching `where_clause`.
 fn format_update(
     update: &ProtoUpdate,
     subsidiary_names: &[String],
     schema: &TableSchema,
-    injected_fields: &[InjectedField],
     quoted_table: &str,
+    where_clause: &str,
 ) -> Result<String> {
     // Sparse updates list changed column indices explicitly; full
     // updates (empty changed_indices) include all subsidiary columns.
@@ -563,8 +563,6 @@ fn format_update(
         ));
     }
 
-    let where_clause = primary_key_where_clause(&update.key, schema, injected_fields)?;
-
     Ok(format!(
         "UPDATE {}\nSET {}\nWHERE {};\n",
         quoted_table,
@@ -582,19 +580,19 @@ fn emit_updates(
     out: &mut String,
 ) -> Result<()> {
     for update in updates {
+        let where_clause = primary_key_where_clause(&update.key, schema, injected_fields)
+            .with_context(|| format!("key {:?}", update.key))?;
         let stmt = format_update(
             update,
             schema.subsidiary_value_names,
             schema,
-            injected_fields,
             quoted_table,
+            &where_clause,
         )
         .with_context(|| format!("key {:?}", update.key))?;
         out.push_str(&stmt);
         // Log after updating, so the copied row holds the new values.
         if let Some(log) = schema.log {
-            let where_clause = primary_key_where_clause(&update.key, schema, injected_fields)
-                .with_context(|| format!("key {:?}", update.key))?;
             out.push_str(&format_log_select(
                 log,
                 &log.operations.update,
