@@ -278,7 +278,8 @@ a real PostgreSQL instance. The acceptance tests under `tests/accept_*.rs`
 verify SQL **shape** (counts of `INSERT` / `UPDATE` / `DELETE`); the round-trip
 test additionally verifies SQL **semantics** by applying the generated SQL
 through `psql` and asserting that the hub's row state, including each row's
-change timestamp, matches the agent's in-memory model after every ship.
+change timestamp, matches the agent's in-memory model after every ship. It also
+checks the table's change log against the log the model expects.
 
 The test is `#[ignore]`d so `cargo test` skips it locally. CI runs it via the
 `Round-trip` workflow with a Postgres 16 service container. To run locally:
