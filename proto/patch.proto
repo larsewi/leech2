@@ -55,7 +55,7 @@ message Insert {
   // The subsidiary (non-key) cells.
   repeated cell.Cell value = 2;
   // Creation time of the last block that changed this record. Only set for
-  // tables with change-timestamp.
+  // tables with change-timestamp or log.
   optional google.protobuf.Timestamp change_timestamp = 3;
 }
 
@@ -67,7 +67,7 @@ message Delete {
   // never set it.
   reserved 2;
   // Creation time of the block that deleted this record. Only set for tables
-  // with change-timestamp.
+  // with change-timestamp or log.
   optional google.protobuf.Timestamp change_timestamp = 3;
 }
 
@@ -85,6 +85,6 @@ message Update {
   // or one per subsidiary field when changed_indices is empty.
   repeated cell.Cell new_value = 4;
   // Creation time of the last block that changed this record. Only set for
-  // tables with change-timestamp.
+  // tables with change-timestamp or log.
   optional google.protobuf.Timestamp change_timestamp = 5;
 }
