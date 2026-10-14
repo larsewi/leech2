@@ -362,7 +362,11 @@ pub struct Config {
     #[serde(default)]
     pub stats: StatsConfig,
     /// Per-table source-file and field schemas, keyed by table name.
+    #[serde(default)]
     pub tables: HashMap<String, TableConfig>,
+    /// Event streams, keyed by name.
+    #[serde(default)]
+    pub events: HashMap<String, EventConfig>,
     /// Block chain truncation policy.
     #[serde(default)]
     pub truncate: TruncateConfig,
@@ -404,6 +408,7 @@ impl Default for Config {
             compression: CompressionConfig::default(),
             stats: StatsConfig::default(),
             tables: HashMap::new(),
+            events: HashMap::new(),
             truncate: TruncateConfig::default(),
             file_mode: default_file_mode(),
             dir_mode: default_dir_mode(),
@@ -625,23 +630,71 @@ impl TableConfig {
     }
 }
 
+/// An event stream. Each block stores the events supplied since the previous
+/// block, and the receiver only ever inserts them. Events are pulled from the
+/// FFI cell callback.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EventConfig {
+    /// Column definitions. Events have no primary key.
+    pub fields: Vec<FieldConfig>,
+    /// Column that receives each event's ID, built from the hash of the block
+    /// that stored the event and the event's position in that block.
+    #[serde(rename = "id-field")]
+    pub id_field: String,
+}
+
+impl Validate for EventConfig {
+    fn validate(&self) -> Result<()> {
+        if self.fields.is_empty() {
+            bail!("at least one field must be declared");
+        }
+
+        let mut seen = HashSet::new();
+        for field in &self.fields {
+            field.validate()?;
+            if field.primary_key {
+                bail!("field '{}': events have no primary key", field.name);
+            }
+            if !seen.insert(field.name.as_str()) {
+                bail!("found duplicate field name '{}'", field.name);
+            }
+        }
+
+        validate_field_name(&self.id_field).context("id-field")?;
+        if seen.contains(self.id_field.as_str()) {
+            bail!("id-field '{}' collides with a field", self.id_field);
+        }
+
+        Ok(())
+    }
+}
+
 impl Validate for Config {
     fn validate(&self) -> Result<()> {
-        if self.tables.is_empty() {
-            bail!("at least one table must be declared under [tables]");
+        if self.tables.is_empty() && self.events.is_empty() {
+            bail!("at least one table or event stream must be declared");
         }
         for (name, table) in &self.tables {
             table
                 .validate()
                 .with_context(|| format!("table '{}'", name))?;
             if let Some(log) = &table.log
-                && self.tables.contains_key(&log.table)
+                && (self.tables.contains_key(&log.table) || self.events.contains_key(&log.table))
             {
                 bail!(
-                    "table '{}': log.table '{}' is also declared as a table",
+                    "table '{}': log.table '{}' is also declared as a table or event stream",
                     name,
                     log.table
                 );
+            }
+        }
+        for (name, event) in &self.events {
+            event
+                .validate()
+                .with_context(|| format!("event stream '{}'", name))?;
+            if self.tables.contains_key(name) {
+                bail!("event stream '{}' is also declared as a table", name);
             }
         }
 
@@ -670,6 +723,17 @@ impl Validate for Config {
                         index,
                         field.name,
                         table_name
+                    );
+                }
+            }
+            for (event_name, event) in &self.events {
+                if event.fields.iter().any(|f| f.name == field.name) || event.id_field == field.name
+                {
+                    bail!(
+                        "injected-fields[{}] '{}' collides with a column in event stream '{}'",
+                        index,
+                        field.name,
+                        event_name
                     );
                 }
             }
@@ -1938,5 +2002,114 @@ exclude = ["email"]
         let injected = r#"injected-fields = [{ name = "operation", type = "TEXT", value = "x" }]"#;
         let msg = load_log_error("", injected);
         assert!(msg.contains("collides with a column"), "got: {msg}");
+    }
+
+    /// Load a config with an `alerts` event stream. `extra` is appended to the
+    /// stream's section and `prefix` is placed before it.
+    fn load_with_events(extra: &str, prefix: &str) -> Result<Config> {
+        let dir = tempfile::tempdir().unwrap();
+        let toml_input = format!(
+            r#"
+{prefix}
+[events.alerts]
+id-field = "eventid"
+fields = [
+    {{ name = "message", type = "TEXT" }},
+    {{ name = "severity", type = "NUMBER" }},
+]
+{extra}
+"#
+        );
+        fs::write(dir.path().join("config.toml"), toml_input).unwrap();
+        Config::load(dir.path())
+    }
+
+    fn load_events_error(extra: &str, prefix: &str) -> String {
+        format!("{:#}", load_with_events(extra, prefix).unwrap_err())
+    }
+
+    #[test]
+    fn test_events_accepted_without_tables() {
+        let config = load_with_events("", "").unwrap();
+        assert!(config.tables.is_empty());
+        let event = &config.events["alerts"];
+        assert_eq!(event.id_field, "eventid");
+        assert_eq!(event.fields.len(), 2);
+    }
+
+    #[test]
+    fn test_events_default_to_none() {
+        let dir = tempfile::tempdir().unwrap();
+        let toml_input = r#"
+[tables.users]
+fields = [{ name = "id", type = "NUMBER", primary-key = true }]
+"#;
+        fs::write(dir.path().join("config.toml"), toml_input).unwrap();
+        let config = Config::load(dir.path()).unwrap();
+        assert!(config.events.is_empty());
+    }
+
+    #[test]
+    fn test_events_require_id_field() {
+        let dir = tempfile::tempdir().unwrap();
+        let toml_input = r#"
+[events.alerts]
+fields = [{ name = "message", type = "TEXT" }]
+"#;
+        fs::write(dir.path().join("config.toml"), toml_input).unwrap();
+        let msg = format!("{:#}", Config::load(dir.path()).unwrap_err());
+        assert!(msg.contains("missing field `id-field`"), "got: {msg}");
+    }
+
+    #[test]
+    fn test_events_reject_primary_key() {
+        let dir = tempfile::tempdir().unwrap();
+        let toml_input = r#"
+[events.alerts]
+id-field = "eventid"
+fields = [{ name = "message", type = "TEXT", primary-key = true }]
+"#;
+        fs::write(dir.path().join("config.toml"), toml_input).unwrap();
+        let msg = format!("{:#}", Config::load(dir.path()).unwrap_err());
+        assert!(msg.contains("events have no primary key"), "got: {msg}");
+    }
+
+    #[test]
+    fn test_events_reject_csv() {
+        let msg = load_events_error("[events.alerts.csv]\nsource = \"alerts.csv\"\n", "");
+        assert!(msg.contains("unknown field `csv`"), "got: {msg}");
+    }
+
+    #[test]
+    fn test_events_reject_id_field_collision() {
+        let dir = tempfile::tempdir().unwrap();
+        let toml_input = r#"
+[events.alerts]
+id-field = "message"
+fields = [{ name = "message", type = "TEXT" }]
+"#;
+        fs::write(dir.path().join("config.toml"), toml_input).unwrap();
+        let msg = format!("{:#}", Config::load(dir.path()).unwrap_err());
+        assert!(msg.contains("collides with a field"), "got: {msg}");
+    }
+
+    #[test]
+    fn test_events_reject_table_name_collision() {
+        let table = r#"
+[tables.alerts]
+fields = [{ name = "id", type = "NUMBER", primary-key = true }]
+"#;
+        let msg = load_events_error("", table);
+        assert!(msg.contains("also declared as a table"), "got: {msg}");
+    }
+
+    #[test]
+    fn test_events_reject_injected_field_collision() {
+        let injected = r#"injected-fields = [{ name = "eventid", type = "TEXT", value = "x" }]"#;
+        let msg = load_events_error("", injected);
+        assert!(
+            msg.contains("collides with a column in event stream"),
+            "got: {msg}"
+        );
     }
 }
