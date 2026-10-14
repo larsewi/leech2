@@ -332,6 +332,7 @@ src/
   cell.rs       Domain Cell type + conversions to/from proto::cell::Cell
   record.rs     Record type (Vec<Cell> key + value)
   insert.rs     Delta insert map + block/patch insert conversions
+  delete.rs     Delta delete map + patch delete conversion (key only)
   update.rs     Delta update map + block/patch update conversions (sparse
                 encoding)
   delta.rs      Diff computation + merge logic (see DELTA_MERGING_RULES.md)
