@@ -5,10 +5,11 @@ use chrono::DateTime;
 use prost_types::Timestamp;
 
 use crate::cell::{Cell, Kind};
-use crate::config::{Config, FieldConfig, LogConfig};
+use crate::config::{Config, EventConfig, FieldConfig, LogConfig};
 use crate::proto::cell::Cell as ProtoCell;
 use crate::proto::patch::Delete as ProtoDelete;
 use crate::proto::patch::Delta as ProtoDelta;
+use crate::proto::patch::EventBatches as ProtoEventBatches;
 use crate::proto::patch::InjectedField as ProtoInjectedField;
 use crate::proto::patch::Insert as ProtoInsert;
 use crate::proto::patch::Patch as ProtoPatch;
@@ -701,13 +702,148 @@ fn state_table_to_sql(
     Ok(())
 }
 
+/// Look up the hub field config of each wire field name of an event batch, in
+/// wire order. As for tables, the wire must name exactly the hub's fields: a
+/// missing name would leave a column at its default, and an unknown one could
+/// target a column leech2 was never meant to write.
+fn resolve_event_fields<'a>(
+    wire_field_names: &[String],
+    event_config: &'a EventConfig,
+    name: &str,
+) -> Result<Vec<&'a FieldConfig>> {
+    if wire_field_names.len() != event_config.fields.len() {
+        bail!(
+            "wire field count {} disagrees with hub config field count {} for event stream '{}'",
+            wire_field_names.len(),
+            event_config.fields.len(),
+            name
+        );
+    }
+
+    let mut seen = HashSet::new();
+    let mut fields = Vec::with_capacity(wire_field_names.len());
+    for wire_name in wire_field_names {
+        if !seen.insert(wire_name.as_str()) {
+            bail!(
+                "wire field '{}' appears twice in event stream '{}'",
+                wire_name,
+                name
+            );
+        }
+        let field = event_config
+            .fields
+            .iter()
+            .find(|field| &field.name == wire_name)
+            .with_context(|| {
+                format!(
+                    "wire field '{}' is not declared in hub config for event stream '{}'",
+                    wire_name, name
+                )
+            })?;
+        fields.push(field);
+    }
+    Ok(fields)
+}
+
+/// Generate one INSERT per event of an event stream. Each event's ID is the
+/// hash of the block that stored it and its position in that block. An event
+/// whose ID the receiver already has is skipped, so patches that re-send
+/// events (e.g. from genesis) are safe to apply.
+fn events_to_sql(
+    config: &Config,
+    name: &str,
+    batches: &ProtoEventBatches,
+    injected_fields: &[InjectedField],
+    out: &mut String,
+) -> Result<()> {
+    let event_config = config
+        .events
+        .get(name)
+        .with_context(|| format!("event stream '{}' not found in config", name))?;
+
+    for injected in injected_fields {
+        if injected.name == event_config.id_field
+            || event_config
+                .fields
+                .iter()
+                .any(|field| field.name == injected.name)
+        {
+            bail!(
+                "injected field '{}' collides with a column of event stream '{}'",
+                injected.name,
+                name
+            );
+        }
+    }
+
+    let quoted_table = quote_identifier(name);
+    let id_column = quote_identifier(&event_config.id_field);
+    let injected_values: Vec<String> = injected_fields.iter().map(|f| f.quoted_value()).collect();
+
+    for batch in &batches.batches {
+        let Some(events) = &batch.events else {
+            continue;
+        };
+        let fields = resolve_event_fields(&events.field_names, event_config, name)?;
+
+        let mut columns: Vec<String> = injected_fields
+            .iter()
+            .map(InjectedField::quoted_column)
+            .collect();
+        for field in &fields {
+            columns.push(quote_identifier(&field.name));
+        }
+        columns.push(id_column.clone());
+        let columns = columns.join(", ");
+
+        for (index, event) in events.events.iter().enumerate() {
+            if event.values.len() != fields.len() {
+                bail!(
+                    "event {} of block '{:.7}...' in event stream '{}' has {} values, expected {}",
+                    index,
+                    batch.block,
+                    name,
+                    event.values.len(),
+                    fields.len()
+                );
+            }
+
+            let mut literals = injected_values.clone();
+            for (proto_value, field) in event.values.iter().zip(&fields) {
+                let value = Cell::try_from(proto_value)
+                    .with_context(|| format!("field '{}'", field.name))?;
+                check_value_matches_field(&value, field)?;
+                literals.push(quote_literal(&value));
+            }
+            let id = quote_literal(&Cell::Text(format!("{}:{}", batch.block, index)));
+            literals.push(id.clone());
+
+            let mut conditions = vec![format!("{} = {}", id_column, id)];
+            for injected in injected_fields {
+                conditions.push(injected.where_clause());
+            }
+
+            out.push_str(&format!(
+                "INSERT INTO {} ({})\nSELECT {}\nWHERE NOT EXISTS (SELECT 1 FROM {} WHERE {});\n",
+                quoted_table,
+                columns,
+                literals.join(", "),
+                quoted_table,
+                conditions.join(" AND ")
+            ));
+        }
+    }
+
+    Ok(())
+}
+
 /// Convert a decoded patch to SQL statements.
 ///
 /// The returned SQL is not wrapped in a transaction. Callers that need
 /// atomicity should issue their own `BEGIN` / `COMMIT` (and may interleave
 /// additional statements, e.g. recording the last applied block hash).
 pub fn patch_to_sql(config: &Config, patch: &ProtoPatch) -> Result<Option<String>> {
-    if patch.deltas.is_empty() && patch.states.is_empty() {
+    if patch.deltas.is_empty() && patch.states.is_empty() && patch.events.is_empty() {
         log::info!("Patch has no payload, nothing to convert");
         return Ok(None);
     }
@@ -727,6 +863,11 @@ pub fn patch_to_sql(config: &Config, patch: &ProtoPatch) -> Result<Option<String
         state_table_to_sql(config, table_name, table, &injected_fields, &mut sql)?;
     }
 
+    for (name, batches) in &patch.events {
+        events_to_sql(config, name, batches, &injected_fields, &mut sql)
+            .with_context(|| format!("event stream '{name}'"))?;
+    }
+
     if sql.is_empty() {
         log::info!("Patch produced no SQL statements");
         return Ok(None);
@@ -741,6 +882,9 @@ mod tests {
     use super::*;
     use crate::cell::text_proto_cells;
     use crate::config::FieldConfig;
+    use crate::proto::event::Event as ProtoEvent;
+    use crate::proto::event::Events as ProtoEvents;
+    use crate::proto::patch::EventBatch as ProtoEventBatch;
 
     /// Build a TableConfig for tests. Each entry is `(field_name, is_primary_key)`;
     /// all fields are TEXT.
@@ -1507,6 +1651,130 @@ mod tests {
         });
 
         let err = patch_to_sql(&log_config(), &patch).unwrap_err();
+        let msg = format!("{:#}", err);
+        assert!(msg.contains("collides with a column"), "got: {msg}");
+    }
+
+    /// An `alerts` event stream with a TEXT `message` and a NUMBER
+    /// `severity`.
+    fn events_config() -> Config {
+        Config {
+            events: HashMap::from([(
+                "alerts".to_string(),
+                EventConfig {
+                    fields: vec![
+                        FieldConfig {
+                            name: "message".to_string(),
+                            kind: Kind::Text,
+                            ..Default::default()
+                        },
+                        FieldConfig {
+                            name: "severity".to_string(),
+                            kind: Kind::Number,
+                            ..Default::default()
+                        },
+                    ],
+                    id_field: "eventid".to_string(),
+                },
+            )]),
+            ..Default::default()
+        }
+    }
+
+    /// A patch whose `alerts` stream has one batch from block `abc123`.
+    fn events_patch(field_names: &[&str], events: Vec<Vec<Cell>>) -> ProtoPatch {
+        let mut proto_events = Vec::new();
+        for values in events {
+            proto_events.push(ProtoEvent {
+                values: values.into_iter().map(Into::into).collect(),
+            });
+        }
+        let batches = ProtoEventBatches {
+            batches: vec![ProtoEventBatch {
+                block: "abc123".to_string(),
+                events: Some(ProtoEvents {
+                    field_names: field_names.iter().map(|name| name.to_string()).collect(),
+                    events: proto_events,
+                }),
+            }],
+        };
+        ProtoPatch {
+            events: HashMap::from([("alerts".to_string(), batches)]),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn test_patch_to_sql_writes_events() {
+        let mut patch = events_patch(
+            &["message", "severity"],
+            vec![
+                vec![Cell::Text("disk full".into()), Cell::number(2.0).unwrap()],
+                vec![Cell::Text("out of memory".into()), Cell::Null],
+            ],
+        );
+        patch.injected_fields.push(ProtoInjectedField {
+            name: "host".to_string(),
+            value: Some(ProtoCell::from(Cell::Text("h1".into()))),
+        });
+
+        let sql = patch_to_sql(&events_config(), &patch).unwrap().unwrap();
+
+        let expected = [
+            r#"INSERT INTO "alerts" ("host", "message", "severity", "eventid")"#,
+            r#"SELECT 'h1', 'disk full', 2, 'abc123:0'"#,
+            r#"WHERE NOT EXISTS (SELECT 1 FROM "alerts" WHERE "eventid" = 'abc123:0' AND "host" = 'h1');"#,
+            r#"INSERT INTO "alerts" ("host", "message", "severity", "eventid")"#,
+            r#"SELECT 'h1', 'out of memory', NULL, 'abc123:1'"#,
+            r#"WHERE NOT EXISTS (SELECT 1 FROM "alerts" WHERE "eventid" = 'abc123:1' AND "host" = 'h1');"#,
+        ]
+        .join("\n")
+            + "\n";
+        assert_eq!(sql, expected);
+    }
+
+    #[test]
+    fn test_patch_to_sql_rejects_unknown_event_field() {
+        let patch = events_patch(
+            &["message", "level"],
+            vec![vec![
+                Cell::Text("disk full".into()),
+                Cell::number(2.0).unwrap(),
+            ]],
+        );
+        let err = patch_to_sql(&events_config(), &patch).unwrap_err();
+        let msg = format!("{:#}", err);
+        assert!(
+            msg.contains("wire field 'level' is not declared"),
+            "got: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_patch_to_sql_rejects_event_value_with_wrong_type() {
+        let patch = events_patch(
+            &["message", "severity"],
+            vec![vec![
+                Cell::Text("disk full".into()),
+                Cell::Text("high".into()),
+            ]],
+        );
+        let err = patch_to_sql(&events_config(), &patch).unwrap_err();
+        let msg = format!("{:#}", err);
+        assert!(msg.contains("does not match declared type"), "got: {msg}");
+    }
+
+    #[test]
+    fn test_patch_to_sql_rejects_injected_field_colliding_with_event_id() {
+        let mut patch = events_patch(
+            &["message", "severity"],
+            vec![vec![Cell::Text("disk full".into()), Cell::Null]],
+        );
+        patch.injected_fields.push(ProtoInjectedField {
+            name: "eventid".to_string(),
+            value: Some(ProtoCell::from(Cell::Text("x".into()))),
+        });
+        let err = patch_to_sql(&events_config(), &patch).unwrap_err();
         let msg = format!("{:#}", err);
         assert!(msg.contains("collides with a column"), "got: {msg}");
     }
