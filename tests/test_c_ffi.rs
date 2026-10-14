@@ -159,6 +159,14 @@ fields = [
     { name = \"id\", type = \"NUMBER\", primary-key = true },
     { name = \"event\", type = \"TEXT\" },
 ]
+
+# Event stream: pulled through the same callback bundle. The C test supplies
+# two events, which the patch must carry as inserts.
+[events.alerts]
+id-field = \"eventid\"
+fields = [
+    { name = \"message\", type = \"TEXT\" },
+]
 ",
     )
     .unwrap();
