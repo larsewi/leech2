@@ -9,6 +9,7 @@ use prost::Message;
 use crate::callbacks::Callbacks;
 use crate::config::Config;
 use crate::delta;
+use crate::event;
 use crate::head;
 use crate::proto::block::Delta as ProtoBlockDelta;
 use crate::proto::block::{BlockHeader, TableChange};
@@ -49,6 +50,12 @@ impl fmt::Display for Block {
                 )?,
                 None => write!(f, "\n    '{}' <full state>", name)?,
             }
+        }
+        if !self.events.is_empty() {
+            write!(f, "\n  Events ({} streams):", self.events.len())?;
+        }
+        for (name, events) in &self.events {
+            write!(f, "\n    '{}' ({} events)", name, events.events.len())?;
         }
         Ok(())
     }
@@ -94,6 +101,9 @@ impl Block {
         let file_mode = config.file_mode;
         let current_state =
             state::State::compute(config, callbacks).context("failed to compute current state")?;
+        // Events are stored in every block, including the first one: unlike
+        // table deltas, they are new data rather than a diff against STATE.
+        let events = event::load(config, callbacks).context("failed to load events")?;
 
         let parent_hash =
             head::load(&state_dir, file_mode).context("failed to load head of chain")?;
@@ -121,6 +131,7 @@ impl Block {
             parent: parent_hash,
             created,
             payload,
+            events,
         };
         let mut encoded = Vec::new();
         block
@@ -163,6 +174,7 @@ impl Block {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::proto::event::Events as ProtoEvents;
 
     fn dummy_block() -> Block {
         Block {
@@ -171,7 +183,7 @@ mod tests {
                 seconds: 1700000000,
                 nanos: 0,
             }),
-            payload: HashMap::new(),
+            ..Default::default()
         }
     }
 
@@ -206,6 +218,25 @@ mod tests {
   Parent: deadbeef
   Created: 2023-11-14 22:13:20 UTC
   Payload (0 tables)";
+        assert_eq!(block.to_string(), expected);
+    }
+
+    #[test]
+    fn test_block_display_with_events() {
+        let mut block = dummy_block();
+        block.events.insert(
+            "alerts".to_string(),
+            ProtoEvents {
+                events: vec![Default::default(), Default::default()],
+                ..Default::default()
+            },
+        );
+        let expected = "Block:
+  Parent: deadbeef
+  Created: 2023-11-14 22:13:20 UTC
+  Payload (0 tables)
+  Events (1 streams):
+    'alerts' (2 events)";
         assert_eq!(block.to_string(), expected);
     }
 }

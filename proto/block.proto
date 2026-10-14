@@ -3,6 +3,7 @@ syntax = "proto3";
 package block;
 
 import "cell.proto";
+import "event.proto";
 import "record.proto";
 import "google/protobuf/timestamp.proto";
 
@@ -22,6 +23,9 @@ message Block {
   google.protobuf.Timestamp created = 2;
   // Per-table changes contained in this block (key = table name).
   map<string, TableChange> payload = 3;
+  // Events supplied since the previous block (key = event stream name).
+  // Streams without new events are absent.
+  map<string, event.Events> events = 4;
 }
 
 // A single table's change within a block. When delta is present, it holds the
