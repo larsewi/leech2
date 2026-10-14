@@ -193,7 +193,7 @@ extern lch_config_t *lch_init(const char *work_dir);
 extern void lch_deinit(lch_config_t *cfg);
 
 /**
- * @brief Per-table setup hook for callback-backed tables.
+ * @brief Per-table setup hook for callback-backed tables and event streams.
  *
  * Invoked once, before the first cell callback for @p table.
  *
@@ -207,7 +207,7 @@ extern void lch_deinit(lch_config_t *cfg);
 typedef int (*lch_table_begin_cb_t)(const char *table, void *usr_data);
 
 /**
- * @brief Per-table teardown hook for callback-backed tables.
+ * @brief Per-table teardown hook for callback-backed tables and event streams.
  *
  * Invoked once for every table whose lch_table_begin_cb_t returned
  * LCH_SUCCESS, including on the failure path.
@@ -225,7 +225,11 @@ typedef int (*lch_table_begin_cb_t)(const char *table, void *usr_data);
 typedef int (*lch_table_end_cb_t)(const char *table, void *usr_data);
 
 /**
- * @brief Cell callback for callback-backed tables.
+ * @brief Cell callback for callback-backed tables and event streams.
+ *
+ * For a table, the rows are the table's current contents. For an event
+ * stream, each row is one event, and the rows must only be events that no
+ * earlier successful lch_block_create() call has received.
  *
  * Iteration contract:
  *   - Rows are requested in ascending order, starting from row == 0.
@@ -267,7 +271,7 @@ typedef int (*lch_read_cell_cb_t)(const char *table, size_t row, size_t col,
                                   void *usr_data);
 
 /**
- * @brief Per-cell cleanup hook for callback-backed tables.
+ * @brief Per-cell cleanup hook for callback-backed tables and event streams.
  *
  * Invoked once for each lch_read_cell_cb_t call that returned LCH_SUCCESS,
  * for every cell kind, immediately after leech2 has copied the value into its
@@ -288,7 +292,7 @@ typedef void (*lch_destroy_cell_cb_t)(lch_cell_t *cell, void *usr_data);
 
 /**
  * @brief Callback bundle passed to lch_block_create() for callback-backed
- * tables.
+ * tables and event streams.
  *
  * Initialize with designated initializers (e.g. `.read_cell = my_read_cell`)
  * rather than positional ones, so optional fields added in future releases
@@ -297,7 +301,8 @@ typedef void (*lch_destroy_cell_cb_t)(lch_cell_t *cell, void *usr_data);
 typedef struct {
   /** May be NULL if no per-table setup is needed. */
   lch_table_begin_cb_t table_begin;
-  /** Required when any table in the config is callback-backed. */
+  /** Required when any table in the config is callback-backed, or the config
+   *  declares event streams. */
   lch_read_cell_cb_t read_cell;
   /** May be NULL if no per-cell cleanup is needed. Invoked after every
    *  successful read_cell, for every cell kind; see lch_destroy_cell_cb_t. */
@@ -319,9 +324,15 @@ typedef struct {
  * and writes a new block together with updated STATE and HEAD files. History
  * truncation then runs before this call returns.
  *
+ * The block also stores the new events of every event stream declared under
+ * [events.X], pulled through the callback bundle. Treat the events as handed
+ * over only when this call returns LCH_SUCCESS; on failure, return them again
+ * on the next call.
+ *
  * @param cfg        Valid config handle (must not be NULL).
  * @param callbacks  Optional callback bundle. May be NULL when every table
- *                   in @p cfg is CSV-backed.
+ *                   in @p cfg is CSV-backed and no event streams are
+ *                   declared.
  * @return LCH_SUCCESS on success, LCH_FAILURE on error.
  */
 extern int lch_block_create(const lch_config_t *cfg,

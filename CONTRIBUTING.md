@@ -100,6 +100,11 @@ full state patch from the STATE file, and non-genesis references exclude the
 first block from consolidation. This also avoids reading any stale STATE file
 left over from a previous run.
 
+Event streams are pulled through the same callback bundle, after the tables.
+Each block stores the events supplied since the previous block as they are,
+including the first block of a chain: events are new data rather than a diff,
+and they never go into the STATE file.
+
 Before computing deltas, the library detects field layout changes by comparing
 each table's stored fields in the STATE file against the current config's
 canonical field list (primary keys first, then subsidiaries; each group sorted
@@ -175,6 +180,15 @@ of the last block that changed it (see
 [DELTA_MERGING_RULES.md](DELTA_MERGING_RULES.md)).
 Full states carry no timestamps.
 
+Events take no part in merging. While loading each block for consolidation, the
+library also takes the block's events, so a patch carries the events of every
+block it covers, grouped per block and oldest first. If consolidation then
+fails, the full state fallback still carries those events. When there is no
+known reference (genesis, unresolvable reference, or a reference outside the
+chain), the library instead loads every block still stored and carries all of
+their events. Each block is loaded at most once. The receiver skips the events
+it already has by their ID.
+
 After merging, each table's delta is optimized: deletes are stripped down to
 keys only, and updates are sparse-encoded to include only changed columns. The
 library then compares each table's consolidated delta encoded size against its
@@ -220,6 +234,11 @@ the wire's `Delta.fields`/`Table.fields` rather than the hub config's
 declaration order, so values land in the columns the agent intended even if the
 hub config declares the same fields in a different order. Schema disagreements
 between the wire and the hub config are rejected before any SQL is emitted.
+
+For event streams it generates one `INSERT ... SELECT ... WHERE NOT EXISTS` per
+event. The event's ID (block hash and position) goes into `id-field`, and the
+`NOT EXISTS` matches on it and the injected fields, so re-sent events are
+skipped.
 
 Column types defined in the config control how values are formatted in the SQL
 output (quoting for `TEXT`, bare numbers for `NUMBER`, etc.).
@@ -300,7 +319,7 @@ src/
   ffi.rs        Shared FFI plumbing (panic guard, arg checks, repr-C buffer/
                 cell types, cell decode helper)
   callbacks.rs  Rust-side adapter for the lch_callbacks_t bundle used by
-                callback-backed tables
+                callback-backed tables and event streams
   logger.rs     Callback-based log dispatch for FFI consumers
   main.rs       CLI (lch binary)
   cli.rs        clap CLI definition (shared with the xtask man-page generator)
@@ -308,6 +327,8 @@ src/
   table.rs      Table loading (CSV path + callback path) and the in-memory
                 table type (HashMap<Vec<Cell>, Vec<Cell>>)
   state.rs      Snapshot of all tables, protobuf persistence
+  event.rs      Event stream loading (callback path) and collecting events
+                for patches
   cell.rs       Domain Cell type + conversions to/from proto::cell::Cell
   record.rs     Record type (Vec<Cell> key + value)
   insert.rs     Delta insert map + block/patch insert conversions

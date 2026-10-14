@@ -229,6 +229,43 @@ operations      = { insert = "INSERT", update = "UPDATE", delete = "DELETE" } # 
   `timestamp-field` must not be fields or injected fields.
 - leech2 only appends to the log table. Retention is up to you.
 
+### Events
+
+Event streams are for data that is only ever added, such as audit logs. The
+source keeps recent events and may prune old ones. The receiver keeps the full
+history. Declare an event stream under `[events.X]`:
+
+```toml
+[events.alerts]
+id-field = "eventid"  # column that receives each event's ID (required)
+fields = [
+    { name = "message",  type = "TEXT" },
+    { name = "severity", type = "NUMBER" },
+]
+```
+
+- Events are pulled through the callbacks of `lch_block_create()`, like
+  callback-backed tables. The callback must only return events it has not
+  returned before. Only mark events as returned once `lch_block_create()`
+  succeeds, or they are lost.
+- Each block stores the events supplied since the previous block. Events have
+  no primary key and are never updated or deleted, so pruning the source has no
+  effect on the receiver.
+- A patch carries the events of the blocks it covers. The receiver only inserts
+  them.
+- Each event gets an ID: the hash of its block and its position in that block
+  (e.g. `'3f2a...c1:17'`). The receiver skips an event whose ID it already has.
+  Index `id-field` on the receiver, together with any injected fields.
+- A patch without a known reference (genesis, or a reference removed by
+  truncation) carries the events of every block still stored. The ID makes this
+  safe to apply.
+- Events stay on the source until truncation removes their block. With the
+  default `[truncate]` settings, that happens once they are reported.
+  `max-blocks` and `max-age` can remove events that were never reported.
+- Retention on the receiver is up to you.
+- Fields must not be primary keys. `id-field` must not be a field or an
+  injected field. Event streams cannot be CSV-backed.
+
 ### Injected fields
 
 Optional `[[injected-fields]]` entries add static columns to all generated SQL.
