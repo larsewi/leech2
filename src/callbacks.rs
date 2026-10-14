@@ -73,6 +73,36 @@ impl Callbacks {
             field_cstrings,
         })
     }
+
+    /// Bind this bundle to one table, call `table_begin`, run `load`, then
+    /// call `table_end`. `table_end` always fires when `table_begin`
+    /// succeeded, including when `load` fails, so the caller's per-table
+    /// resources (a DB cursor, a buffer) can always be released.
+    pub fn with_table<T>(
+        &self,
+        name: &str,
+        field_names: &[&str],
+        load: impl FnOnce(&TableCallbacks<'_>) -> Result<T>,
+    ) -> Result<T> {
+        let bound = self.for_table(name, field_names)?;
+        bound.table_begin()?;
+
+        let load_result = load(&bound);
+        let end_result = bound.table_end();
+
+        if load_result.is_err()
+            && let Err(end_err) = &end_result
+        {
+            log::warn!(
+                "table_end for '{}' also failed after load error: {:#}",
+                name,
+                end_err
+            );
+        }
+        let value = load_result?;
+        end_result?;
+        Ok(value)
+    }
 }
 
 /// A [`Callbacks`] bundle bound to one specific table. Holds the table name
