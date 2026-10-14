@@ -55,7 +55,12 @@ impl fmt::Display for Block {
             write!(f, "\n  Events ({} streams):", self.events.len())?;
         }
         for (name, events) in &self.events {
-            write!(f, "\n    '{}' ({} events)", name, events.events.len())?;
+            write!(
+                f,
+                "\n    '{}' {}",
+                name,
+                utils::indent(&events.to_string(), "    ")
+            )?;
         }
         Ok(())
     }
@@ -227,7 +232,7 @@ mod tests {
         block.events.insert(
             "alerts".to_string(),
             ProtoEvents {
-                events: vec![Default::default(), Default::default()],
+                field_names: vec!["message".to_string()],
                 ..Default::default()
             },
         );
@@ -236,7 +241,7 @@ mod tests {
   Created: 2023-11-14 22:13:20 UTC
   Payload (0 tables)
   Events (1 streams):
-    'alerts' (2 events)";
+    'alerts' [message]";
         assert_eq!(block.to_string(), expected);
     }
 }

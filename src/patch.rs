@@ -13,8 +13,10 @@ use crate::block::Block;
 use crate::cell::{Cell, parse_typed_cell};
 use crate::config::{Config, InjectedFieldConfig, TableConfig};
 use crate::delta::Delta;
+use crate::event;
 use crate::head;
 use crate::proto::patch::Delta as ProtoDelta;
+use crate::proto::patch::EventBatches as ProtoEventBatches;
 use crate::proto::patch::InjectedField;
 use crate::proto::state::State as ProtoState;
 use crate::proto::table::Table as ProtoTable;
@@ -73,7 +75,8 @@ impl fmt::Display for Patch {
         write!(f, "\n  Blocks: {}", self.num_blocks)?;
         fmt_payload(&self.deltas, "Deltas", f)?;
         fmt_payload(&self.states, "States", f)?;
-        if self.deltas.is_empty() && self.states.is_empty() {
+        fmt_payload(&self.events, "Events", f)?;
+        if self.deltas.is_empty() && self.states.is_empty() && self.events.is_empty() {
             write!(f, "\n  Payload: None")?;
         }
         Ok(())
@@ -200,23 +203,23 @@ fn merge_block_deltas(
 }
 
 type ConsolidateResult = (
-    Option<Timestamp>,
     u32,
     HashMap<String, ProtoDelta>,
     HashMap<String, ProtoTable>,
 );
 
+/// Merge the blocks in `block_hashes` (newest first) into per-table deltas
+/// and states. `events` receives the events of every block that loads, even
+/// when consolidation fails, so a fallback patch can still carry them.
 fn try_consolidate(
     work_dir: &Path,
-    head: &str,
-    last_known: &str,
+    block_hashes: &[String],
     mode: u32,
     table_configs: &HashMap<String, TableConfig>,
+    events: &mut HashMap<String, ProtoEventBatches>,
 ) -> Result<ConsolidateResult> {
-    let (created, block_hashes) = collect_block_hashes(work_dir, head, last_known, mode)?;
-
     if block_hashes.is_empty() {
-        return Ok((created, 0, HashMap::new(), HashMap::new()));
+        return Ok((0, HashMap::new(), HashMap::new()));
     }
 
     let num_blocks = block_hashes.len() as u32;
@@ -227,6 +230,7 @@ fn try_consolidate(
     let mut merged_deltas: HashMap<String, Delta> = HashMap::new();
     let mut skipped_tables: HashSet<String> = HashSet::new();
     let mut pre_counts: HashMap<String, DeltaCounts> = HashMap::new();
+    let mut load_error = None;
 
     for (index, hash) in block_hashes.iter().rev().enumerate() {
         log::trace!(
@@ -235,14 +239,28 @@ fn try_consolidate(
             num_blocks,
             hash
         );
-        let block = Block::load(work_dir, hash, mode)?;
-        merge_block_deltas(
-            block,
-            table_configs,
-            &mut merged_deltas,
-            &mut skipped_tables,
-            &mut pre_counts,
-        );
+        let mut block = match Block::load(work_dir, hash, mode) {
+            Ok(block) => block,
+            Err(e) => {
+                // Keep loading the remaining blocks for their events, but stop
+                // merging: deltas cannot be merged across a missing block.
+                load_error.get_or_insert(e);
+                continue;
+            }
+        };
+        event::append_batches(events, hash, std::mem::take(&mut block.events));
+        if load_error.is_none() {
+            merge_block_deltas(
+                block,
+                table_configs,
+                &mut merged_deltas,
+                &mut skipped_tables,
+                &mut pre_counts,
+            );
+        }
+    }
+    if let Some(e) = load_error {
+        return Err(e);
     }
 
     // Load state for per-table size comparison and fallback.
@@ -307,7 +325,7 @@ fn try_consolidate(
         result_deltas.insert(table_name, merged_delta);
     }
 
-    Ok((created, num_blocks, result_deltas, result_states))
+    Ok((num_blocks, result_deltas, result_states))
 }
 
 /// Build the injected-field list from config, converting each entry to its
@@ -328,31 +346,52 @@ fn build_injected_fields(config: &Config) -> Result<Vec<InjectedField>> {
 fn full_state_size(config: &Config, num_blocks: u32) -> Result<u64> {
     let state_dir = config.ensure_state_dir()?;
     let head = head::load(&state_dir, config.file_mode)?;
+    let created = Block::load_header(&state_dir, &head, config.file_mode)
+        .ok()
+        .and_then(|header| header.created);
     let injected_fields = build_injected_fields(config)?;
-    let mut patch = full_state_patch(&state_dir, &head, injected_fields, config.file_mode)?;
+    let mut patch = full_state_patch(
+        &state_dir,
+        &head,
+        created,
+        injected_fields,
+        config.file_mode,
+    )?;
     patch.num_blocks = num_blocks;
     Ok(patch.encoded_len() as u64)
 }
 
+/// Build a full-state patch from the STATE file. `created` is the HEAD
+/// block's creation time, which callers have already read.
 fn full_state_patch(
+    work_dir: &Path,
+    head: &str,
+    created: Option<Timestamp>,
+    injected_fields: Vec<InjectedField>,
+    mode: u32,
+) -> Result<Patch> {
+    let state =
+        ProtoState::load(work_dir, mode)?.context("no STATE file found for full state patch")?;
+    Ok(Patch {
+        head: head.to_string(),
+        created,
+        injected_fields,
+        states: state.tables,
+        ..Default::default()
+    })
+}
+
+/// Build a full-state patch that also carries the events of every block still
+/// stored. Used when there is no known reference to start from.
+fn full_state_patch_with_events(
     work_dir: &Path,
     head: &str,
     injected_fields: Vec<InjectedField>,
     mode: u32,
 ) -> Result<Patch> {
-    let created = Block::load(work_dir, head, mode)
-        .ok()
-        .and_then(|block| block.created);
-    let state =
-        ProtoState::load(work_dir, mode)?.context("no STATE file found for full state patch")?;
-    let patch = Patch {
-        head: head.to_string(),
-        created,
-        injected_fields,
-        num_blocks: 0,
-        deltas: HashMap::new(),
-        states: state.tables,
-    };
+    let (created, events) = event::collect_chain(work_dir, head, mode);
+    let mut patch = full_state_patch(work_dir, head, created, injected_fields, mode)?;
+    patch.events = events;
     log::info!("Consolidated patch:\n{}", patch);
     Ok(patch)
 }
@@ -363,11 +402,15 @@ impl Patch {
     /// (full-state size vs consolidated size) into the config's in-flight run.
     pub fn create(config: &Config, last_known: &str) -> Result<Patch> {
         let start = Instant::now();
-        let patch = Self::create_consolidated(config, last_known)?;
+        let mut patch = Self::create_consolidated(config, last_known)?;
 
         if config.stats.enable {
             let duration_ms = start.elapsed().as_secs_f64() * 1000.0;
+            // Delta merging only concerns tables, and the full-state baseline
+            // carries no events, so leave events out of the measurement.
+            let events = std::mem::take(&mut patch.events);
             let bytes_out = patch.encoded_len() as u64;
+            patch.events = events;
             // Baseline is a full-state patch; if it can't be computed (e.g. no
             // STATE file), treat merging as saving nothing rather than failing.
             let bytes_in = full_state_size(config, patch.num_blocks).unwrap_or_else(|e| {
@@ -410,11 +453,8 @@ impl Patch {
         if head == GENESIS_HASH {
             let patch = Patch {
                 head,
-                created: None,
                 injected_fields,
-                num_blocks: 0,
-                deltas: HashMap::new(),
-                states: HashMap::new(),
+                ..Default::default()
             };
             log::info!("Consolidated patch:\n{}", patch);
             return Ok(patch);
@@ -422,30 +462,59 @@ impl Patch {
 
         // If the reference block can't be resolved or is genesis, produce a
         // full STATE payload (DELETE + INSERT) which is always safe to apply
-        // regardless of current database contents.
+        // regardless of current database contents. Events of every stored
+        // block come along, since the receiver skips the ones it has.
         let last_known = match resolved {
             Ok(hash) if hash != GENESIS_HASH => hash,
             Ok(_) => {
                 log::info!("Reference is genesis, producing full state patch");
-                return full_state_patch(&state_dir, &head, injected_fields, file_mode);
+                return full_state_patch_with_events(&state_dir, &head, injected_fields, file_mode);
             }
             Err(e) => {
                 log::warn!(
                     "Reference block not found, producing full state patch: {}",
                     e
                 );
-                return full_state_patch(&state_dir, &head, injected_fields, file_mode);
+                return full_state_patch_with_events(&state_dir, &head, injected_fields, file_mode);
             }
         };
 
-        let (created, num_blocks, deltas, states) =
-            match try_consolidate(&state_dir, &head, &last_known, file_mode, &config.tables) {
+        // A reference outside the chain (e.g. a broken chain) is as good as
+        // unknown: the receiver may lack any stored block's events.
+        let (created, block_hashes) =
+            match collect_block_hashes(&state_dir, &head, &last_known, file_mode) {
                 Ok(result) => result,
                 Err(e) => {
                     log::warn!("Consolidation failed, falling back to full state: {}", e);
-                    return full_state_patch(&state_dir, &head, injected_fields, file_mode);
+                    return full_state_patch_with_events(
+                        &state_dir,
+                        &head,
+                        injected_fields,
+                        file_mode,
+                    );
                 }
             };
+
+        let mut events = HashMap::new();
+        let (num_blocks, deltas, states) = match try_consolidate(
+            &state_dir,
+            &block_hashes,
+            file_mode,
+            &config.tables,
+            &mut events,
+        ) {
+            Ok(result) => result,
+            Err(e) => {
+                log::warn!("Consolidation failed, falling back to full state: {}", e);
+                // The reference is known, so the events of the blocks
+                // after it are all the receiver lacks.
+                let mut patch =
+                    full_state_patch(&state_dir, &head, created, injected_fields, file_mode)?;
+                patch.events = events;
+                log::info!("Consolidated patch:\n{}", patch);
+                return Ok(patch);
+            }
+        };
 
         let patch = Patch {
             head,
@@ -454,6 +523,7 @@ impl Patch {
             num_blocks,
             deltas,
             states,
+            events,
         };
 
         log::info!("Consolidated patch:\n{}", patch);
@@ -507,24 +577,13 @@ mod tests {
     use crate::proto::block::Update as ProtoBlockUpdate;
     use crate::proto::record::Record as ProtoRecord;
 
-    fn empty_patch() -> Patch {
-        Patch {
-            head: String::new(),
-            created: None,
-            injected_fields: Vec::new(),
-            num_blocks: 0,
-            deltas: HashMap::new(),
-            states: HashMap::new(),
-        }
-    }
-
     fn injected_value(field: &InjectedField) -> Cell {
         Cell::try_from(field.value.as_ref().unwrap()).unwrap()
     }
 
     #[test]
     fn test_inject_field_add_text() {
-        let mut patch = empty_patch();
+        let mut patch = Patch::default();
         patch.inject_field("hostkey", Cell::from("abc")).unwrap();
         assert_eq!(patch.injected_fields.len(), 1);
         assert_eq!(patch.injected_fields[0].name, "hostkey");
@@ -533,7 +592,7 @@ mod tests {
 
     #[test]
     fn test_inject_field_add_number() {
-        let mut patch = empty_patch();
+        let mut patch = Patch::default();
         patch.inject_field("count", Cell::Number(42.0)).unwrap();
         assert_eq!(
             injected_value(&patch.injected_fields[0]),
@@ -543,7 +602,7 @@ mod tests {
 
     #[test]
     fn test_inject_field_add_boolean() {
-        let mut patch = empty_patch();
+        let mut patch = Patch::default();
         patch.inject_field("enabled", Cell::Boolean(true)).unwrap();
         assert_eq!(
             injected_value(&patch.injected_fields[0]),
@@ -553,7 +612,7 @@ mod tests {
 
     #[test]
     fn test_inject_field_overwrite_replaces_value() {
-        let mut patch = empty_patch();
+        let mut patch = Patch::default();
         patch.injected_fields.push(InjectedField {
             name: "host".to_string(),
             value: Some(Cell::Number(1.0).into()),
@@ -569,7 +628,7 @@ mod tests {
 
     #[test]
     fn test_inject_field_multiple_distinct_names_append() {
-        let mut patch = empty_patch();
+        let mut patch = Patch::default();
         patch.inject_field("a", Cell::from("1")).unwrap();
         patch.inject_field("b", Cell::from("2")).unwrap();
         assert_eq!(patch.injected_fields.len(), 2);
@@ -579,7 +638,7 @@ mod tests {
 
     #[test]
     fn test_inject_field_rejects_empty_name() {
-        let mut patch = empty_patch();
+        let mut patch = Patch::default();
         let err = patch.inject_field("", Cell::from("value")).unwrap_err();
         let msg = format!("{:#}", err);
         assert!(msg.contains("field name must not be empty"), "got: {msg}");
@@ -587,7 +646,7 @@ mod tests {
 
     #[test]
     fn test_inject_field_rejects_control_character_in_name() {
-        let mut patch = empty_patch();
+        let mut patch = Patch::default();
         let err = patch
             .inject_field("host\nINSERT", Cell::from("value"))
             .unwrap_err();
@@ -597,7 +656,7 @@ mod tests {
 
     #[test]
     fn test_inject_field_rejects_nul_in_name() {
-        let mut patch = empty_patch();
+        let mut patch = Patch::default();
         let err = patch
             .inject_field("host\0", Cell::from("value"))
             .unwrap_err();
@@ -607,14 +666,14 @@ mod tests {
 
     #[test]
     fn test_inject_field_rejects_null() {
-        let mut patch = empty_patch();
+        let mut patch = Patch::default();
         let err = patch.inject_field("foo", Cell::Null).unwrap_err();
         assert!(err.to_string().contains("NULL values are not supported"));
     }
 
     #[test]
     fn test_inject_field_null_does_not_mutate() {
-        let mut patch = empty_patch();
+        let mut patch = Patch::default();
         let _ = patch.inject_field("foo", Cell::Null);
         assert!(patch.injected_fields.is_empty());
     }

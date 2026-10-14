@@ -764,11 +764,9 @@ mod tests {
     fn dummy_patch(deltas: HashMap<String, ProtoDelta>) -> ProtoPatch {
         ProtoPatch {
             head: "abc123".to_string(),
-            created: None,
-            injected_fields: Vec::new(),
             num_blocks: 1,
             deltas,
-            states: HashMap::new(),
+            ..Default::default()
         }
     }
 
