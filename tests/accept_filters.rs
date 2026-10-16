@@ -33,7 +33,7 @@ max-field-length = 5
     Block::create(&config, None).unwrap();
 
     let patch = Patch::create(&config, GENESIS_HASH).unwrap();
-    let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
+    let sql = sql::patch_to_sql(&config, &patch, &[]).unwrap().unwrap();
 
     common::assert_sql_statements(
         &sql,
@@ -79,7 +79,7 @@ exclude = "^inactive$"
     Block::create(&config, None).unwrap();
 
     let patch = Patch::create(&config, GENESIS_HASH).unwrap();
-    let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
+    let sql = sql::patch_to_sql(&config, &patch, &[]).unwrap().unwrap();
 
     common::assert_sql_statements(
         &sql,
@@ -124,7 +124,7 @@ exclude = "DEPRECATED"
     Block::create(&config, None).unwrap();
 
     let patch = Patch::create(&config, GENESIS_HASH).unwrap();
-    let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
+    let sql = sql::patch_to_sql(&config, &patch, &[]).unwrap().unwrap();
 
     common::assert_sql_statements(
         &sql,
@@ -177,7 +177,7 @@ source = "orders.csv"
     Block::create(&config, None).unwrap();
 
     let patch = Patch::create(&config, GENESIS_HASH).unwrap();
-    let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
+    let sql = sql::patch_to_sql(&config, &patch, &[]).unwrap().unwrap();
 
     // users id=1 is filtered out; orders is unaffected.
     assert!(
@@ -252,7 +252,7 @@ exclude = "^inactive$"
     Block::create(&config, None).unwrap();
 
     let patch = Patch::create(&config, &hash1).unwrap();
-    let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
+    let sql = sql::patch_to_sql(&config, &patch, &[]).unwrap().unwrap();
 
     // User 2 should appear as a DELETE (was in state, now filtered out)
     assert!(sql.contains(&[r#"DELETE FROM "users""#, r#"WHERE "id" = 2;"#].join("\n")));
@@ -292,7 +292,7 @@ exclude = "^inactive$"
     Block::create(&config, None).unwrap();
 
     let patch = Patch::create(&config, &hash1).unwrap();
-    let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
+    let sql = sql::patch_to_sql(&config, &patch, &[]).unwrap().unwrap();
 
     // User 2 should appear as an INSERT (was not in state, now included)
     assert!(
@@ -340,7 +340,7 @@ include = "^(active|pending)$"
     Block::create(&config, None).unwrap();
 
     let patch = Patch::create(&config, GENESIS_HASH).unwrap();
-    let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
+    let sql = sql::patch_to_sql(&config, &patch, &[]).unwrap().unwrap();
 
     common::assert_sql_statements(
         &sql,
@@ -385,7 +385,7 @@ include = "PRODUCTION"
     Block::create(&config, None).unwrap();
 
     let patch = Patch::create(&config, GENESIS_HASH).unwrap();
-    let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
+    let sql = sql::patch_to_sql(&config, &patch, &[]).unwrap().unwrap();
 
     common::assert_sql_statements(
         &sql,
@@ -437,7 +437,7 @@ include = "^active$"
     Block::create(&config, None).unwrap();
 
     let patch = Patch::create(&config, GENESIS_HASH).unwrap();
-    let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
+    let sql = sql::patch_to_sql(&config, &patch, &[]).unwrap().unwrap();
 
     // SQL emits columns in canonical (alphabetical) order:
     // id (PK), fallback_tag, primary_tag.
@@ -476,7 +476,7 @@ exclude = "^pending$"
     Block::create(&config, None).unwrap();
 
     let patch = Patch::create(&config, GENESIS_HASH).unwrap();
-    let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
+    let sql = sql::patch_to_sql(&config, &patch, &[]).unwrap().unwrap();
 
     // Only "active" survives: "pending" is dropped by exclude (overlap), "inactive" by include.
     common::assert_sql_statements(
@@ -522,7 +522,7 @@ include = "^active$"
     Block::create(&config, None).unwrap();
 
     let patch = Patch::create(&config, &hash1).unwrap();
-    let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
+    let sql = sql::patch_to_sql(&config, &patch, &[]).unwrap().unwrap();
 
     // User 2 should appear as a DELETE (was in state, now filtered out)
     assert!(sql.contains(&[r#"DELETE FROM "users""#, r#"WHERE "id" = 2;"#].join("\n")));
@@ -562,7 +562,7 @@ include = "^active$"
     Block::create(&config, None).unwrap();
 
     let patch = Patch::create(&config, &hash1).unwrap();
-    let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
+    let sql = sql::patch_to_sql(&config, &patch, &[]).unwrap().unwrap();
 
     // User 2 should appear as an INSERT (was not in state, now included)
     assert!(

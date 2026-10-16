@@ -62,7 +62,7 @@ header = true
     // Patch from hash1 should be empty: same data, just a different
     // declaration order.
     let patch = Patch::create(&config, &hash1).unwrap();
-    let sql = sql::patch_to_sql(&config, &patch).unwrap();
+    let sql = sql::patch_to_sql(&config, &patch, &[]).unwrap();
     assert!(sql.is_none(), "expected no SQL, got: {:?}", sql);
 
     common::assert_wire_roundtrip(&config, &patch);

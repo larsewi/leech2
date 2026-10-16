@@ -227,7 +227,6 @@ Printing the patch shows any combination of deltas, states and events:
 Patch:
   Head: 9c4d2e8f...
   Created: 2025-06-15 08:30:00 UTC
-  Injected: host = agent-1
   Blocks: 3
   Deltas (1):
     'employees' [employee_id, first_name, hire_date]
@@ -267,14 +266,14 @@ skipped.
 Column types defined in the config control how values are formatted in the SQL
 output (quoting for `TEXT`, bare numbers for `NUMBER`, etc.).
 
-When a patch carries injected fields (see "Injected fields" in
-[README.md](README.md)), those columns are injected into all SQL output:
+`patch_to_sql()` also takes the
+[injected fields](README.md#injected-fields). Those columns are injected into all SQL output:
 `INSERT` values include them, `DELETE`/`UPDATE`- `WHERE` clauses are scoped by
 them, and state payloads scope their `DELETE FROM` with a `WHERE` clause on them
-to preserve other agents data. Injected fields are added or overwritten via
-`Patch::inject_field()` (and its CLI / C FFI counterparts), which the receiving
-side of a connection can use to attach authoritative values derived from the
-authenticated peer.
+to preserve other agents data. The receiving side of a connection passes them,
+so it can attach authoritative values derived from the authenticated peer.
+Patches don't carry injected fields: tag 3 of the `Patch` message is reserved,
+and anything an old sender put there is dropped on decode.
 
 ### Patch::applied()
 

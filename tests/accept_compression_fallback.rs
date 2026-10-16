@@ -51,7 +51,7 @@ source = "users.csv"
     // The receiver auto-detects the missing magic and decodes it identically.
     let decoded = wire::decode_patch(&encoded).unwrap();
     assert_eq!(
-        sql::patch_to_sql(&config, &patch).unwrap(),
-        sql::patch_to_sql(&config, &decoded).unwrap()
+        sql::patch_to_sql(&config, &patch, &[]).unwrap(),
+        sql::patch_to_sql(&config, &decoded, &[]).unwrap()
     );
 }

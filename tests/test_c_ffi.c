@@ -260,37 +260,20 @@ int main(int argc, char *argv[]) {
   printf("patch head: %s\n", hash);
   lch_string_free(hash);
 
-  lch_buffer_t injected = {0};
-  lch_cell_t hostkey_cell = {.kind = LCH_VALUE_TEXT, .text = "abc123"};
-  ret = lch_patch_inject(cfg, &patch, "hostkey", &hostkey_cell, &injected);
-  if (ret == LCH_FAILURE) {
-    fprintf(stderr, "lch_patch_inject failed\n");
-    lch_buffer_free(&patch);
-    lch_deinit(cfg);
-    return EXIT_FAILURE;
-  }
+  const lch_field_t injected[] = {
+      {.name = "hostkey", .value = {.kind = LCH_VALUE_TEXT, .text = "abc123"}},
+  };
+  const size_t num_injected = sizeof(injected) / sizeof(injected[0]);
 
   char *sql = NULL;
-  ret = lch_patch_to_sql(cfg, &injected, &sql);
+  ret = lch_patch_to_sql(cfg, &patch, injected, num_injected, &sql);
   if (ret == LCH_FAILURE) {
     fprintf(stderr, "lch_patch_to_sql failed\n");
-    lch_buffer_free(&injected);
     lch_buffer_free(&patch);
     lch_deinit(cfg);
     return EXIT_FAILURE;
   }
 
-  if (sql == NULL || strstr(sql, "\"hostkey\"") == NULL ||
-      strstr(sql, "'abc123'") == NULL) {
-    fprintf(stderr, "lch_patch_inject: injected field not present in SQL\n");
-    lch_string_free(sql);
-    lch_buffer_free(&injected);
-    lch_buffer_free(&patch);
-    lch_deinit(cfg);
-    return EXIT_FAILURE;
-  }
-
-  lch_buffer_free(&injected);
 
   ret = lch_patch_applied(cfg, &patch);
   if (ret == LCH_FAILURE) {

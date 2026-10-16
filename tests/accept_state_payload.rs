@@ -50,7 +50,7 @@ source = "items.csv"
         "expected a payload"
     );
 
-    let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
+    let sql = sql::patch_to_sql(&config, &patch, &[]).unwrap().unwrap();
 
     if !patch.states.is_empty() {
         // State payload: DELETE + 2 INSERTs
@@ -145,7 +145,7 @@ source = "logs.csv"
     );
 
     // Verify SQL contains both delta and state patterns.
-    let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
+    let sql = sql::patch_to_sql(&config, &patch, &[]).unwrap().unwrap();
 
     // logs: delta path -> 1 INSERT, no DELETE for logs
     assert!(sql.contains(r#"INSERT INTO "logs""#));
@@ -229,7 +229,7 @@ source = "logs.csv"
     let full_state_patch = Patch::create(&config, GENESIS_HASH).unwrap();
     assert!(patch.deltas["items"].encoded_len() > full_state_patch.states["items"].encoded_len());
 
-    let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
+    let sql = sql::patch_to_sql(&config, &patch, &[]).unwrap().unwrap();
     assert_eq!(common::count_sql(&sql, r#"DELETE FROM "items""#), 18);
     assert_eq!(common::count_sql(&sql, r#"INSERT INTO "items""#), 0);
 

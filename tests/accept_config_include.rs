@@ -56,7 +56,7 @@ source = "products.csv"
     let _hash = Block::create(&config, None).unwrap();
 
     let patch = Patch::create(&config, GENESIS_HASH).unwrap();
-    let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
+    let sql = sql::patch_to_sql(&config, &patch, &[]).unwrap().unwrap();
 
     assert!(sql.contains(r#""users""#));
     assert!(sql.contains(r#""products""#));

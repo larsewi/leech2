@@ -270,18 +270,17 @@ fields = [
 
 Injected fields add columns to all generated SQL. Each one becomes an extra
 column in INSERT statements and an extra condition in DELETE/UPDATE WHERE
-clauses. When a patch has injected fields, state payload patches scope their
-`DELETE FROM` with a `WHERE` clause on them so that other agents' data is
-preserved.
+clauses. State payloads also scope their `DELETE FROM` with a `WHERE` clause on
+them so that other agents' data is preserved.
 
-Fields are injected into a patch via `lch patch inject` or the
-`lch_patch_inject` C API function, typically by the receiver. This lets it use
-an authoritative value, e.g. one derived from an authenticated connection.
-Injecting a field that is already present overwrites its value.
+The receiver passes injected fields when converting a patch to SQL, through the
+`injected` array of `lch_patch_to_sql()` or the `--inject` option of
+`lch patch sql`. This lets it use an authoritative value, e.g. one derived from
+an authenticated connection. Patches never carry injected fields, so a sender
+cannot set them.
 
 ```sh
-lch patch inject hostkey abc123  # defaults to TEXT
-lch patch inject count 42 NUMBER
+lch patch sql --inject hostkey abc123 TEXT --inject count 42 NUMBER
 ```
 
 ### Filters

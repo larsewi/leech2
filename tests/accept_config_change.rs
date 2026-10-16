@@ -99,7 +99,7 @@ source = "logs.csv"
     );
 
     // Verify SQL generation.
-    let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
+    let sql = sql::patch_to_sql(&config, &patch, &[]).unwrap().unwrap();
 
     // items: state path -> DELETE + 3 INSERTs
     assert!(sql.contains(r#"DELETE FROM "items";"#));
@@ -167,7 +167,7 @@ source = "logs.csv"
     assert!(patch.states.contains_key("logs"));
     assert!(patch.deltas.contains_key("items"));
 
-    let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
+    let sql = sql::patch_to_sql(&config, &patch, &[]).unwrap().unwrap();
 
     // logs: state path -> DELETE + 3 INSERTs
     assert!(sql.contains(r#"DELETE FROM "logs";"#));

@@ -38,7 +38,7 @@ source = "users.csv"
     assert_eq!(patch.num_blocks, 1);
     assert_eq!(patch.head, hash2);
 
-    let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
+    let sql = sql::patch_to_sql(&config, &patch, &[]).unwrap().unwrap();
     assert!(
         sql.contains(
             &[
@@ -54,7 +54,7 @@ source = "users.csv"
     assert_eq!(patch.head, hash2);
     assert_eq!(patch.num_blocks, 0);
 
-    let sql_fallback = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
+    let sql_fallback = sql::patch_to_sql(&config, &patch, &[]).unwrap().unwrap();
     assert_eq!(
         common::count_sql(&sql_fallback, r#"DELETE FROM "users";"#),
         1

@@ -42,7 +42,9 @@ source = "users.csv"
     assert_eq!(patch_full.num_blocks, 0);
     assert_eq!(patch_full.head, hash2);
 
-    let sql_full = sql::patch_to_sql(&config, &patch_full).unwrap().unwrap();
+    let sql_full = sql::patch_to_sql(&config, &patch_full, &[])
+        .unwrap()
+        .unwrap();
     assert_eq!(common::count_sql(&sql_full, r#"DELETE FROM "users";"#), 1);
     assert_eq!(common::count_sql(&sql_full, "INSERT INTO"), 3);
     assert_eq!(common::count_sql(&sql_full, "DELETE FROM"), 1);
@@ -56,7 +58,9 @@ source = "users.csv"
     assert_eq!(patch_partial.num_blocks, 1);
     assert_eq!(patch_partial.head, hash2);
 
-    let sql_partial = sql::patch_to_sql(&config, &patch_partial).unwrap().unwrap();
+    let sql_partial = sql::patch_to_sql(&config, &patch_partial, &[])
+        .unwrap()
+        .unwrap();
     assert_eq!(common::count_sql(&sql_partial, "INSERT INTO"), 1);
     assert_eq!(common::count_sql(&sql_partial, "DELETE FROM"), 1);
     assert_eq!(common::count_sql(&sql_partial, "UPDATE "), 1);
@@ -134,7 +138,9 @@ source = "users.csv"
     assert_eq!(patch_genesis.num_blocks, 0);
     assert_eq!(patch_genesis.head, hash3);
 
-    let sql_genesis = sql::patch_to_sql(&config, &patch_genesis).unwrap().unwrap();
+    let sql_genesis = sql::patch_to_sql(&config, &patch_genesis, &[])
+        .unwrap()
+        .unwrap();
     assert_eq!(
         common::count_sql(&sql_genesis, r#"DELETE FROM "users";"#),
         1
@@ -155,7 +161,9 @@ source = "users.csv"
     let patch_from1 = Patch::create(&config, &hash1).unwrap();
     assert_eq!(patch_from1.num_blocks, 2);
 
-    let sql_from1 = sql::patch_to_sql(&config, &patch_from1).unwrap().unwrap();
+    let sql_from1 = sql::patch_to_sql(&config, &patch_from1, &[])
+        .unwrap()
+        .unwrap();
 
     if patch_from1.states.contains_key("users") {
         // State path: DELETE + 2 INSERTs (Alice, Charles)
@@ -197,7 +205,9 @@ source = "users.csv"
     let patch_from2 = Patch::create(&config, &hash2).unwrap();
     assert_eq!(patch_from2.num_blocks, 1);
 
-    let sql_from2 = sql::patch_to_sql(&config, &patch_from2).unwrap().unwrap();
+    let sql_from2 = sql::patch_to_sql(&config, &patch_from2, &[])
+        .unwrap()
+        .unwrap();
 
     if patch_from2.states.contains_key("users") {
         // State path: DELETE + 2 INSERTs (Alice, Charles)
@@ -255,7 +265,7 @@ source = "products.csv"
     assert_eq!(patch.num_blocks, 2);
     assert_eq!(patch.head, hash3);
 
-    let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
+    let sql = sql::patch_to_sql(&config, &patch, &[]).unwrap().unwrap();
 
     // The merge should produce a delta-path patch (not a state fallback).
     assert!(

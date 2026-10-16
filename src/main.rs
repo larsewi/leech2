@@ -7,6 +7,7 @@ use clap::Parser;
 use leech2::block::Block;
 use leech2::cell::{Kind, parse_typed_cell};
 use leech2::config::Config;
+use leech2::sql::InjectedField;
 use leech2::state::ProtoState;
 use leech2::utils::{GENESIS_HASH, format_timestamp};
 
@@ -217,33 +218,27 @@ fn cmd_patch_show(config: &Config) -> Result<String> {
     Ok(format!("{}", patch))
 }
 
-fn cmd_patch_sql(config: &Config) -> Result<String> {
+/// Parse the values of one `--inject NAME VALUE KIND` option.
+fn parse_injected_field(args: &[String]) -> Result<InjectedField> {
+    let [name, value, kind] = args else {
+        bail!("--inject expects NAME VALUE KIND");
+    };
+    let kind = Kind::from_config(kind)?;
+    let value =
+        parse_typed_cell(value, kind).with_context(|| format!("injected field '{}'", name))?;
+    InjectedField::new(name, value)
+}
+
+fn cmd_patch_sql(config: &Config, inject: &[String]) -> Result<String> {
+    let mut injected_fields = Vec::new();
+    for args in inject.chunks(3) {
+        injected_fields.push(parse_injected_field(args)?);
+    }
     let patch = load_patch(config)?;
-    match leech2::sql::patch_to_sql(config, &patch)? {
+    match leech2::sql::patch_to_sql(config, &patch, &injected_fields)? {
         Some(sql) => Ok(sql),
         None => Ok("-- no changes\n".to_string()),
     }
-}
-
-fn cmd_patch_inject(config: &Config, name: &str, value: &str, kind: &str) -> Result<()> {
-    let kind = Kind::from_config(kind).context("invalid kind")?;
-    let cell = parse_typed_cell(value, kind).context("invalid value")?;
-
-    let mut patch = load_patch(config)?;
-    patch.inject_field(name, cell)?;
-
-    let encoded = leech2::wire::encode_patch(config, &patch)?;
-    let state_dir = config.ensure_state_dir()?;
-    leech2::storage::store(
-        &state_dir,
-        PATCH_FILE,
-        &encoded,
-        config.file_mode,
-        config.dry_run,
-    )?;
-
-    println!("{}", patch);
-    Ok(())
 }
 
 fn cmd_patch_applied(config: &Config) -> Result<()> {
@@ -356,12 +351,9 @@ fn run(cli: Cli) -> Result<()> {
                     let output = cmd_patch_show(&config)?;
                     print_with_pager(&output);
                 }
-                PatchCmd::Sql => {
-                    let output = cmd_patch_sql(&config)?;
+                PatchCmd::Sql { inject } => {
+                    let output = cmd_patch_sql(&config, inject)?;
                     print_with_pager(&output);
-                }
-                PatchCmd::Inject { name, value, kind } => {
-                    cmd_patch_inject(&config, name, value, kind)?;
                 }
                 PatchCmd::Applied => {
                     cmd_patch_applied(&config)?;

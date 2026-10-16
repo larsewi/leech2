@@ -213,7 +213,7 @@ fn test_json_config_file() {
     assert_eq!(patch.num_blocks, 0);
     assert_eq!(patch.head, hash);
 
-    let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
+    let sql = sql::patch_to_sql(&config, &patch, &[]).unwrap().unwrap();
     assert_eq!(common::count_sql(&sql, "INSERT INTO"), 2);
 
     common::assert_wire_roundtrip(&config, &patch);

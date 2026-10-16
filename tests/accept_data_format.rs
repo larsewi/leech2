@@ -33,7 +33,7 @@ header = true
     Block::create(&config, None).unwrap();
 
     let patch = Patch::create(&config, GENESIS_HASH).unwrap();
-    let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
+    let sql = sql::patch_to_sql(&config, &patch, &[]).unwrap().unwrap();
 
     // Should have 2 inserts (the header row is not treated as data)
     assert_eq!(common::count_sql(&sql, "INSERT INTO"), 2);
@@ -80,7 +80,7 @@ header = true
     Block::create(&config, None).unwrap();
 
     let patch = Patch::create(&config, GENESIS_HASH).unwrap();
-    let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
+    let sql = sql::patch_to_sql(&config, &patch, &[]).unwrap().unwrap();
 
     // Verify values are correctly mapped despite reordered CSV columns
     assert_eq!(common::count_sql(&sql, "INSERT INTO"), 2);
@@ -125,7 +125,7 @@ source = "users.csv"
 
     // Patch from genesis with empty table: clear the table, no data to insert
     let patch = Patch::create(&config, GENESIS_HASH).unwrap();
-    let sql = sql::patch_to_sql(&config, &patch).unwrap();
+    let sql = sql::patch_to_sql(&config, &patch, &[]).unwrap();
     // None is also acceptable: no payload at all
     if let Some(s) = sql {
         assert_eq!(common::count_sql(&s, "INSERT INTO"), 0);
@@ -138,7 +138,7 @@ source = "users.csv"
 
     // Patch from hash1: should show 2 inserts
     let patch2 = Patch::create(&config, &hash1).unwrap();
-    let sql2 = sql::patch_to_sql(&config, &patch2).unwrap().unwrap();
+    let sql2 = sql::patch_to_sql(&config, &patch2, &[]).unwrap().unwrap();
     assert_eq!(common::count_sql(&sql2, "INSERT INTO"), 2);
 
     common::assert_wire_roundtrip(&config, &patch2);
@@ -183,7 +183,9 @@ source = "records.csv"
 
     // Patch from genesis: consolidated insert with v2 values (rule 7)
     let patch_genesis = Patch::create(&config, GENESIS_HASH).unwrap();
-    let sql_genesis = sql::patch_to_sql(&config, &patch_genesis).unwrap().unwrap();
+    let sql_genesis = sql::patch_to_sql(&config, &patch_genesis, &[])
+        .unwrap()
+        .unwrap();
 
     // TEXT: escaped single quote
     assert!(sql_genesis.contains("'it''s a test'"));
@@ -200,7 +202,9 @@ source = "records.csv"
     // With 1 row and all fields changed, the patch may choose State (DELETE+INSERT)
     // or Deltas (UPDATE). Either way, the SQL literals must be correctly formatted.
     let patch_partial = Patch::create(&config, &hash1).unwrap();
-    let sql_partial = sql::patch_to_sql(&config, &patch_partial).unwrap().unwrap();
+    let sql_partial = sql::patch_to_sql(&config, &patch_partial, &[])
+        .unwrap()
+        .unwrap();
 
     assert!(sql_partial.contains("'it''s a test'"));
     assert!(sql_partial.contains("99"));
@@ -247,7 +251,7 @@ null = "^(N/A)?$"
 
     // Patch from genesis: consolidated insert should have NULLs.
     let patch = Patch::create(&config, GENESIS_HASH).unwrap();
-    let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
+    let sql = sql::patch_to_sql(&config, &patch, &[]).unwrap().unwrap();
     assert!(
         sql.contains("NULL"),
         "should contain NULL for sentinel values"
@@ -257,7 +261,7 @@ null = "^(N/A)?$"
 
     // Patch from hash1: delta should also have NULLs.
     let patch2 = Patch::create(&config, &hash1).unwrap();
-    let sql2 = sql::patch_to_sql(&config, &patch2).unwrap().unwrap();
+    let sql2 = sql::patch_to_sql(&config, &patch2, &[]).unwrap().unwrap();
     assert!(sql2.contains("NULL"), "delta should contain NULL");
 
     common::assert_wire_roundtrip(&config, &patch);
@@ -291,7 +295,7 @@ false = "^N$"
     Block::create(&config, None).unwrap();
 
     let patch = Patch::create(&config, GENESIS_HASH).unwrap();
-    let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
+    let sql = sql::patch_to_sql(&config, &patch, &[]).unwrap().unwrap();
 
     assert!(sql.contains("TRUE"), "expected TRUE in SQL, got: {sql}");
     assert!(sql.contains("FALSE"), "expected FALSE in SQL, got: {sql}");

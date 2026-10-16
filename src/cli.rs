@@ -76,16 +76,11 @@ pub enum PatchCmd {
     /// Show the contents of the .leech2/PATCH file
     Show,
     /// Convert the .leech2/PATCH file to SQL
-    Sql,
-    /// Inject a field into the .leech2/PATCH file
-    Inject {
-        /// Column name
-        name: String,
-        /// Value
-        value: String,
-        /// Kind: TEXT, NUMBER, or BOOLEAN
-        #[arg(default_value = "TEXT")]
-        kind: String,
+    Sql {
+        /// Add a column to all generated SQL. KIND is TEXT, NUMBER, or BOOLEAN.
+        /// May be repeated.
+        #[arg(long, num_args = 3, value_names = ["NAME", "VALUE", "KIND"])]
+        inject: Vec<String>,
     },
     /// Mark the current patch as applied (saves head hash to REPORTED)
     Applied,

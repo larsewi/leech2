@@ -10,19 +10,17 @@ use prost::Message;
 use prost_types::Timestamp;
 
 use crate::block::Block;
-use crate::cell::Cell;
 use crate::config::{Config, TableConfig};
 use crate::delta::Delta;
 use crate::event;
 use crate::head;
 use crate::proto::patch::Delta as ProtoDelta;
 use crate::proto::patch::EventBatches as ProtoEventBatches;
-use crate::proto::patch::InjectedField;
 use crate::proto::state::State as ProtoState;
 use crate::proto::table::Table as ProtoTable;
 use crate::stats::{self, Stage, StageStats};
 use crate::utils;
-use crate::utils::{GENESIS_HASH, validate_field_name};
+use crate::utils::GENESIS_HASH;
 
 fn fmt_payload<T: fmt::Display>(
     payload: &HashMap<String, T>,
@@ -51,13 +49,6 @@ impl fmt::Display for Patch {
             Some(timestamp) => write!(f, "\n  Created: {}", utils::format_timestamp(timestamp))?,
             // Timestamp is None when the head points to genesis (no blocks exist yet).
             None => write!(f, "\n  Created: N/A")?,
-        }
-        for field in &self.injected_fields {
-            let value = match &field.value {
-                Some(value) => value.to_string(),
-                None => "<missing>".to_string(),
-            };
-            write!(f, "\n  Injected: {} = {}", field.name, value)?;
         }
         write!(f, "\n  Blocks: {}", self.num_blocks)?;
         fmt_payload(&self.deltas, "Deltas", f)?;
@@ -477,47 +468,10 @@ impl Patch {
             deltas,
             states,
             events,
-            ..Default::default()
         };
 
         log::info!("Consolidated patch:\n{}", patch);
         Ok(patch)
-    }
-
-    /// Add or overwrite an injected field on this patch. Validates that the
-    /// name is non-empty and the value is not [`Cell::Null`]. If a field
-    /// with the same name already exists from a previous inject_field call, its
-    /// value is replaced; a warning is logged when the replacement actually
-    /// differs from the existing value.
-    pub fn inject_field(&mut self, name: &str, value: Cell) -> Result<()> {
-        validate_field_name(name).context("inject_field")?;
-        if matches!(value, Cell::Null) {
-            bail!("inject_field: NULL values are not supported");
-        }
-
-        let new_value: crate::proto::cell::Cell = value.into();
-
-        if let Some(existing) = self.injected_fields.iter_mut().find(|f| f.name == name) {
-            if existing.value.as_ref() != Some(&new_value) {
-                let old_value = match &existing.value {
-                    Some(value) => value.to_string(),
-                    None => "<missing>".to_string(),
-                };
-                log::warn!(
-                    "inject_field: overwriting '{}' (was {}, now {})",
-                    name,
-                    old_value,
-                    new_value
-                );
-            }
-            existing.value = Some(new_value);
-        } else {
-            self.injected_fields.push(InjectedField {
-                name: name.to_string(),
-                value: Some(new_value),
-            });
-        }
-        Ok(())
     }
 }
 
@@ -525,112 +479,11 @@ impl Patch {
 mod tests {
     use super::*;
 
-    use crate::cell::text_proto_cells;
+    use crate::cell::{Cell, text_proto_cells};
     use crate::proto::block::Delta as ProtoBlockDelta;
     use crate::proto::block::TableChange;
     use crate::proto::block::Update as ProtoBlockUpdate;
     use crate::proto::record::Record as ProtoRecord;
-
-    fn injected_value(field: &InjectedField) -> Cell {
-        Cell::try_from(field.value.as_ref().unwrap()).unwrap()
-    }
-
-    #[test]
-    fn test_inject_field_add_text() {
-        let mut patch = Patch::default();
-        patch.inject_field("hostkey", Cell::from("abc")).unwrap();
-        assert_eq!(patch.injected_fields.len(), 1);
-        assert_eq!(patch.injected_fields[0].name, "hostkey");
-        assert_eq!(injected_value(&patch.injected_fields[0]), Cell::from("abc"));
-    }
-
-    #[test]
-    fn test_inject_field_add_number() {
-        let mut patch = Patch::default();
-        patch.inject_field("count", Cell::Number(42.0)).unwrap();
-        assert_eq!(
-            injected_value(&patch.injected_fields[0]),
-            Cell::Number(42.0)
-        );
-    }
-
-    #[test]
-    fn test_inject_field_add_boolean() {
-        let mut patch = Patch::default();
-        patch.inject_field("enabled", Cell::Boolean(true)).unwrap();
-        assert_eq!(
-            injected_value(&patch.injected_fields[0]),
-            Cell::Boolean(true)
-        );
-    }
-
-    #[test]
-    fn test_inject_field_overwrite_replaces_value() {
-        let mut patch = Patch::default();
-        patch.injected_fields.push(InjectedField {
-            name: "host".to_string(),
-            value: Some(Cell::Number(1.0).into()),
-        });
-        patch.inject_field("host", Cell::from("new-value")).unwrap();
-        assert_eq!(patch.injected_fields.len(), 1);
-        assert_eq!(patch.injected_fields[0].name, "host");
-        assert_eq!(
-            injected_value(&patch.injected_fields[0]),
-            Cell::from("new-value")
-        );
-    }
-
-    #[test]
-    fn test_inject_field_multiple_distinct_names_append() {
-        let mut patch = Patch::default();
-        patch.inject_field("a", Cell::from("1")).unwrap();
-        patch.inject_field("b", Cell::from("2")).unwrap();
-        assert_eq!(patch.injected_fields.len(), 2);
-        assert_eq!(patch.injected_fields[0].name, "a");
-        assert_eq!(patch.injected_fields[1].name, "b");
-    }
-
-    #[test]
-    fn test_inject_field_rejects_empty_name() {
-        let mut patch = Patch::default();
-        let err = patch.inject_field("", Cell::from("value")).unwrap_err();
-        let msg = format!("{:#}", err);
-        assert!(msg.contains("field name must not be empty"), "got: {msg}");
-    }
-
-    #[test]
-    fn test_inject_field_rejects_control_character_in_name() {
-        let mut patch = Patch::default();
-        let err = patch
-            .inject_field("host\nINSERT", Cell::from("value"))
-            .unwrap_err();
-        let msg = format!("{:#}", err);
-        assert!(msg.contains("control character"), "got: {msg}");
-    }
-
-    #[test]
-    fn test_inject_field_rejects_nul_in_name() {
-        let mut patch = Patch::default();
-        let err = patch
-            .inject_field("host\0", Cell::from("value"))
-            .unwrap_err();
-        let msg = format!("{:#}", err);
-        assert!(msg.contains("control character"), "got: {msg}");
-    }
-
-    #[test]
-    fn test_inject_field_rejects_null() {
-        let mut patch = Patch::default();
-        let err = patch.inject_field("foo", Cell::Null).unwrap_err();
-        assert!(err.to_string().contains("NULL values are not supported"));
-    }
-
-    #[test]
-    fn test_inject_field_null_does_not_mutate() {
-        let mut patch = Patch::default();
-        let _ = patch.inject_field("foo", Cell::Null);
-        assert!(patch.injected_fields.is_empty());
-    }
 
     fn timestamp(seconds: i64) -> Timestamp {
         Timestamp { seconds, nanos: 0 }

@@ -28,7 +28,7 @@ use leech2::block::Block;
 use leech2::cell::Cell;
 use leech2::config::Config;
 use leech2::patch::Patch;
-use leech2::sql::{self, quote_identifier};
+use leech2::sql::{self, InjectedField, quote_identifier};
 use leech2::stats;
 use leech2::utils::GENESIS_HASH;
 use leech2::wire;
@@ -748,7 +748,7 @@ fn run_round_for_agent(
         run.last_known,
         head,
     );
-    let mut patch = Patch::create(&config, &run.last_known).unwrap();
+    let patch = Patch::create(&config, &run.last_known).unwrap();
     run.agent.record_ship(patch.states.contains_key("users"));
 
     // Exercise the full ship pipeline (encode) so the compression stage is
@@ -756,7 +756,7 @@ fn run_round_for_agent(
     let _encoded = wire::encode_patch(&config, &patch).unwrap();
     stats::finalize_patch_create(&config);
 
-    let agent_sql = sql::patch_to_sql(&config, &patch).unwrap();
+    let agent_sql = sql::patch_to_sql(&config, &patch, &[]).unwrap();
     ship_and_verify(&run.agent_schema, agent_sql.as_deref(), &run.agent, None).unwrap_or_else(
         |e| {
             panic!(
@@ -766,10 +766,8 @@ fn run_round_for_agent(
         },
     );
 
-    patch
-        .inject_field("host", Cell::from(run.name.as_str()))
-        .unwrap();
-    let hub_sql = sql::patch_to_sql(&config, &patch).unwrap();
+    let injected = [InjectedField::new("host", Cell::from(run.name.as_str())).unwrap()];
+    let hub_sql = sql::patch_to_sql(&config, &patch, &injected).unwrap();
     ship_and_verify(hub, hub_sql.as_deref(), &run.agent, Some(&run.name)).unwrap_or_else(|e| {
         panic!(
             "seed={seed} agent={} round={round}: hub schema failed: {e:#}",

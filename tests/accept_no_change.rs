@@ -39,6 +39,6 @@ source = "users.csv"
     assert_eq!(patch.num_blocks, 1);
 
     // A no-change patch produces no SQL statements.
-    let sql = sql::patch_to_sql(&config, &patch).unwrap();
+    let sql = sql::patch_to_sql(&config, &patch, &[]).unwrap();
     assert!(sql.is_none(), "expected no SQL, got: {:?}", sql);
 }

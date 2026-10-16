@@ -92,8 +92,8 @@ pub fn assert_wire_roundtrip(config: &Config, patch: &Patch) {
     assert_eq!(patch.head, decoded.head);
     assert_eq!(patch.num_blocks, decoded.num_blocks);
 
-    let sql_before = sql::patch_to_sql(config, patch).unwrap();
-    let sql_after = sql::patch_to_sql(config, &decoded).unwrap();
+    let sql_before = sql::patch_to_sql(config, patch, &[]).unwrap();
+    let sql_after = sql::patch_to_sql(config, &decoded, &[]).unwrap();
 
     match (&sql_before, &sql_after) {
         (Some(before), Some(after)) => {
