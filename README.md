@@ -268,16 +268,11 @@ fields = [
 
 ### Injected fields
 
-Injected fields add columns to all generated SQL. Each one becomes an extra
-column in INSERT statements and an extra condition in DELETE/UPDATE WHERE
-clauses. State payloads also scope their `DELETE FROM` with a `WHERE` clause on
-them so that other agents' data is preserved.
+Injected fields add an extra field to each table. They are useful when multiple
+agents report to the same hub. They let the hub tell where the data came from,
+and prevent one agent from touching another agent's data.
 
-The receiver passes injected fields when converting a patch to SQL, through the
-`injected` array of `lch_patch_to_sql()` or the `--inject` option of
-`lch patch sql`. This lets it use an authoritative value, e.g. one derived from
-an authenticated connection. Patches never carry injected fields, so a sender
-cannot set them.
+The hub passes them to `lch_patch_to_sql()` or `lch patch sql --inject`.
 
 ```sh
 lch patch sql --inject hostkey abc123 TEXT --inject count 42 NUMBER
@@ -331,21 +326,15 @@ from HEAD), as well as blocks older than the last reported position (see
 
 ### File permissions
 
-Files created in the work directory are given Unix permission bits taken from
-the optional top-level `file-mode` option:
+Files and directories created by leech2 are given Unix permission bits taken
+from the optional top-level `file-mode` and `dir-mode` options:
 
 ```toml
 file-mode = "0600"  # owner read/write only (default)
+dir-mode = "0700"   # owner read/write/traverse only (default)
 ```
 
-The option is ignored on non-Unix platforms.
-
-The state directory itself, when leech2 creates it, is given the permission bits
-from the optional top-level `dir-mode` option:
-
-```toml
-dir-mode = "0700"  # owner read/write/traverse only (default)
-```
+The options are ignored on non-Unix platforms.
 
 ## C API
 
@@ -367,7 +356,7 @@ lch_buffer_t patch = {0};
 lch_patch_create(cfg, NULL, &patch);
 
 char *sql;
-lch_patch_to_sql(cfg, &patch, &sql);
+lch_patch_to_sql(cfg, &patch, NULL, 0, &sql);
 printf("%s", sql);
 lch_string_free(sql);
 
