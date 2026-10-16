@@ -149,10 +149,13 @@ Block:
   Payload (2 tables):
     'employees' [employee_id, first_name, hire_date]
       Inserts (1):
-        (3) Charlie, 2025-06-15
+        (3) "Charlie", "2025-06-15"
       Updates (1):
-        (1) _, Alice -> Alicia, _
+        (1) "Alice" -> "Alicia", _
     'departments' <full state>
+  Events (1 streams):
+    'alerts' [message, severity]
+      ("disk full", 2)
 ```
 
 ### Patch::create()
@@ -218,7 +221,7 @@ set. Each cell's `Cell` variant is then checked against the hub's declared
 the value `NULL` are rejected upstream at load time). Together these defend
 against agents that misrepresent the schema or emit values of the wrong type.
 
-Printing the patch shows any combination of deltas and states:
+Printing the patch shows any combination of deltas, states and events:
 
 ```
 Patch:
@@ -229,14 +232,20 @@ Patch:
   Deltas (1):
     'employees' [employee_id, first_name, hire_date]
       Inserts (1):
-        (3) Charlie, 2025-06-15
+        (3) "Charlie", "2025-06-15"
       Deletes (1):
-        (2) _, _, _
+        (2) _, _
       Updates (1):
-        (1) _, Alice -> Alicia, _
+        (1) "Alice" -> "Alicia", _
   States (1):
     'departments' [dept_id, dept_name]
-      (HR) Human Resources
+      ("HR") "Human Resources"
+  Events (1):
+    'alerts' (2 blocks)
+      '3f2a1b0...' [message, severity]
+        ("disk full", 2)
+      '9c4d2e8...' [message, severity]
+        ("out of memory", 3)
 ```
 
 ### patch_to_sql()
