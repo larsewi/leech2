@@ -8,6 +8,21 @@ To run a single test: `cargo test <test_name>` (e.g. `cargo test
 test_merge_rule5`). Prefix with `LEECH2_LOG=<level>` and suffix with `--
 --nocapture` to enable logging (`error`, `warn`, `info`, `debug`, `trace`).
 
+The tests come in three kinds:
+
+- **Unit tests** live in a `#[cfg(test)] mod tests` at the bottom of each source
+  file. They test one module in isolation and may use its private items.
+- **Acceptance tests** live in `tests/accept_*.rs`. They use only the public
+  Rust API. Each one sets up a work directory with a config and CSV files, then
+  runs a whole workflow (create blocks, create a patch, convert it to SQL) and
+  checks the result.
+- **The C FFI test** (`tests/test_c_ffi.c`) only tests the FFI interface: that
+  each function links and succeeds, that callbacks fire, and that memory is
+  released. It does not test leech2 logic, such as what a patch contains. Test
+  that in a unit or acceptance test instead.
+
+The round-trip test is covered [below](#round-trip-test).
+
 ## Man pages
 
 Man pages are generated, not hand-written, so they never drift from the CLI or
