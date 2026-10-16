@@ -268,16 +268,11 @@ fields = [
 
 ### Injected fields
 
-Injected fields add columns to all generated SQL. Each one becomes an extra
-column in INSERT statements and an extra condition in DELETE/UPDATE WHERE
-clauses. State payloads also scope their `DELETE FROM` with a `WHERE` clause on
-them so that other agents' data is preserved.
+Injected fields add an extra field to each table. They are useful when multiple
+agents report to the same hub. They let the hub tell where the data came from,
+and prevent one agent from touching another agent's data.
 
-The receiver passes injected fields when converting a patch to SQL, through the
-`injected` array of `lch_patch_to_sql()` or the `--inject` option of
-`lch patch sql`. This lets it use an authoritative value, e.g. one derived from
-an authenticated connection. Patches never carry injected fields, so a sender
-cannot set them.
+The hub passes them to `lch_patch_to_sql()` or `lch patch sql --inject`.
 
 ```sh
 lch patch sql --inject hostkey abc123 TEXT --inject count 42 NUMBER
