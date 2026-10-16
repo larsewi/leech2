@@ -152,20 +152,15 @@ impl Table {
         columns.extend(subsidiary_columns);
 
         let mut records: HashMap<Vec<Cell>, Vec<Cell>> = HashMap::new();
-        let mut row: usize = 0;
-
-        loop {
+        for row in 0.. {
             match callbacks.read_row(row, &columns)? {
                 RowResult::Row(mut primary_key) => {
                     let subsidiary = primary_key.split_off(num_primary_keys);
                     if records.insert(primary_key.clone(), subsidiary).is_some() {
                         anyhow::bail!("duplicate primary key {:?}", primary_key);
                     }
-                    row += 1;
                 }
-                RowResult::SkipRecord => {
-                    row += 1;
-                }
+                RowResult::SkipRecord => {}
                 RowResult::EndOfTable => break,
             }
         }

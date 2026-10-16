@@ -79,9 +79,7 @@ fn load_from_callbacks(
 ) -> Result<ProtoEvents> {
     let columns: Vec<(usize, &FieldConfig)> = config.fields.iter().enumerate().collect();
     let mut events = Vec::new();
-    let mut row: usize = 0;
-
-    loop {
+    for row in 0.. {
         match callbacks.read_row(row, &columns)? {
             RowResult::Row(cells) => events.push(ProtoEvent {
                 values: cells.into_iter().map(Into::into).collect(),
@@ -89,7 +87,6 @@ fn load_from_callbacks(
             RowResult::SkipRecord => {}
             RowResult::EndOfTable => break,
         }
-        row += 1;
     }
 
     log::debug!(
