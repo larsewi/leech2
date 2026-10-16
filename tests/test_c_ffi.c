@@ -48,9 +48,15 @@ static const event_row_t events_rows[] = {
 };
 static const size_t events_count = sizeof(events_rows) / sizeof(events_rows[0]);
 
+/* Events supplied for the `alerts` event stream. */
+static const char *const alerts_rows[] = {"disk full", "out of memory"};
+static const size_t alerts_count = sizeof(alerts_rows) / sizeof(alerts_rows[0]);
+
 typedef struct {
   int events_begin_count;
   int events_end_count;
+  int alerts_begin_count;
+  int alerts_end_count;
   int other_table_calls;
   int read_cell_success_count;
   int destroy_cell_count;
@@ -60,6 +66,8 @@ static int test_table_begin(const char *table, void *usr_data) {
   cb_state_t *s = (cb_state_t *)usr_data;
   if (strcmp(table, "events") == 0) {
     s->events_begin_count++;
+  } else if (strcmp(table, "alerts") == 0) {
+    s->alerts_begin_count++;
   } else {
     s->other_table_calls++;
   }
@@ -70,6 +78,8 @@ static int test_table_end(const char *table, void *usr_data) {
   cb_state_t *s = (cb_state_t *)usr_data;
   if (strcmp(table, "events") == 0) {
     s->events_end_count++;
+  } else if (strcmp(table, "alerts") == 0) {
+    s->alerts_end_count++;
   } else {
     s->other_table_calls++;
   }
@@ -81,6 +91,26 @@ static int test_read_cell(const char *table, size_t row, size_t col,
                           void *usr_data) {
   cb_state_t *s = (cb_state_t *)usr_data;
   (void)col;
+  if (strcmp(table, "alerts") == 0) {
+    if (row >= alerts_count) {
+      return LCH_END_OF_TABLE;
+    }
+    if (strcmp(field_name, "message") != 0) {
+      fprintf(stderr, "unexpected field '%s' for event stream '%s'\n",
+              field_name, table);
+      return LCH_FAILURE;
+    }
+    /* Static text: test_destroy_cell must not free it, so hand over a copy
+     * like the `events` table does. */
+    char *owned = strdup(alerts_rows[row]);
+    if (owned == NULL) {
+      return LCH_FAILURE;
+    }
+    out_cell->kind = LCH_VALUE_TEXT;
+    out_cell->text = owned;
+    s->read_cell_success_count++;
+    return LCH_SUCCESS;
+  }
   if (strcmp(table, "events") != 0) {
     s->other_table_calls++;
     return LCH_FAILURE;
@@ -171,6 +201,13 @@ int main(int argc, char *argv[]) {
   if (cb_state.events_end_count != 1) {
     fprintf(stderr, "expected 1 events end, got %d\n",
             cb_state.events_end_count);
+    lch_deinit(cfg);
+    return EXIT_FAILURE;
+  }
+  /* The event stream went through the same begin/end lifecycle. */
+  if (cb_state.alerts_begin_count != 1 || cb_state.alerts_end_count != 1) {
+    fprintf(stderr, "expected 1 alerts begin and end, got %d and %d\n",
+            cb_state.alerts_begin_count, cb_state.alerts_end_count);
     lch_deinit(cfg);
     return EXIT_FAILURE;
   }

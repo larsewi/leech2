@@ -5,7 +5,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 
-use crate::callbacks::{CellResult, TableCallbacks};
+use crate::callbacks::{RowResult, TableCallbacks};
 use crate::cell::{Cell, Kind, display_proto_cells, parse_boolean, parse_typed_cell};
 use crate::config::{CsvConfig, FieldConfig, TableConfig};
 use crate::record::decode_proto_records;
@@ -145,26 +145,23 @@ impl Table {
             .map(|(_, field)| field.name.clone())
             .collect();
 
-        let mut records: HashMap<Vec<Cell>, Vec<Cell>> = HashMap::new();
-        let mut row: usize = 0;
+        // Primary-key columns first, so each row splits at the primary-key
+        // count.
+        let mut columns = primary_columns;
+        let num_primary_keys = columns.len();
+        columns.extend(subsidiary_columns);
 
-        loop {
-            let outcome =
-                fetch_callback_row(name, callbacks, row, &primary_columns, &subsidiary_columns)?;
-            match outcome {
-                RowOutcome::Row {
-                    primary_key,
-                    subsidiary,
-                } => {
+        let mut records: HashMap<Vec<Cell>, Vec<Cell>> = HashMap::new();
+        for row in 0.. {
+            match callbacks.read_row(row, &columns)? {
+                RowResult::Row(mut primary_key) => {
+                    let subsidiary = primary_key.split_off(num_primary_keys);
                     if records.insert(primary_key.clone(), subsidiary).is_some() {
                         anyhow::bail!("duplicate primary key {:?}", primary_key);
                     }
-                    row += 1;
                 }
-                RowOutcome::Filtered => {
-                    row += 1;
-                }
-                RowOutcome::EndOfTable => break,
+                RowResult::SkipRecord => {}
+                RowResult::EndOfTable => break,
             }
         }
 
@@ -321,82 +318,6 @@ fn parse_columns(
         out.push(parse_field_value(&record[column_index], field, csv)?);
     }
     Ok(out)
-}
-
-/// Outcome of asking the caller's `read_cell` hook for every cell of one row.
-enum RowOutcome {
-    Row {
-        primary_key: Vec<Cell>,
-        subsidiary: Vec<Cell>,
-    },
-    Filtered,
-    EndOfTable,
-}
-
-/// Walk all canonical columns of a single row, returning what the caller said
-/// about that row: a populated row, a filtered row, or end-of-table.
-fn fetch_callback_row(
-    name: &str,
-    callbacks: &TableCallbacks<'_>,
-    row: usize,
-    primary_columns: &[(usize, &FieldConfig)],
-    subsidiary_columns: &[(usize, &FieldConfig)],
-) -> Result<RowOutcome> {
-    let mut primary_key: Vec<Cell> = Vec::with_capacity(primary_columns.len());
-    let mut subsidiary: Vec<Cell> = Vec::with_capacity(subsidiary_columns.len());
-
-    for (group_out, group_cols) in [
-        (&mut primary_key, primary_columns),
-        (&mut subsidiary, subsidiary_columns),
-    ] {
-        for &(decl_idx, field_cfg) in group_cols {
-            match callbacks.read_cell(row, decl_idx)? {
-                CellResult::Cell(cell) => {
-                    validate_cell(&cell, field_cfg)
-                        .with_context(|| format!("row {} field '{}'", row + 1, field_cfg.name))?;
-                    group_out.push(cell);
-                }
-                CellResult::EndOfTable => return Ok(RowOutcome::EndOfTable),
-                CellResult::SkipRecord => {
-                    log::trace!(
-                        "Callback skipped row {} of table '{}' at field '{}'",
-                        row + 1,
-                        name,
-                        field_cfg.name,
-                    );
-                    return Ok(RowOutcome::Filtered);
-                }
-            }
-        }
-    }
-
-    Ok(RowOutcome::Row {
-        primary_key,
-        subsidiary,
-    })
-}
-
-/// Validate a cell pulled from a callback against its field configuration.
-/// Enforces:
-/// - `Cell::Null` is rejected on primary-key fields.
-/// - The cell's kind matches the field's declared kind (TEXT / NUMBER /
-///   BOOLEAN); `Null` is accepted for any non-primary-key field regardless
-///   of the declared kind.
-fn validate_cell(cell: &Cell, field: &FieldConfig) -> Result<()> {
-    if let Cell::Null = cell {
-        if field.primary_key {
-            anyhow::bail!("primary-key field must not be NULL");
-        }
-        return Ok(());
-    }
-    if cell.kind() != field.kind {
-        anyhow::bail!(
-            "cell kind {:?} does not match field kind {:?}",
-            cell.kind(),
-            field.kind,
-        );
-    }
-    Ok(())
 }
 
 /// Parse a single CSV value into a `Cell` based on its field config and the
@@ -861,34 +782,6 @@ mod tests {
             msg.contains("invalid number"),
             "expected invalid-number cause: {msg}"
         );
-    }
-
-    // -- validate_cell tests --
-
-    #[test]
-    fn test_validate_cell_rejects_null_on_primary_key() {
-        let field = make_typed_field("id", Kind::Number, true);
-        let err = validate_cell(&Cell::Null, &field).unwrap_err();
-        assert!(format!("{:#}", err).contains("primary-key"), "got: {err:#}");
-    }
-
-    #[test]
-    fn test_validate_cell_accepts_null_on_subsidiary() {
-        let field = make_typed_field("count", Kind::Number, false);
-        validate_cell(&Cell::Null, &field).unwrap();
-    }
-
-    #[test]
-    fn test_validate_cell_rejects_kind_mismatch() {
-        let field = make_typed_field("count", Kind::Number, false);
-        let err = validate_cell(&Cell::Text("oops".to_string()), &field).unwrap_err();
-        assert!(format!("{:#}", err).contains("kind"), "got: {err:#}");
-    }
-
-    #[test]
-    fn test_validate_cell_accepts_matching_kind() {
-        let field = make_typed_field("name", Kind::Text, true);
-        validate_cell(&Cell::Text("Alice".to_string()), &field).unwrap();
     }
 
     // -- load_from_callbacks tests --

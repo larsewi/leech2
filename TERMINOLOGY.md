@@ -88,6 +88,17 @@ A schema (list of fields) plus a set of records keyed by primary key.
 
 A snapshot of one or more tables at one point in time.
 
+### Event stream
+
+A schema (list of fields) for data that is only ever added, declared under
+`[events.X]`. Has no key and no state; blocks store its new events as they are.
+
+### Event
+
+One row of an event stream. Use **event** for event streams and **record** for
+tables: an event has no key, so it is identified by its block and position
+instead.
+
 ## Changes (between states)
 
 ### Insert

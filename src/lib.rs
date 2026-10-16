@@ -11,6 +11,7 @@ pub mod cell;
 pub mod config;
 pub mod delete;
 pub mod delta;
+pub mod event;
 mod ffi;
 pub mod head;
 pub mod insert;

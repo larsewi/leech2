@@ -8,6 +8,7 @@ fn main() {
         "proto/state.proto",
         "proto/table.proto",
         "proto/cell.proto",
+        "proto/event.proto",
     ];
     prost_build::compile_protos(&proto_files, &["proto/"])
         .expect("prost_build failed to compile .proto files; check protoc is installed");

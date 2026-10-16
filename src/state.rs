@@ -6,7 +6,7 @@ use anyhow::Result;
 use prost::Message;
 
 use crate::callbacks::Callbacks;
-use crate::config::{Config, TableConfig};
+use crate::config::Config;
 use crate::storage;
 use crate::table::Table;
 use crate::utils::indent;
@@ -103,7 +103,14 @@ impl State {
                         name
                     );
                 };
-                load_from_callback(name, table_config, cbs)?
+                let field_names: Vec<&str> = table_config
+                    .fields
+                    .iter()
+                    .map(|f| f.name.as_str())
+                    .collect();
+                cbs.with_table(name, &field_names, |bound| {
+                    Table::load_from_callbacks(name, table_config, bound)
+                })?
             };
             tables.insert(name.clone(), table);
         }
@@ -125,38 +132,4 @@ impl State {
         );
         Ok(())
     }
-}
-
-/// Wrap `Table::load_from_callbacks` with the begin/end lifecycle: `table_end`
-/// always fires when `table_begin` succeeded, including on the error path, so
-/// the caller's per-table resources (a DB cursor, a buffer) can always be
-/// released.
-fn load_from_callback(
-    name: &str,
-    table_config: &TableConfig,
-    callbacks: &Callbacks,
-) -> Result<Table> {
-    let field_names: Vec<&str> = table_config
-        .fields
-        .iter()
-        .map(|f| f.name.as_str())
-        .collect();
-    let bound = callbacks.for_table(name, &field_names)?;
-    bound.table_begin()?;
-
-    let load_result = Table::load_from_callbacks(name, table_config, &bound);
-    let end_result = bound.table_end();
-
-    if load_result.is_err()
-        && let Err(end_err) = &end_result
-    {
-        log::warn!(
-            "table_end for '{}' also failed after load error: {:#}",
-            name,
-            end_err
-        );
-    }
-    let table = load_result?;
-    end_result?;
-    Ok(table)
 }

@@ -8,6 +8,21 @@ To run a single test: `cargo test <test_name>` (e.g. `cargo test
 test_merge_rule5`). Prefix with `LEECH2_LOG=<level>` and suffix with `--
 --nocapture` to enable logging (`error`, `warn`, `info`, `debug`, `trace`).
 
+The tests come in three kinds:
+
+- **Unit tests** live in a `#[cfg(test)] mod tests` at the bottom of each source
+  file. They test one module in isolation and may use its private items.
+- **Acceptance tests** live in `tests/accept_*.rs`. They use only the public
+  Rust API. Each one sets up a work directory with a config and CSV files, then
+  runs a whole workflow (create blocks, create a patch, convert it to SQL) and
+  checks the result.
+- **The C FFI test** (`tests/test_c_ffi.c`) only tests the FFI interface: that
+  each function links and succeeds, that callbacks fire, and that memory is
+  released. It does not test leech2 logic, such as what a patch contains. Test
+  that in a unit or acceptance test instead.
+
+The round-trip test is covered [below](#round-trip-test).
+
 ## Man pages
 
 Man pages are generated, not hand-written, so they never drift from the CLI or
@@ -100,6 +115,11 @@ full state patch from the STATE file, and non-genesis references exclude the
 first block from consolidation. This also avoids reading any stale STATE file
 left over from a previous run.
 
+Event streams are pulled through the same callback bundle, after the tables.
+Each block stores the events supplied since the previous block as they are,
+including the first block of a chain: events are new data rather than a diff,
+and they never go into the STATE file.
+
 Before computing deltas, the library detects field layout changes by comparing
 each table's stored fields in the STATE file against the current config's
 canonical field list (primary keys first, then subsidiaries; each group sorted
@@ -129,10 +149,13 @@ Block:
   Payload (2 tables):
     'employees' [employee_id, first_name, hire_date]
       Inserts (1):
-        (3) Charlie, 2025-06-15
+        (3) "Charlie", "2025-06-15"
       Updates (1):
-        (1) _, Alice -> Alicia, _
+        (1) "Alice" -> "Alicia", _
     'departments' <full state>
+  Events (1 streams):
+    'alerts' [message, severity]
+      ("disk full", 2)
 ```
 
 ### Patch::create()
@@ -175,6 +198,15 @@ of the last block that changed it (see
 [DELTA_MERGING_RULES.md](DELTA_MERGING_RULES.md)).
 Full states carry no timestamps.
 
+Events take no part in merging. While loading each block for consolidation, the
+library also takes the block's events, so a patch carries the events of every
+block it covers, grouped per block and oldest first. If consolidation then
+fails, the full state fallback still carries those events. When there is no
+known reference (genesis, unresolvable reference, or a reference outside the
+chain), the full state patch carries no events, since those of every stored
+block could make it too big. The receiver skips the events it already has by
+their ID.
+
 After merging, each table's delta is optimized: deletes are stripped down to
 keys only, and updates are sparse-encoded to include only changed columns. The
 library then compares each table's consolidated delta encoded size against its
@@ -189,7 +221,7 @@ set. Each cell's `Cell` variant is then checked against the hub's declared
 the value `NULL` are rejected upstream at load time). Together these defend
 against agents that misrepresent the schema or emit values of the wrong type.
 
-Printing the patch shows any combination of deltas and states:
+Printing the patch shows any combination of deltas, states and events:
 
 ```
 Patch:
@@ -200,14 +232,20 @@ Patch:
   Deltas (1):
     'employees' [employee_id, first_name, hire_date]
       Inserts (1):
-        (3) Charlie, 2025-06-15
+        (3) "Charlie", "2025-06-15"
       Deletes (1):
-        (2) _, _, _
+        (2) _, _
       Updates (1):
-        (1) _, Alice -> Alicia, _
+        (1) "Alice" -> "Alicia", _
   States (1):
     'departments' [dept_id, dept_name]
-      (HR) Human Resources
+      ("HR") "Human Resources"
+  Events (1):
+    'alerts' (2 blocks)
+      '3f2a1b0...' [message, severity]
+        ("disk full", 2)
+      '9c4d2e8...' [message, severity]
+        ("out of memory", 3)
 ```
 
 ### patch_to_sql()
@@ -220,6 +258,11 @@ the wire's `Delta.fields`/`Table.fields` rather than the hub config's
 declaration order, so values land in the columns the agent intended even if the
 hub config declares the same fields in a different order. Schema disagreements
 between the wire and the hub config are rejected before any SQL is emitted.
+
+For event streams it generates one `INSERT ... SELECT ... WHERE NOT EXISTS` per
+event. The event's ID (block hash and position) goes into `id-field`, and the
+`NOT EXISTS` matches on it and the injected fields, so re-sent events are
+skipped.
 
 Column types defined in the config control how values are formatted in the SQL
 output (quoting for `TEXT`, bare numbers for `NUMBER`, etc.).
@@ -300,7 +343,7 @@ src/
   ffi.rs        Shared FFI plumbing (panic guard, arg checks, repr-C buffer/
                 cell types, cell decode helper)
   callbacks.rs  Rust-side adapter for the lch_callbacks_t bundle used by
-                callback-backed tables
+                callback-backed tables and event streams
   logger.rs     Callback-based log dispatch for FFI consumers
   main.rs       CLI (lch binary)
   cli.rs        clap CLI definition (shared with the xtask man-page generator)
@@ -308,9 +351,12 @@ src/
   table.rs      Table loading (CSV path + callback path) and the in-memory
                 table type (HashMap<Vec<Cell>, Vec<Cell>>)
   state.rs      Snapshot of all tables, protobuf persistence
+  event.rs      Event stream loading (callback path) and collecting events
+                for patches
   cell.rs       Domain Cell type + conversions to/from proto::cell::Cell
   record.rs     Record type (Vec<Cell> key + value)
   insert.rs     Delta insert map + block/patch insert conversions
+  delete.rs     Delta delete map + patch delete conversion (key only)
   update.rs     Delta update map + block/patch update conversions (sparse
                 encoding)
   delta.rs      Diff computation + merge logic (see DELTA_MERGING_RULES.md)

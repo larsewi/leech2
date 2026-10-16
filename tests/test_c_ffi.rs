@@ -159,6 +159,13 @@ fields = [
     { name = \"id\", type = \"NUMBER\", primary-key = true },
     { name = \"event\", type = \"TEXT\" },
 ]
+
+# Event stream: pulled through the same callback bundle.
+[events.alerts]
+id-field = \"eventid\"
+fields = [
+    { name = \"message\", type = \"TEXT\" },
+]
 ",
     )
     .unwrap();

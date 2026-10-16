@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package event;
+
+import "cell.proto";
+
+// Events holds events of one event stream, in the order they were supplied.
+message Events {
+  // The event stream's field names, in config declaration order.
+  repeated string field_names = 1;
+  // The events.
+  repeated Event events = 2;
+}
+
+// Event is one event: one cell per field, in field_names order.
+message Event {
+  repeated cell.Cell values = 1;
+}
