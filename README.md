@@ -331,21 +331,15 @@ from HEAD), as well as blocks older than the last reported position (see
 
 ### File permissions
 
-Files created in the work directory are given Unix permission bits taken from
-the optional top-level `file-mode` option:
+Files and directories created by leech2 are given Unix permission bits taken
+from the optional top-level `file-mode` and `dir-mode` options:
 
 ```toml
 file-mode = "0600"  # owner read/write only (default)
+dir-mode = "0700"   # owner read/write/traverse only (default)
 ```
 
-The option is ignored on non-Unix platforms.
-
-The state directory itself, when leech2 creates it, is given the permission bits
-from the optional top-level `dir-mode` option:
-
-```toml
-dir-mode = "0700"  # owner read/write/traverse only (default)
-```
+The options are ignored on non-Unix platforms.
 
 ## C API
 
