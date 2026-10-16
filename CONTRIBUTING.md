@@ -92,9 +92,9 @@ Tables can be sourced two ways: from a CSV file declared via a `[tables.X.csv]`
 block in the config, or from a caller-supplied callback bundle when no `[csv]`
 block is present. Both paths produce the same in-memory table representation;
 everything downstream -- delta computation, layout change detection, block
-storage, truncation -- is identical. Sentinels (`null` / `true` / `false`) and
-`filter` rules apply only on the CSV backed tables. Callback-backed tables skip
-rows by returning `LCH_SKIP_RECORD`.
+storage, truncation -- is identical. Sentinels (`null` / `true` / `false`) apply
+only on the CSV backed tables. Callback-backed tables skip rows by returning
+`LCH_SKIP_RECORD`.
 
 The callback bundle has four hooks:
 
