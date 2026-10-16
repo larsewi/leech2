@@ -3,12 +3,9 @@
 
 use std::collections::HashMap;
 use std::fmt;
-use std::path::Path;
 
 use anyhow::{Result, bail};
-use prost_types::Timestamp;
 
-use crate::block::Block;
 use crate::callbacks::{Callbacks, RowResult, TableCallbacks};
 use crate::cell::display_proto_cells;
 use crate::config::{Config, EventConfig, FieldConfig};
@@ -16,7 +13,7 @@ use crate::proto::event::Event as ProtoEvent;
 use crate::proto::event::Events as ProtoEvents;
 use crate::proto::patch::EventBatch as ProtoEventBatch;
 use crate::proto::patch::EventBatches as ProtoEventBatches;
-use crate::utils::{GENESIS_HASH, indent};
+use crate::utils::indent;
 
 impl fmt::Display for ProtoEvents {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -124,48 +121,6 @@ pub fn append_batches(
     }
 }
 
-/// Collect the events of every block still stored, walking back from `head`
-/// until genesis or a block that is no longer stored (removed by
-/// truncation). Used when a patch has no known reference: the receiver may
-/// lack any of these events, and it skips the ones it already has by their
-/// ID. Also returns the `head` block's creation time, so callers need not
-/// load it again.
-pub fn collect_chain(
-    state_dir: &Path,
-    head: &str,
-    mode: u32,
-) -> (Option<Timestamp>, HashMap<String, ProtoEventBatches>) {
-    let mut created = None;
-    let mut blocks = Vec::new();
-    let mut hash = head.to_string();
-    while hash != GENESIS_HASH {
-        match Block::load(state_dir, &hash, mode) {
-            Ok(block) => {
-                if blocks.is_empty() {
-                    created = block.created;
-                }
-                let parent = block.parent.clone();
-                blocks.push((hash, block.events));
-                hash = parent;
-            }
-            Err(e) => {
-                log::debug!(
-                    "Stopped collecting events at block '{:.7}...': {:#}",
-                    hash,
-                    e
-                );
-                break;
-            }
-        }
-    }
-
-    let mut all_batches = HashMap::new();
-    for (hash, events) in blocks.into_iter().rev() {
-        append_batches(&mut all_batches, &hash, events);
-    }
-    (created, all_batches)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -173,11 +128,13 @@ mod tests {
     use std::cell::RefCell;
     use std::ffi::{CString, c_char, c_void};
 
+    use crate::block::Block;
     use crate::cell::{Cell, Kind};
     use crate::ffi::{
         END_OF_TABLE, FfiCell, FfiCellPayload, SKIP_RECORD, SUCCESS, VALUE_NULL, VALUE_TEXT,
     };
     use crate::patch::Patch;
+    use crate::utils::GENESIS_HASH;
 
     /// What the test callback answers for one cell.
     enum TestCell {
@@ -346,24 +303,18 @@ mod tests {
     }
 
     #[test]
-    fn test_patch_from_genesis_carries_events_of_every_block() {
+    fn test_patch_from_genesis_carries_no_events() {
         let dir = tempfile::tempdir().unwrap();
         let config = Config {
             work_dir: dir.path().to_path_buf(),
             ..config()
         };
-        let first = create_block(&config, "one");
-        let second = create_block(&config, "two");
+        create_block(&config, "one");
+        create_block(&config, "two");
 
         let patch = Patch::create(&config, GENESIS_HASH).unwrap();
 
-        assert_eq!(
-            batch_summary(&patch),
-            vec![
-                (first, Cell::Text("one".to_string())),
-                (second, Cell::Text("two".to_string())),
-            ]
-        );
+        assert!(patch.events.is_empty());
     }
 
     #[test]

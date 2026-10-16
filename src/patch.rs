@@ -381,17 +381,19 @@ fn full_state_patch(
     })
 }
 
-/// Build a full-state patch that also carries the events of every block still
-/// stored. Used when there is no known reference to start from.
-fn full_state_patch_with_events(
+/// Build a full-state patch for when there is no known reference to start
+/// from. It carries no events: those of every stored block could make the
+/// patch too big.
+fn unknown_reference_patch(
     work_dir: &Path,
     head: &str,
     injected_fields: Vec<InjectedField>,
     mode: u32,
 ) -> Result<Patch> {
-    let (created, events) = event::collect_chain(work_dir, head, mode);
-    let mut patch = full_state_patch(work_dir, head, created, injected_fields, mode)?;
-    patch.events = events;
+    let created = Block::load_header(work_dir, head, mode)
+        .ok()
+        .and_then(|header| header.created);
+    let patch = full_state_patch(work_dir, head, created, injected_fields, mode)?;
     log::info!("Consolidated patch:\n{}", patch);
     Ok(patch)
 }
@@ -462,36 +464,30 @@ impl Patch {
 
         // If the reference block can't be resolved or is genesis, produce a
         // full STATE payload (DELETE + INSERT) which is always safe to apply
-        // regardless of current database contents. Events of every stored
-        // block come along, since the receiver skips the ones it has.
+        // regardless of current database contents.
         let last_known = match resolved {
             Ok(hash) if hash != GENESIS_HASH => hash,
             Ok(_) => {
                 log::info!("Reference is genesis, producing full state patch");
-                return full_state_patch_with_events(&state_dir, &head, injected_fields, file_mode);
+                return unknown_reference_patch(&state_dir, &head, injected_fields, file_mode);
             }
             Err(e) => {
                 log::warn!(
                     "Reference block not found, producing full state patch: {}",
                     e
                 );
-                return full_state_patch_with_events(&state_dir, &head, injected_fields, file_mode);
+                return unknown_reference_patch(&state_dir, &head, injected_fields, file_mode);
             }
         };
 
         // A reference outside the chain (e.g. a broken chain) is as good as
-        // unknown: the receiver may lack any stored block's events.
+        // unknown.
         let (created, block_hashes) =
             match collect_block_hashes(&state_dir, &head, &last_known, file_mode) {
                 Ok(result) => result,
                 Err(e) => {
                     log::warn!("Consolidation failed, falling back to full state: {}", e);
-                    return full_state_patch_with_events(
-                        &state_dir,
-                        &head,
-                        injected_fields,
-                        file_mode,
-                    );
+                    return unknown_reference_patch(&state_dir, &head, injected_fields, file_mode);
                 }
             };
 

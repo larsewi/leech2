@@ -160,8 +160,7 @@ fields = [
     { name = \"event\", type = \"TEXT\" },
 ]
 
-# Event stream: pulled through the same callback bundle. The C test supplies
-# two events, which the patch must carry as inserts.
+# Event stream: pulled through the same callback bundle.
 [events.alerts]
 id-field = \"eventid\"
 fields = [

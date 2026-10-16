@@ -748,7 +748,8 @@ fn resolve_event_fields<'a>(
 /// Generate one INSERT per event of an event stream. Each event's ID is the
 /// hash of the block that stored it and its position in that block. An event
 /// whose ID the receiver already has is skipped, so patches that re-send
-/// events (e.g. from genesis) are safe to apply.
+/// events (e.g. when the sender never learned a patch was applied) are safe to
+/// apply.
 fn events_to_sql(
     config: &Config,
     name: &str,

@@ -290,19 +290,6 @@ int main(int argc, char *argv[]) {
     return EXIT_FAILURE;
   }
 
-  /* The first patch has no reference, so it carries the events of every
-   * stored block, each inserted unless the receiver already has its ID. */
-  if (strstr(sql, "INSERT INTO \"alerts\"") == NULL ||
-      strstr(sql, "'disk full'") == NULL ||
-      strstr(sql, "WHERE NOT EXISTS") == NULL) {
-    fprintf(stderr, "event stream inserts not present in SQL:\n%s\n", sql);
-    lch_string_free(sql);
-    lch_buffer_free(&injected);
-    lch_buffer_free(&patch);
-    lch_deinit(cfg);
-    return EXIT_FAILURE;
-  }
-
   lch_buffer_free(&injected);
 
   ret = lch_patch_applied(cfg, &patch);

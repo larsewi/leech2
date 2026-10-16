@@ -185,9 +185,9 @@ library also takes the block's events, so a patch carries the events of every
 block it covers, grouped per block and oldest first. If consolidation then
 fails, the full state fallback still carries those events. When there is no
 known reference (genesis, unresolvable reference, or a reference outside the
-chain), the library instead loads every block still stored and carries all of
-their events. Each block is loaded at most once. The receiver skips the events
-it already has by their ID.
+chain), the full state patch carries no events, since those of every stored
+block could make it too big. The receiver skips the events it already has by
+their ID.
 
 After merging, each table's delta is optimized: deletes are stripped down to
 keys only, and updates are sparse-encoded to include only changed columns. The

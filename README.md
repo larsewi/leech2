@@ -257,8 +257,8 @@ fields = [
   (e.g. `'3f2a...c1:17'`). The receiver skips an event whose ID it already has.
   Index `id-field` on the receiver, together with any injected fields.
 - A patch without a known reference (genesis, or a reference removed by
-  truncation) carries the events of every block still stored. The ID makes this
-  safe to apply.
+  truncation) carries no events. The events of every stored block could make it
+  too big. The receiver never gets the events of the blocks it missed.
 - Events stay on the source until truncation removes their block. With the
   default `[truncate]` settings, that happens once they are reported.
   `max-blocks` and `max-age` can remove events that were never reported.
