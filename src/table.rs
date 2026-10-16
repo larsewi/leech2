@@ -280,13 +280,6 @@ impl Table {
                 );
             }
 
-            let values: Vec<&str> = field_indices.iter().map(|&i| &record[i]).collect();
-            let reason = csv.should_filter(&field_names, &values);
-            if let Some(reason) = reason {
-                log::debug!("Filtered record at row {}: {}", row_num + 1, reason);
-                continue;
-            }
-
             let primary_key = parse_columns(&record, &primary_columns, csv)
                 .with_context(|| format!("row {}", row_num + 1))?;
             let subsidiary = parse_columns(&record, &subsidiary_columns, csv)

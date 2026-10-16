@@ -260,8 +260,12 @@ source = "users.csv"
     );
 }
 
+/// CSV tables used to support `[csv.filter]` and `max-field-length` to drop
+/// rows. They were removed: callback-backed tables skip rows with
+/// `LCH_SKIP_RECORD`, and a CSV can be filtered beforehand with tools like
+/// grep.
 #[test]
-fn test_filter_references_unknown_field() {
+fn test_csv_filter_rejected() {
     let tmp = tempfile::tempdir().unwrap();
     common::write_config(
         tmp.path(),
@@ -277,15 +281,15 @@ fields = [
 source = "users.csv"
 
 [tables.users.csv.filter]
-fields = ["nonexistent"]
+fields = ["name"]
 exclude = "^x$"
 "#,
     );
 
     let err = format!("{:#}", Config::load(tmp.path()).unwrap_err());
     assert!(
-        err.contains("unknown field 'nonexistent'"),
-        "should report unknown field: {err}"
+        err.contains("unknown field `filter`"),
+        "should reject filters in config: {err}"
     );
 }
 

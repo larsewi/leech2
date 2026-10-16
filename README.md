@@ -283,39 +283,6 @@ cannot set them.
 lch patch sql --inject hostkey abc123 TEXT --inject count 42 NUMBER
 ```
 
-### Filters
-
-The `[csv]` block can declare per-table filtering that drops records at CSV load
-time. Filtered records never enter state, deltas, or SQL output.
-
-```toml
-[tables.users.csv]
-source = "users.csv"
-max-field-length = 1024
-
-[tables.users.csv.filter]
-fields  = ["status", "label"]
-include = "^(active|pending)$"
-exclude = '^DROP$'
-```
-
-- `max-field-length`: Optional. Any record where any field value exceeds this
-  length in bytes is dropped.
-- `csv.filter` is an optional single-block-per-table section with three keys:
-  - `fields`: list of field names this filter examines. Every name must appear
-    in the table's `fields`.
-  - `include`: optional regex (whitelist). The record is kept only if at least
-    one listed field matches the pattern.
-  - `exclude`: optional regex (blacklist). The record is dropped if any listed
-    field matches the pattern. Exclude is evaluated after include.
-
-Both regexes follow the Rust [`regex`](https://docs.rs/regex/) crate and are
-unanchored by default -- use `^...$` for exact matches.
-
-When a record that previously passed the filters stops passing, it appears as a
-DELETE in the next delta. Similarly, when a previously-filtered record starts
-passing, it appears as an INSERT.
-
 ### Compression
 
 Patches are compressed with zstd by default. An optional `[compression]` section
