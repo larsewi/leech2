@@ -48,7 +48,7 @@ source = "users.csv"
 
     // Decode should still work (auto-detects uncompressed)
     let decoded = wire::decode_patch(&encoded).unwrap();
-    let sql_before = sql::patch_to_sql(&config, &patch).unwrap();
-    let sql_after = sql::patch_to_sql(&config, &decoded).unwrap();
+    let sql_before = sql::patch_to_sql(&config, &patch, &[]).unwrap();
+    let sql_after = sql::patch_to_sql(&config, &decoded, &[]).unwrap();
     assert_eq!(sql_before, sql_after);
 }

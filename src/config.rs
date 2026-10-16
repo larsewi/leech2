@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 
-use crate::cell::{Kind, parse_typed_cell};
+use crate::cell::Kind;
 use crate::utils::{parse_duration, parse_file_mode, validate_field_name};
 
 /// Subdirectory of the work directory where state files live when `state-dir`
@@ -170,38 +170,6 @@ pub struct StatsConfig {
     pub enable: bool,
 }
 
-/// A static field added to every generated SQL row (e.g. a `host` column
-/// identifying which agent produced the data).
-#[derive(Debug, Deserialize)]
-#[serde(default, deny_unknown_fields)]
-pub struct InjectedFieldConfig {
-    /// Column name in the target database.
-    pub name: String,
-    /// Cell kind; one of `TEXT`, `NUMBER`, or `BOOLEAN`.
-    #[serde(rename = "type", deserialize_with = "deserialize_kind")]
-    pub kind: Kind,
-    /// The static value written into the column for every row.
-    pub value: String,
-}
-
-impl Default for InjectedFieldConfig {
-    fn default() -> Self {
-        Self {
-            name: String::new(),
-            kind: Kind::Text,
-            value: String::new(),
-        }
-    }
-}
-
-impl Validate for InjectedFieldConfig {
-    fn validate(&self) -> Result<()> {
-        validate_field_name(&self.name)?;
-        parse_typed_cell(&self.value, self.kind).with_context(|| format!("'{}'", self.name))?;
-        Ok(())
-    }
-}
-
 /// Per-table CSV-load filter. One optional block per table that decides
 /// whether each loaded record is kept.
 #[derive(Debug, Deserialize)]
@@ -352,9 +320,6 @@ pub struct Config {
     /// `state_dir()`.
     #[serde(default, rename = "state-dir")]
     pub(crate) state_dir: Option<PathBuf>,
-    /// Static fields added to every generated SQL row.
-    #[serde(default, rename = "injected-fields")]
-    pub injected_fields: Vec<InjectedFieldConfig>,
     /// Zstd compression settings for patch payloads.
     #[serde(default)]
     pub compression: CompressionConfig,
@@ -404,7 +369,6 @@ impl Default for Config {
         Config {
             work_dir: PathBuf::new(),
             state_dir: None,
-            injected_fields: Vec::new(),
             compression: CompressionConfig::default(),
             stats: StatsConfig::default(),
             tables: HashMap::new(),
@@ -698,47 +662,6 @@ impl Validate for Config {
             }
         }
 
-        let mut injected_names = HashSet::new();
-        for (index, field) in self.injected_fields.iter().enumerate() {
-            field
-                .validate()
-                .with_context(|| format!("injected-fields[{}]", index))?;
-            if !injected_names.insert(&field.name) {
-                bail!(
-                    "injected-fields[{}]: duplicate field name '{}'",
-                    index,
-                    field.name
-                );
-            }
-            for (table_name, table) in &self.tables {
-                let collides_with_log = table.log.as_ref().is_some_and(|log| {
-                    log.operation_field == field.name || log.timestamp_field == field.name
-                });
-                if table.fields.iter().any(|f| f.name == field.name)
-                    || table.change_timestamp.as_ref() == Some(&field.name)
-                    || collides_with_log
-                {
-                    bail!(
-                        "injected-fields[{}] '{}' collides with a column in table '{}'",
-                        index,
-                        field.name,
-                        table_name
-                    );
-                }
-            }
-            for (event_name, event) in &self.events {
-                if event.fields.iter().any(|f| f.name == field.name) || event.id_field == field.name
-                {
-                    bail!(
-                        "injected-fields[{}] '{}' collides with a column in event stream '{}'",
-                        index,
-                        field.name,
-                        event_name
-                    );
-                }
-            }
-        }
-
         if self.file_mode > 0o777 {
             bail!(
                 "file-mode {:o} is out of range (must be <= 0o777)",
@@ -784,7 +707,7 @@ fn parse_fragment(path: &Path) -> Result<Value> {
 /// key-by-key, recursing into shared keys, so the `tables` map unions by table
 /// name and sections like `compression` merge field-by-field. Any other value
 /// (array or scalar) replaces what's in `base`, so a later fragment's table
-/// `fields` or `injected-fields` list overrides the earlier one wholesale.
+/// `fields` list overrides the earlier one wholesale.
 fn deep_merge(base: &mut Value, overlay: Value) {
     match (base, overlay) {
         (Value::Object(base_map), Value::Object(overlay_map)) => {
@@ -1391,47 +1314,6 @@ fields = [
         );
     }
 
-    #[test]
-    fn test_load_rejects_control_character_in_injected_field_name() {
-        let dir = tempfile::tempdir().unwrap();
-        let toml_input = "
-[[injected-fields]]
-name = \"host\\u0000\"
-type = \"TEXT\"
-value = \"agent1\"
-
-[tables.users]
-fields = [
-    { name = \"id\", type = \"NUMBER\", primary-key = true },
-]
-";
-        fs::write(dir.path().join("config.toml"), toml_input).unwrap();
-        let err = Config::load(dir.path()).expect_err("expected validation error");
-        let msg = format!("{:#}", err);
-        assert!(
-            msg.contains("control character"),
-            "expected error to mention the control character, got: {msg}"
-        );
-    }
-
-    #[test]
-    fn test_injected_field_accepts_empty_text_value() {
-        let dir = tempfile::tempdir().unwrap();
-        let extra = "[[injected-fields]]\nname = \"note\"\ntype = \"TEXT\"\nvalue = \"\"\n";
-        fs::write(dir.path().join("config.toml"), minimal_config_with(extra)).unwrap();
-        let config = Config::load(dir.path()).unwrap();
-        assert_eq!(config.injected_fields[0].value, "");
-    }
-
-    #[test]
-    fn test_injected_field_rejects_empty_number_value() {
-        let dir = tempfile::tempdir().unwrap();
-        let extra = "[[injected-fields]]\nname = \"seq\"\ntype = \"NUMBER\"\nvalue = \"\"\n";
-        fs::write(dir.path().join("config.toml"), minimal_config_with(extra)).unwrap();
-        let err = Config::load(dir.path()).expect_err("expected validation error");
-        assert!(format!("{:#}", err).contains("invalid number"));
-    }
-
     fn minimal_config_with(extra: &str) -> String {
         format!(
             "{}\n[tables.users]\nfields = [\n    {{ name = \"id\", type = \"NUMBER\", primary-key = true }},\n]\n",
@@ -1633,37 +1515,6 @@ fields = [
     }
 
     #[test]
-    fn test_include_duplicate_injected_field_last_wins() {
-        let dir = tempfile::tempdir().unwrap();
-        let base = r#"
-include = ["drop-in/*.toml"]
-
-[[injected-fields]]
-name = "host"
-type = "TEXT"
-value = "base"
-
-[tables.users]
-fields = [
-    { name = "id", type = "NUMBER", primary-key = true },
-]
-"#;
-        let fragment = r#"
-[[injected-fields]]
-name = "host"
-type = "TEXT"
-value = "fragment"
-"#;
-        fs::write(dir.path().join("config.toml"), base).unwrap();
-        fs::create_dir(dir.path().join("drop-in")).unwrap();
-        fs::write(dir.path().join("drop-in/override.toml"), fragment).unwrap();
-
-        let config = Config::load(dir.path()).unwrap();
-        assert_eq!(config.injected_fields.len(), 1);
-        assert_eq!(config.injected_fields[0].value, "fragment");
-    }
-
-    #[test]
     fn test_include_deep_merges_section_subkeys() {
         // The fragment sets only `csv.source`; deep-merge keeps the base table's
         // fields and the rest of its csv block.
@@ -1815,11 +1666,10 @@ fields = [
         assert!(config.tables.contains_key("users"));
     }
 
-    fn load_with_change_timestamp(column: &str, injected: &str) -> Result<Config> {
+    fn load_with_change_timestamp(column: &str) -> Result<Config> {
         let dir = tempfile::tempdir().unwrap();
         let toml_input = format!(
             r#"
-{injected}
 [tables.users]
 change-timestamp = "{column}"
 fields = [
@@ -1834,7 +1684,7 @@ fields = [
 
     #[test]
     fn test_change_timestamp_accepted() {
-        let config = load_with_change_timestamp("changetimestamp", "").unwrap();
+        let config = load_with_change_timestamp("changetimestamp").unwrap();
         let table = &config.tables["users"];
         assert_eq!(table.change_timestamp.as_deref(), Some("changetimestamp"));
         assert!(table.tracks_changes());
@@ -1854,31 +1704,22 @@ fields = [{ name = "id", type = "NUMBER", primary-key = true }]
 
     #[test]
     fn test_change_timestamp_rejects_field_collision() {
-        let err = load_with_change_timestamp("name", "").unwrap_err();
+        let err = load_with_change_timestamp("name").unwrap_err();
         let msg = format!("{:#}", err);
         assert!(msg.contains("collides with a field"), "got: {msg}");
     }
 
     #[test]
-    fn test_change_timestamp_rejects_injected_field_collision() {
-        let injected = r#"injected-fields = [{ name = "changed", type = "TEXT", value = "x" }]"#;
-        let err = load_with_change_timestamp("changed", injected).unwrap_err();
-        let msg = format!("{:#}", err);
-        assert!(msg.contains("collides with a column"), "got: {msg}");
-    }
-
-    #[test]
     fn test_change_timestamp_rejects_control_character() {
-        let err = load_with_change_timestamp("changed\\u0001", "").unwrap_err();
+        let err = load_with_change_timestamp("changed\\u0001").unwrap_err();
         let msg = format!("{:#}", err);
         assert!(msg.contains("control character"), "got: {msg}");
     }
 
-    fn load_with_log(log: &str, injected: &str) -> Result<Config> {
+    fn load_with_log(log: &str) -> Result<Config> {
         let dir = tempfile::tempdir().unwrap();
         let toml_input = format!(
             r#"
-{injected}
 [tables.users]
 fields = [
     {{ name = "id", type = "NUMBER", primary-key = true }},
@@ -1896,8 +1737,8 @@ fields = [
 
     const LOG_TABLE: &str = "table = \"userslog\"\n";
 
-    fn load_log_error(extra: &str, injected: &str) -> String {
-        let err = load_with_log(&format!("{LOG_TABLE}{extra}"), injected).unwrap_err();
+    fn load_log_error(extra: &str) -> String {
+        let err = load_with_log(&format!("{LOG_TABLE}{extra}")).unwrap_err();
         format!("{:#}", err)
     }
 
@@ -1911,7 +1752,7 @@ operations = {{ insert = "ADD", update = "CHANGE", delete = "REMOVE" }}
 exclude = ["email"]
 "#
         );
-        let config = load_with_log(&log, "").unwrap();
+        let config = load_with_log(&log).unwrap();
         let table = &config.tables["users"];
         let log = table.log.as_ref().unwrap();
         assert_eq!(log.table, "userslog");
@@ -1926,7 +1767,7 @@ exclude = ["email"]
 
     #[test]
     fn test_log_defaults() {
-        let config = load_with_log(LOG_TABLE, "").unwrap();
+        let config = load_with_log(LOG_TABLE).unwrap();
         let log = config.tables["users"].log.as_ref().unwrap();
         assert_eq!(log.operation_field, "operation");
         assert_eq!(log.timestamp_field, "timestamp");
@@ -1939,7 +1780,7 @@ exclude = ["email"]
     #[test]
     fn test_log_operations_partial_override() {
         let log = format!("{LOG_TABLE}operations = {{ delete = \"REMOVE\" }}\n");
-        let config = load_with_log(&log, "").unwrap();
+        let config = load_with_log(&log).unwrap();
         let log = config.tables["users"].log.as_ref().unwrap();
         assert_eq!(log.operations.insert, "INSERT");
         assert_eq!(log.operations.update, "UPDATE");
@@ -1948,60 +1789,50 @@ exclude = ["email"]
 
     #[test]
     fn test_log_requires_table() {
-        let msg = format!("{:#}", load_with_log("", "").unwrap_err());
+        let msg = format!("{:#}", load_with_log("").unwrap_err());
         assert!(msg.contains("missing field `table`"), "got: {msg}");
     }
 
     #[test]
     fn test_log_rejects_unknown_key() {
-        let msg = load_log_error("full-state = \"insert\"\n", "");
+        let msg = load_log_error("full-state = \"insert\"\n");
         assert!(msg.contains("unknown field `full-state`"), "got: {msg}");
     }
 
     #[test]
     fn test_log_rejects_field_collision() {
-        let msg = load_log_error("operation-field = \"name\"\n", "");
+        let msg = load_log_error("operation-field = \"name\"\n");
         assert!(msg.contains("collides with a field"), "got: {msg}");
     }
 
     #[test]
     fn test_log_rejects_same_operation_and_timestamp_field() {
-        let msg = load_log_error("operation-field = \"timestamp\"\n", "");
+        let msg = load_log_error("operation-field = \"timestamp\"\n");
         assert!(msg.contains("are both 'timestamp'"), "got: {msg}");
     }
 
     #[test]
     fn test_log_rejects_unknown_exclude() {
-        let msg = load_log_error("exclude = [\"missing\"]\n", "");
+        let msg = load_log_error("exclude = [\"missing\"]\n");
         assert!(msg.contains("unknown field 'missing'"), "got: {msg}");
     }
 
     #[test]
     fn test_log_rejects_primary_key_exclude() {
-        let msg = load_log_error("exclude = [\"id\"]\n", "");
+        let msg = load_log_error("exclude = [\"id\"]\n");
         assert!(msg.contains("primary-key field 'id'"), "got: {msg}");
     }
 
     #[test]
     fn test_log_rejects_duplicate_exclude() {
-        let msg = load_log_error("exclude = [\"email\", \"email\"]\n", "");
+        let msg = load_log_error("exclude = [\"email\", \"email\"]\n");
         assert!(msg.contains("more than once"), "got: {msg}");
     }
 
     #[test]
     fn test_log_rejects_table_name_of_declared_table() {
-        let msg = format!(
-            "{:#}",
-            load_with_log("table = \"users\"\n", "").unwrap_err()
-        );
+        let msg = format!("{:#}", load_with_log("table = \"users\"\n").unwrap_err());
         assert!(msg.contains("also declared as a table"), "got: {msg}");
-    }
-
-    #[test]
-    fn test_log_rejects_injected_field_collision() {
-        let injected = r#"injected-fields = [{ name = "operation", type = "TEXT", value = "x" }]"#;
-        let msg = load_log_error("", injected);
-        assert!(msg.contains("collides with a column"), "got: {msg}");
     }
 
     /// Load a config with an `alerts` event stream. `extra` is appended to the
@@ -2101,15 +1932,5 @@ fields = [{ name = "id", type = "NUMBER", primary-key = true }]
 "#;
         let msg = load_events_error("", table);
         assert!(msg.contains("also declared as a table"), "got: {msg}");
-    }
-
-    #[test]
-    fn test_events_reject_injected_field_collision() {
-        let injected = r#"injected-fields = [{ name = "eventid", type = "TEXT", value = "x" }]"#;
-        let msg = load_events_error("", injected);
-        assert!(
-            msg.contains("collides with a column in event stream"),
-            "got: {msg}"
-        );
     }
 }

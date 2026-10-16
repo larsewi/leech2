@@ -38,7 +38,7 @@ source = "users.csv"
     let patch = Patch::create(&config, GENESIS_HASH).unwrap();
     assert_eq!(patch.num_blocks, 0);
     assert!(patch.deltas.is_empty() && patch.states.is_empty());
-    assert_eq!(sql::patch_to_sql(&config, &patch).unwrap(), None);
+    assert_eq!(sql::patch_to_sql(&config, &patch, &[]).unwrap(), None);
 }
 
 #[test]
@@ -101,7 +101,7 @@ source = "users.csv"
     assert_eq!(patch.head, hash);
     assert!(patch.created.is_some());
 
-    let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
+    let sql = sql::patch_to_sql(&config, &patch, &[]).unwrap().unwrap();
 
     // Full state patch: DELETE + INSERT for all rows
     assert_eq!(common::count_sql(&sql, "INSERT INTO"), 2);
@@ -145,5 +145,5 @@ source = "users.csv"
     let patch = Patch::create(&config, &hash).unwrap();
     assert_eq!(patch.num_blocks, 0);
     assert!(patch.deltas.is_empty() && patch.states.is_empty());
-    assert_eq!(sql::patch_to_sql(&config, &patch).unwrap(), None);
+    assert_eq!(sql::patch_to_sql(&config, &patch, &[]).unwrap(), None);
 }

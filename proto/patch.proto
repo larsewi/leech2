@@ -14,8 +14,10 @@ message Patch {
   string head = 1;
   // Timestamp when the HEAD block was created.
   google.protobuf.Timestamp created = 2;
-  // Static fields injected into all SQL output (extra columns in INSERT, conditions in WHERE).
-  repeated InjectedField injected_fields = 3;
+  // Tag 3 held injected fields set by the sender. The receiver now passes
+  // them when converting the patch to SQL, so whatever a sender puts here is
+  // dropped on decode.
+  reserved 3;
   // The number of blocks that were merged to produce this patch.
   uint32 num_blocks = 4;
   // Tables with incremental changes (key = table name).
@@ -39,16 +41,6 @@ message EventBatch {
   string block = 1;
   // The events, with the field names the block stored them under.
   event.Events events = 2;
-}
-
-// A static field injected into all SQL output.
-// Each injected field adds a column to INSERT statements and a condition
-// to DELETE/UPDATE WHERE clauses.
-message InjectedField {
-  // Column name in the target database (e.g. "host", "environment").
-  string name = 1;
-  // The static value. The type is carried by the oneof tag inside the Cell.
-  cell.Cell value = 2;
 }
 
 // Delta represents the consolidated changes to a single table, as sent to the

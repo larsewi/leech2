@@ -50,7 +50,7 @@ source = "products.csv"
     let patch = Patch::create(&config, &hash1).unwrap();
     assert_eq!(patch.num_blocks, 1);
 
-    let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
+    let sql = sql::patch_to_sql(&config, &patch, &[]).unwrap().unwrap();
 
     // Users table: 1 insert (Bob) -- may appear as delta INSERT or state DELETE+INSERT
     assert!(sql.contains(r#""users""#));
@@ -83,7 +83,9 @@ source = "products.csv"
 
     // Patch from genesis: should have inserts for both tables
     let patch_genesis = Patch::create(&config, GENESIS_HASH).unwrap();
-    let sql_genesis = sql::patch_to_sql(&config, &patch_genesis).unwrap().unwrap();
+    let sql_genesis = sql::patch_to_sql(&config, &patch_genesis, &[])
+        .unwrap()
+        .unwrap();
 
     // Should reference both tables
     assert!(sql_genesis.contains(r#""users""#));

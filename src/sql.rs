@@ -10,7 +10,6 @@ use crate::proto::cell::Cell as ProtoCell;
 use crate::proto::patch::Delete as ProtoDelete;
 use crate::proto::patch::Delta as ProtoDelta;
 use crate::proto::patch::EventBatches as ProtoEventBatches;
-use crate::proto::patch::InjectedField as ProtoInjectedField;
 use crate::proto::patch::Insert as ProtoInsert;
 use crate::proto::patch::Patch as ProtoPatch;
 use crate::proto::patch::Update as ProtoUpdate;
@@ -138,9 +137,7 @@ impl<'a> TableSchema<'a> {
     }
 
     /// Reject injected fields whose name collides with a real column of this
-    /// table. The config loader rejects such collisions for config-declared
-    /// injected fields; this covers the wire path, where an injected name
-    /// duplicating a column would splice the column in twice and produce an
+    /// table. Such a name would splice the column in twice and produce an
     /// INSERT with a duplicate column that every database rejects.
     fn reject_injected_collisions(
         &self,
@@ -190,47 +187,31 @@ fn check_value_matches_field(value: &Cell, field: &FieldConfig) -> Result<()> {
     Ok(())
 }
 
-/// A static field injected into all SQL output (resolved from proto).
-struct InjectedField {
+/// A field the receiver adds to all SQL output, e.g. a `host` column
+/// identifying which agent produced the data.
+#[derive(Debug)]
+pub struct InjectedField {
     name: String,
     value: Cell,
 }
 
-impl TryFrom<&ProtoInjectedField> for InjectedField {
-    type Error = anyhow::Error;
-
-    fn try_from(proto: &ProtoInjectedField) -> Result<Self> {
-        // A patch decoded from an untrusted peer can carry an injected-field
-        // name with control characters that quote_identifier does not reject
-        // (e.g. a NUL would terminate the resulting CString, and newlines
-        // corrupt log/audit output). The config and inject_field paths both
-        // validate the name; do the same for the wire path.
-        validate_field_name(&proto.name)
-            .with_context(|| format!("injected field '{}'", proto.name))?;
-        let proto_value = proto
-            .value
-            .as_ref()
-            .with_context(|| format!("injected field '{}': missing value", proto.name))?;
-        let value = Cell::try_from(proto_value)
-            .with_context(|| format!("injected field '{}'", proto.name))?;
-        // A patch decoded from an untrusted peer can carry a NULL injected
-        // value, which would render `WHERE <field> = NULL` (matching no rows)
-        // and silently turn a state replacement into an append. The
-        // `inject_field` API rejects NULL too; reject it here for the wire path.
+impl InjectedField {
+    /// Validate `name` and `value`. Control characters in the name are
+    /// rejected, since `quote_identifier` does not catch them (e.g. a NUL
+    /// would terminate the resulting CString). NULL is rejected, since it
+    /// would render `WHERE <field> = NULL` (matching no rows) and silently
+    /// turn a state replacement into an append.
+    pub fn new(name: &str, value: Cell) -> Result<Self> {
+        validate_field_name(name).with_context(|| format!("injected field '{}'", name))?;
         if value == Cell::Null {
-            bail!(
-                "injected field '{}': NULL values are not supported",
-                proto.name
-            );
+            bail!("injected field '{}': NULL values are not supported", name);
         }
         Ok(InjectedField {
-            name: proto.name.clone(),
+            name: name.to_string(),
             value,
         })
     }
-}
 
-impl InjectedField {
     fn where_clause(&self) -> String {
         format!(
             "{} = {}",
@@ -838,34 +819,41 @@ fn events_to_sql(
     Ok(())
 }
 
-/// Convert a decoded patch to SQL statements.
+/// Convert a decoded patch to SQL statements, adding `injected_fields` to all
+/// of them.
 ///
 /// The returned SQL is not wrapped in a transaction. Callers that need
 /// atomicity should issue their own `BEGIN` / `COMMIT` (and may interleave
 /// additional statements, e.g. recording the last applied block hash).
-pub fn patch_to_sql(config: &Config, patch: &ProtoPatch) -> Result<Option<String>> {
+pub fn patch_to_sql(
+    config: &Config,
+    patch: &ProtoPatch,
+    injected_fields: &[InjectedField],
+) -> Result<Option<String>> {
+    let mut names = HashSet::new();
+    for field in injected_fields {
+        if !names.insert(field.name.as_str()) {
+            bail!("duplicate injected field '{}'", field.name);
+        }
+    }
+
     if patch.deltas.is_empty() && patch.states.is_empty() && patch.events.is_empty() {
         log::info!("Patch has no payload, nothing to convert");
         return Ok(None);
     }
 
-    let mut injected_fields = Vec::new();
-    for proto_field in &patch.injected_fields {
-        injected_fields.push(InjectedField::try_from(proto_field)?);
-    }
-
     let mut sql = String::new();
 
     for (table_name, delta) in &patch.deltas {
-        delta_to_sql(config, table_name, delta, &injected_fields, &mut sql)?;
+        delta_to_sql(config, table_name, delta, injected_fields, &mut sql)?;
     }
 
     for (table_name, table) in &patch.states {
-        state_table_to_sql(config, table_name, table, &injected_fields, &mut sql)?;
+        state_table_to_sql(config, table_name, table, injected_fields, &mut sql)?;
     }
 
     for (name, batches) in &patch.events {
-        events_to_sql(config, name, batches, &injected_fields, &mut sql)
+        events_to_sql(config, name, batches, injected_fields, &mut sql)
             .with_context(|| format!("event stream '{name}'"))?;
     }
 
@@ -903,9 +891,9 @@ mod tests {
         }
     }
 
-    /// Build a ProtoPatch for tests. Defaults `head`, `created`,
-    /// `injected_fields`, `num_blocks`, and `states`; the caller supplies
-    /// the deltas that distinguish the test case.
+    /// Build a ProtoPatch for tests. Defaults `head`, `created`, `num_blocks`,
+    /// and `states`; the caller supplies the deltas that distinguish the test
+    /// case.
     fn dummy_patch(deltas: HashMap<String, ProtoDelta>) -> ProtoPatch {
         ProtoPatch {
             head: "abc123".to_string(),
@@ -981,7 +969,7 @@ mod tests {
         });
         let patch = dummy_patch(HashMap::from([("test_table".to_string(), delta)]));
 
-        let result = patch_to_sql(&config, &patch).unwrap().unwrap();
+        let result = patch_to_sql(&config, &patch, &[]).unwrap().unwrap();
         assert!(result.contains("INSERT INTO"));
     }
 
@@ -1011,7 +999,7 @@ mod tests {
         });
         let patch = dummy_patch(HashMap::from([("users".to_string(), delta)]));
 
-        let sql = patch_to_sql(&config, &patch).unwrap().unwrap();
+        let sql = patch_to_sql(&config, &patch, &[]).unwrap().unwrap();
 
         let expected = [
             r#"DELETE FROM "users""#,
@@ -1029,8 +1017,8 @@ mod tests {
 
     #[test]
     fn test_patch_to_sql_rejects_injected_field_colliding_with_column() {
-        // A wire-injected field whose name matches a real column would splice
-        // the column in twice, producing an INSERT with a duplicate column.
+        // An injected field whose name matches a real column would splice the
+        // column in twice, producing an INSERT with a duplicate column.
         let table_config = dummy_table(&[("id", true), ("name", false)]);
         let config = Config {
             tables: HashMap::from([("test_table".to_string(), table_config)]),
@@ -1043,15 +1031,28 @@ mod tests {
             value: text_proto_cells(&["Alice"]),
             ..Default::default()
         });
-        let mut patch = dummy_patch(HashMap::from([("test_table".to_string(), delta)]));
-        patch.injected_fields.push(ProtoInjectedField {
-            name: "name".to_string(),
-            value: Some(ProtoCell::from(Cell::Text("agent-1".into()))),
-        });
+        let patch = dummy_patch(HashMap::from([("test_table".to_string(), delta)]));
+        let injected = [InjectedField::new("name", Cell::from("agent-1")).unwrap()];
 
-        let err = patch_to_sql(&config, &patch).unwrap_err();
+        let err = patch_to_sql(&config, &patch, &injected).unwrap_err();
         let msg = format!("{:#}", err);
         assert!(msg.contains("collides with a column"), "got: {msg}");
+    }
+
+    #[test]
+    fn test_patch_to_sql_rejects_duplicate_injected_field() {
+        let patch = dummy_patch(HashMap::new());
+        let injected = [
+            InjectedField::new("host", Cell::from("a")).unwrap(),
+            InjectedField::new("host", Cell::from("b")).unwrap(),
+        ];
+
+        let err = patch_to_sql(&Config::default(), &patch, &injected).unwrap_err();
+        let msg = format!("{:#}", err);
+        assert!(
+            msg.contains("duplicate injected field 'host'"),
+            "got: {msg}"
+        );
     }
 
     #[test]
@@ -1072,7 +1073,7 @@ mod tests {
         });
         let patch = dummy_patch(HashMap::from([("test_table".to_string(), delta)]));
 
-        let err = patch_to_sql(&config, &patch).unwrap_err();
+        let err = patch_to_sql(&config, &patch, &[]).unwrap_err();
         let msg = format!("{:#}", err);
         assert!(msg.contains("empty SET clause"), "got: {}", msg);
     }
@@ -1096,7 +1097,7 @@ mod tests {
         });
         let patch = dummy_patch(HashMap::from([("test_table".to_string(), delta)]));
 
-        let err = patch_to_sql(&config, &patch).unwrap_err();
+        let err = patch_to_sql(&config, &patch, &[]).unwrap_err();
         let msg = format!("{:#}", err);
         assert!(msg.contains("out of range"), "got: {}", msg);
     }
@@ -1125,7 +1126,7 @@ mod tests {
 
         let patch = dummy_patch(HashMap::from([("users".to_string(), delta)]));
 
-        let sql = patch_to_sql(&hub_config, &patch).unwrap().unwrap();
+        let sql = patch_to_sql(&hub_config, &patch, &[]).unwrap().unwrap();
 
         // The hub emits columns in the wire's order, so 'Alice' lands in
         // the name column and the email address lands in the email column.
@@ -1210,13 +1211,16 @@ mod tests {
 
     #[test]
     fn test_injected_field_rejects_control_character_name() {
-        let proto = ProtoInjectedField {
-            name: "ho\0st".to_string(),
-            value: Some(ProtoCell::from(Cell::Text("agent-1".into()))),
-        };
-        let err = InjectedField::try_from(&proto).err().unwrap();
+        let err = InjectedField::new("ho\0st", Cell::from("agent-1")).unwrap_err();
         let msg = format!("{:#}", err);
         assert!(msg.contains("control character"), "got: {msg}");
+    }
+
+    #[test]
+    fn test_injected_field_rejects_empty_name() {
+        let err = InjectedField::new("", Cell::from("agent-1")).unwrap_err();
+        let msg = format!("{:#}", err);
+        assert!(msg.contains("field name must not be empty"), "got: {msg}");
     }
 
     #[test]
@@ -1239,22 +1243,14 @@ mod tests {
 
     #[test]
     fn test_injected_field_rejects_null_value() {
-        let proto = ProtoInjectedField {
-            name: "host".to_string(),
-            value: Some(ProtoCell::from(Cell::Null)),
-        };
-        let err = InjectedField::try_from(&proto).err().unwrap();
+        let err = InjectedField::new("host", Cell::Null).unwrap_err();
         let msg = format!("{:#}", err);
         assert!(msg.contains("NULL values are not supported"), "got: {msg}");
     }
 
     #[test]
     fn test_injected_field_accepts_non_null_value() {
-        let proto = ProtoInjectedField {
-            name: "host".to_string(),
-            value: Some(ProtoCell::from(Cell::Text("agent-1".into()))),
-        };
-        let injected = InjectedField::try_from(&proto).unwrap();
+        let injected = InjectedField::new("host", Cell::from("agent-1")).unwrap();
         assert_eq!(injected.value, Cell::Text("agent-1".into()));
     }
 
@@ -1277,7 +1273,7 @@ mod tests {
         });
         let patch = dummy_patch(HashMap::from([("t".to_string(), delta)]));
 
-        let err = patch_to_sql(&config, &patch).unwrap_err();
+        let err = patch_to_sql(&config, &patch, &[]).unwrap_err();
         let msg = format!("{:#}", err);
         assert!(msg.contains("does not match declared type"), "got: {msg}");
     }
@@ -1299,7 +1295,7 @@ mod tests {
         });
         let patch = dummy_patch(HashMap::from([("t".to_string(), delta)]));
 
-        let err = patch_to_sql(&config, &patch).unwrap_err();
+        let err = patch_to_sql(&config, &patch, &[]).unwrap_err();
         let msg = format!("{:#}", err);
         assert!(msg.contains("new_value count mismatch"), "got: {msg}");
     }
@@ -1319,7 +1315,7 @@ mod tests {
         });
         let patch = dummy_patch(HashMap::from([("t".to_string(), delta)]));
 
-        let err = patch_to_sql(&config, &patch).unwrap_err();
+        let err = patch_to_sql(&config, &patch, &[]).unwrap_err();
         let msg = format!("{:#}", err);
         assert!(
             msg.contains("primary key field count mismatch"),
@@ -1343,7 +1339,7 @@ mod tests {
         });
         let patch = dummy_patch(HashMap::from([("t".to_string(), delta)]));
 
-        let err = patch_to_sql(&config, &patch).unwrap_err();
+        let err = patch_to_sql(&config, &patch, &[]).unwrap_err();
         let msg = format!("{:#}", err);
         assert!(
             msg.contains("primary key field count mismatch"),
@@ -1384,7 +1380,7 @@ mod tests {
         });
         let patch = dummy_patch(HashMap::from([("users".to_string(), delta)]));
 
-        let sql = patch_to_sql(&change_timestamp_config(), &patch)
+        let sql = patch_to_sql(&change_timestamp_config(), &patch, &[])
             .unwrap()
             .unwrap();
 
@@ -1415,7 +1411,7 @@ mod tests {
         });
         let patch = dummy_patch(HashMap::from([("users".to_string(), delta)]));
 
-        let sql = patch_to_sql(&change_timestamp_config(), &patch)
+        let sql = patch_to_sql(&change_timestamp_config(), &patch, &[])
             .unwrap()
             .unwrap();
 
@@ -1442,7 +1438,7 @@ mod tests {
         let mut patch = dummy_patch(HashMap::new());
         patch.states.insert("users".to_string(), table);
 
-        let sql = patch_to_sql(&change_timestamp_config(), &patch)
+        let sql = patch_to_sql(&change_timestamp_config(), &patch, &[])
             .unwrap()
             .unwrap();
 
@@ -1473,7 +1469,7 @@ mod tests {
         });
         let patch = dummy_patch(HashMap::from([("users".to_string(), delta)]));
 
-        let sql = patch_to_sql(&config, &patch).unwrap().unwrap();
+        let sql = patch_to_sql(&config, &patch, &[]).unwrap().unwrap();
 
         let expected = [
             r#"INSERT INTO "users" ("id", "name")"#,
@@ -1492,13 +1488,10 @@ mod tests {
             value: text_proto_cells(&["Alice"]),
             ..Default::default()
         });
-        let mut patch = dummy_patch(HashMap::from([("users".to_string(), delta)]));
-        patch.injected_fields.push(ProtoInjectedField {
-            name: "changed".to_string(),
-            value: Some(ProtoCell::from(Cell::Text("agent-1".into()))),
-        });
+        let patch = dummy_patch(HashMap::from([("users".to_string(), delta)]));
+        let injected = [InjectedField::new("changed", Cell::from("agent-1")).unwrap()];
 
-        let err = patch_to_sql(&change_timestamp_config(), &patch).unwrap_err();
+        let err = patch_to_sql(&change_timestamp_config(), &patch, &injected).unwrap_err();
         let msg = format!("{:#}", err);
         assert!(msg.contains("collides with a column"), "got: {msg}");
     }
@@ -1516,7 +1509,7 @@ mod tests {
         });
         let patch = dummy_patch(HashMap::from([("users".to_string(), delta)]));
 
-        let err = patch_to_sql(&change_timestamp_config(), &patch).unwrap_err();
+        let err = patch_to_sql(&change_timestamp_config(), &patch, &[]).unwrap_err();
         let msg = format!("{:#}", err);
         assert!(msg.contains("out of range"), "got: {msg}");
     }
@@ -1557,13 +1550,12 @@ mod tests {
             new_value: text_proto_cells(&["Caroline"]),
             change_timestamp: Some(CHANGED),
         });
-        let mut patch = dummy_patch(HashMap::from([("users".to_string(), delta)]));
-        patch.injected_fields.push(ProtoInjectedField {
-            name: "host".to_string(),
-            value: Some(ProtoCell::from(Cell::Text("h1".into()))),
-        });
+        let patch = dummy_patch(HashMap::from([("users".to_string(), delta)]));
+        let injected = [InjectedField::new("host", Cell::from("h1")).unwrap()];
 
-        let sql = patch_to_sql(&log_config(), &patch).unwrap().unwrap();
+        let sql = patch_to_sql(&log_config(), &patch, &injected)
+            .unwrap()
+            .unwrap();
 
         let log_columns =
             r#"INSERT INTO "userslog" ("host", "id", "name", "operation", "timestamp")"#;
@@ -1604,7 +1596,7 @@ mod tests {
         let mut patch = dummy_patch(HashMap::new());
         patch.states.insert("users".to_string(), table);
 
-        let sql = patch_to_sql(&log_config(), &patch).unwrap().unwrap();
+        let sql = patch_to_sql(&log_config(), &patch, &[]).unwrap().unwrap();
 
         assert!(!sql.contains("userslog"), "got:\n{sql}");
     }
@@ -1625,7 +1617,7 @@ mod tests {
         });
         let patch = dummy_patch(HashMap::from([("users".to_string(), delta)]));
 
-        let sql = patch_to_sql(&log_config(), &patch).unwrap().unwrap();
+        let sql = patch_to_sql(&log_config(), &patch, &[]).unwrap().unwrap();
 
         assert!(
             sql.contains(r#"SELECT "id", "name", 'DELETE', NULL"#),
@@ -1645,13 +1637,10 @@ mod tests {
             value: text_proto_cells(&["Alice", "alice@example.com"]),
             ..Default::default()
         });
-        let mut patch = dummy_patch(HashMap::from([("users".to_string(), delta)]));
-        patch.injected_fields.push(ProtoInjectedField {
-            name: "operation".to_string(),
-            value: Some(ProtoCell::from(Cell::Text("agent-1".into()))),
-        });
+        let patch = dummy_patch(HashMap::from([("users".to_string(), delta)]));
+        let injected = [InjectedField::new("operation", Cell::from("agent-1")).unwrap()];
 
-        let err = patch_to_sql(&log_config(), &patch).unwrap_err();
+        let err = patch_to_sql(&log_config(), &patch, &injected).unwrap_err();
         let msg = format!("{:#}", err);
         assert!(msg.contains("collides with a column"), "got: {msg}");
     }
@@ -1707,19 +1696,18 @@ mod tests {
 
     #[test]
     fn test_patch_to_sql_writes_events() {
-        let mut patch = events_patch(
+        let patch = events_patch(
             &["message", "severity"],
             vec![
                 vec![Cell::Text("disk full".into()), Cell::number(2.0).unwrap()],
                 vec![Cell::Text("out of memory".into()), Cell::Null],
             ],
         );
-        patch.injected_fields.push(ProtoInjectedField {
-            name: "host".to_string(),
-            value: Some(ProtoCell::from(Cell::Text("h1".into()))),
-        });
+        let injected = [InjectedField::new("host", Cell::from("h1")).unwrap()];
 
-        let sql = patch_to_sql(&events_config(), &patch).unwrap().unwrap();
+        let sql = patch_to_sql(&events_config(), &patch, &injected)
+            .unwrap()
+            .unwrap();
 
         let expected = [
             r#"INSERT INTO "alerts" ("host", "message", "severity", "eventid")"#,
@@ -1743,7 +1731,7 @@ mod tests {
                 Cell::number(2.0).unwrap(),
             ]],
         );
-        let err = patch_to_sql(&events_config(), &patch).unwrap_err();
+        let err = patch_to_sql(&events_config(), &patch, &[]).unwrap_err();
         let msg = format!("{:#}", err);
         assert!(
             msg.contains("wire field 'level' is not declared"),
@@ -1760,22 +1748,19 @@ mod tests {
                 Cell::Text("high".into()),
             ]],
         );
-        let err = patch_to_sql(&events_config(), &patch).unwrap_err();
+        let err = patch_to_sql(&events_config(), &patch, &[]).unwrap_err();
         let msg = format!("{:#}", err);
         assert!(msg.contains("does not match declared type"), "got: {msg}");
     }
 
     #[test]
     fn test_patch_to_sql_rejects_injected_field_colliding_with_event_id() {
-        let mut patch = events_patch(
+        let patch = events_patch(
             &["message", "severity"],
             vec![vec![Cell::Text("disk full".into()), Cell::Null]],
         );
-        patch.injected_fields.push(ProtoInjectedField {
-            name: "eventid".to_string(),
-            value: Some(ProtoCell::from(Cell::Text("x".into()))),
-        });
-        let err = patch_to_sql(&events_config(), &patch).unwrap_err();
+        let injected = [InjectedField::new("eventid", Cell::from("x")).unwrap()];
+        let err = patch_to_sql(&events_config(), &patch, &injected).unwrap_err();
         let msg = format!("{:#}", err);
         assert!(msg.contains("collides with a column"), "got: {msg}");
     }

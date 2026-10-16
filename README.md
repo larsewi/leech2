@@ -268,33 +268,19 @@ fields = [
 
 ### Injected fields
 
-Optional `[[injected-fields]]` entries add static columns to all generated SQL.
-Each entry becomes an extra column in INSERT statements and an extra condition
-in DELETE/UPDATE WHERE clauses. When any injected fields are configured, state
-payload patches scope their `DELETE FROM` with a `WHERE` clause on the injected
-fields so that other agents' data is preserved.
+Injected fields add columns to all generated SQL. Each one becomes an extra
+column in INSERT statements and an extra condition in DELETE/UPDATE WHERE
+clauses. State payloads also scope their `DELETE FROM` with a `WHERE` clause on
+them so that other agents' data is preserved.
 
-```toml
-[[injected-fields]]
-name = "host"      # column name in the target database
-type = "TEXT"      # SQL type (default: TEXT)
-value = "agent-1"  # the static value
-
-[[injected-fields]]
-name = "environment"
-type = "TEXT"
-value = "production"
-```
-
-Fields can also be injected at runtime via `lch patch inject` or the
-`lch_patch_inject` C API function. Runtime injection is useful when the
-authoritative value is only known to the receiver (e.g. a hub that derives it
-from an authenticated connection); values provided at runtime overwrite any
-statically declared field with the same name.
+The receiver passes injected fields when converting a patch to SQL, through the
+`injected` array of `lch_patch_to_sql()` or the `--inject` option of
+`lch patch sql`. This lets it use an authoritative value, e.g. one derived from
+an authenticated connection. Patches never carry injected fields, so a sender
+cannot set them.
 
 ```sh
-lch patch inject hostkey abc123  # defaults to TEXT
-lch patch inject count 42 NUMBER
+lch patch sql --inject hostkey abc123 TEXT --inject count 42 NUMBER
 ```
 
 ### Filters

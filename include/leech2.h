@@ -102,6 +102,16 @@ typedef struct {
 } lch_cell_t;
 
 /**
+ * @brief A named value, used to pass injected fields to lch_patch_to_sql().
+ */
+typedef struct {
+  /** Column name. Null-terminated, non-empty, no control characters. */
+  const char *name;
+  /** The value. LCH_VALUE_NULL is not accepted. */
+  lch_cell_t value;
+} lch_field_t;
+
+/**
  * @brief Owned byte buffer returned by the library.
  *
  * Functions that allocate a buffer fill in @p data and @p len. The buffer must
@@ -380,45 +390,24 @@ extern int lch_patch_create(const lch_config_t *cfg, const char *hash,
  * If the patch contains no actionable changes, @p sql is set to NULL and the
  * function returns LCH_SUCCESS.
  *
- * @param cfg       Valid config handle (must not be NULL).
- * @param patch     Encoded patch buffer (must not be NULL).
- * @param[out] sql  Receives a pointer to the SQL string, or NULL if the patch
- *                  is empty. Free with lch_string_free().
+ * Each field in @p injected adds a column to INSERT statements and a
+ * condition to DELETE/UPDATE WHERE clauses. State payloads also scope their
+ * DELETE with them, so other agents' rows are preserved. The kind tag on
+ * each value determines how it is formatted as a SQL literal. Names must be
+ * unique and must not collide with a column of any table or event stream.
+ *
+ * @param cfg           Valid config handle (must not be NULL).
+ * @param patch         Encoded patch buffer (must not be NULL).
+ * @param injected      Array of @p num_injected fields to inject. May be NULL
+ *                      when @p num_injected is 0. Only read during the call.
+ * @param num_injected  Number of fields in @p injected.
+ * @param[out] sql      Receives a pointer to the SQL string, or NULL if the
+ *                      patch is empty. Free with lch_string_free().
  * @return LCH_SUCCESS on success, LCH_FAILURE on error.
  */
 extern int lch_patch_to_sql(const lch_config_t *cfg, const lch_buffer_t *patch,
+                            const lch_field_t *injected, size_t num_injected,
                             char **sql);
-
-/**
- * @brief Inject a field into an encoded patch.
- *
- * Decodes the patch in @p in, adds or overwrites an injected field with the
- * given @p name and @p cell, and encodes the result into a new caller-owned
- * buffer written to @p out. The input buffer is not modified; the caller
- * manages its lifetime independently.
- *
- * The kind tag on @p cell determines how the value is formatted as a SQL
- * literal (TEXT becomes single-quoted, NUMBER is emitted as a numeric
- * literal, BOOLEAN is emitted as TRUE/FALSE). LCH_VALUE_NULL is not
- * accepted.
- *
- * If a field with the same @p name is already present on the patch -- whether
- * from static configuration or a prior injection -- both its value and kind
- * are replaced.
- *
- * The buffer written to @p out must eventually be freed with
- * lch_buffer_free().
- *
- * @param cfg       Valid config handle (must not be NULL).
- * @param in        Encoded input patch (must not be NULL).
- * @param name      Column name (non-empty, null-terminated).
- * @param cell      Typed value to inject (must not be NULL).
- * @param[out] out  Receives the encoded output patch (must not be NULL).
- * @return LCH_SUCCESS on success, LCH_FAILURE on error.
- */
-extern int lch_patch_inject(const lch_config_t *cfg, const lch_buffer_t *in,
-                            const char *name, const lch_cell_t *cell,
-                            lch_buffer_t *out);
 
 /**
  * @brief Extract the head hash from an encoded patch.

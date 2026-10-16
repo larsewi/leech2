@@ -55,7 +55,7 @@ fn test_reported_block_truncated() {
     assert_eq!(patch.head, hash2);
     assert_eq!(patch.num_blocks, 0);
 
-    let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
+    let sql = sql::patch_to_sql(&config, &patch, &[]).unwrap().unwrap();
     assert_eq!(common::count_sql(&sql, r#"DELETE FROM "users";"#), 1);
     assert_eq!(common::count_sql(&sql, "INSERT INTO"), 2);
     assert_eq!(common::count_sql(&sql, "DELETE FROM"), 1);
@@ -90,7 +90,7 @@ fn test_reported_file_deleted() {
     assert_eq!(patch.head, hash1);
     assert_eq!(patch.num_blocks, 0);
 
-    let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
+    let sql = sql::patch_to_sql(&config, &patch, &[]).unwrap().unwrap();
     assert_eq!(common::count_sql(&sql, r#"DELETE FROM "users";"#), 1);
     assert_eq!(common::count_sql(&sql, "INSERT INTO"), 2);
 
@@ -126,7 +126,7 @@ fn test_head_file_deleted() {
     let patch = Patch::create(&config, GENESIS_HASH).unwrap();
     assert_eq!(patch.head, new_hash);
 
-    let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
+    let sql = sql::patch_to_sql(&config, &patch, &[]).unwrap().unwrap();
     assert_eq!(common::count_sql(&sql, r#"DELETE FROM "users";"#), 1);
     assert_eq!(common::count_sql(&sql, "INSERT INTO"), 2);
 
@@ -159,7 +159,7 @@ fn test_block_chain_broken() {
     assert_eq!(patch.head, hash3);
     assert_eq!(patch.num_blocks, 0);
 
-    let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
+    let sql = sql::patch_to_sql(&config, &patch, &[]).unwrap().unwrap();
     assert_eq!(common::count_sql(&sql, r#"DELETE FROM "users";"#), 1);
     assert_eq!(common::count_sql(&sql, "INSERT INTO"), 3);
     assert_eq!(common::count_sql(&sql, "DELETE FROM"), 1);
@@ -198,7 +198,7 @@ fn test_patch_failed_forces_full_state() {
     assert_eq!(patch.head, hash2);
     assert_eq!(patch.num_blocks, 0); // full state, no delta consolidation
 
-    let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
+    let sql = sql::patch_to_sql(&config, &patch, &[]).unwrap().unwrap();
     assert_eq!(common::count_sql(&sql, r#"DELETE FROM "users";"#), 1);
     assert_eq!(common::count_sql(&sql, "INSERT INTO"), 2);
     assert_eq!(common::count_sql(&sql, "DELETE FROM"), 1);
@@ -229,7 +229,7 @@ fn test_state_file_deleted_with_valid_chain() {
     assert_eq!(patch.head, hash2);
     assert_eq!(patch.num_blocks, 1);
 
-    let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
+    let sql = sql::patch_to_sql(&config, &patch, &[]).unwrap().unwrap();
     // Delta path: should have INSERT for Bob, no DELETE
     assert_eq!(common::count_sql(&sql, "DELETE FROM"), 0);
     assert_eq!(common::count_sql(&sql, "INSERT INTO"), 1);

@@ -37,7 +37,7 @@ source = "enrollments.csv"
 
     // Patch from hash1
     let patch = Patch::create(&config, &hash1).unwrap();
-    let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
+    let sql = sql::patch_to_sql(&config, &patch, &[]).unwrap().unwrap();
 
     // Composite-key columns appear in canonical (lex-sorted) order:
     // course_id before student_id.

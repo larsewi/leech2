@@ -65,7 +65,7 @@ source = "users.csv"
     Block::create(&config, None).unwrap();
 
     let patch = Patch::create(&config, &hash1).unwrap();
-    let sql = sql::patch_to_sql(&config, &patch).unwrap().unwrap();
+    let sql = sql::patch_to_sql(&config, &patch, &[]).unwrap().unwrap();
 
     let block2_insert = change_timestamp_on_line(&sql, "VALUES (4, 'Dave'");
     let block2_update = change_timestamp_on_line(&sql, "SET \"name\" = 'Alicia'");

@@ -8,6 +8,7 @@
 use std::ffi::{CStr, c_char, c_int};
 
 use crate::cell::Cell;
+use crate::sql::InjectedField;
 
 /// `LCH_SUCCESS` from `leech2.h`.
 pub const SUCCESS: i32 = 0;
@@ -155,4 +156,47 @@ pub unsafe fn cell_from_ffi(fn_name: &str, cell: &FfiCell) -> Option<Cell> {
             None
         }
     }
+}
+
+/// ABI-compatible mirror of `lch_field_t` from `leech2.h`. A named cell, used
+/// to pass injected fields to `lch_patch_to_sql`.
+#[repr(C)]
+pub struct FfiField {
+    pub name: *const c_char,
+    pub value: FfiCell,
+}
+
+/// Convert an array of `count` FFI `lch_field_t` into [`InjectedField`]s.
+/// `fields` may be NULL when `count` is 0. Logs an error and returns `None`
+/// on failure.
+///
+/// # Safety
+/// When `count` is non-zero, `fields` must point to `count` valid
+/// `lch_field_t` values. Each name must be a valid, null-terminated C string,
+/// and each value must meet the requirements of [`cell_from_ffi`].
+pub unsafe fn injected_fields_from_ffi(
+    fn_name: &str,
+    fields: *const FfiField,
+    count: usize,
+) -> Option<Vec<InjectedField>> {
+    if count == 0 {
+        return Some(Vec::new());
+    }
+    if null_arg(fn_name, "injected", fields) {
+        return None;
+    }
+    let fields = unsafe { std::slice::from_raw_parts(fields, count) };
+    let mut injected = Vec::with_capacity(count);
+    for field in fields {
+        let name = unsafe { cstr_arg(fn_name, "injected.name", field.name) }?;
+        let value = unsafe { cell_from_ffi(fn_name, &field.value) }?;
+        match InjectedField::new(&name, value) {
+            Ok(field) => injected.push(field),
+            Err(e) => {
+                log::error!("{}(): Bad argument: {:#}", fn_name, e);
+                return None;
+            }
+        }
+    }
+    Some(injected)
 }
