@@ -402,9 +402,8 @@ extern int lch_patch_to_sql(const lch_config_t *cfg, const lch_buffer_t *patch,
  * literal, BOOLEAN is emitted as TRUE/FALSE). LCH_VALUE_NULL is not
  * accepted.
  *
- * If a field with the same @p name is already present on the patch -- whether
- * from static configuration or a prior injection -- both its value and kind
- * are replaced.
+ * If a field with the same @p name is already present on the patch from a
+ * prior injection, both its value and kind are replaced.
  *
  * The buffer written to @p out must eventually be freed with
  * lch_buffer_free().

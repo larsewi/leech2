@@ -232,7 +232,7 @@ fn test_empty_tables_map_rejected() {
 }
 
 #[test]
-fn test_injected_field_collides_with_table_column() {
+fn test_injected_fields_rejected() {
     let tmp = tempfile::tempdir().unwrap();
     common::write_config(
         tmp.path(),
@@ -246,7 +246,6 @@ value = "agent-1"
 [tables.users]
 fields = [
     { name = "id", type = "NUMBER", primary-key = true },
-    { name = "host", type = "TEXT" },
 ]
 
 [tables.users.csv]
@@ -256,8 +255,8 @@ source = "users.csv"
 
     let err = format!("{:#}", Config::load(tmp.path()).unwrap_err());
     assert!(
-        err.contains("collides"),
-        "should report collision with table column: {err}"
+        err.contains("unknown field `injected-fields`"),
+        "should reject injected fields in config: {err}"
     );
 }
 
@@ -312,65 +311,6 @@ source = ""
     assert!(
         err.contains("csv.source must not be empty"),
         "should report empty csv.source: {err}"
-    );
-}
-
-#[test]
-fn test_injected_field_empty_name_rejected() {
-    let tmp = tempfile::tempdir().unwrap();
-    common::write_config(
-        tmp.path(),
-        "config.toml",
-        r#"
-[[injected-fields]]
-name = ""
-value = "x"
-
-[tables.users]
-fields = [
-    { name = "id", type = "NUMBER", primary-key = true },
-    { name = "name", type = "TEXT" },
-]
-
-[tables.users.csv]
-source = "users.csv"
-"#,
-    );
-
-    let err = format!("{:#}", Config::load(tmp.path()).unwrap_err());
-    assert!(
-        err.contains("name must not be empty"),
-        "should report empty name: {err}"
-    );
-}
-
-#[test]
-fn test_injected_field_value_does_not_parse() {
-    let tmp = tempfile::tempdir().unwrap();
-    common::write_config(
-        tmp.path(),
-        "config.toml",
-        r#"
-[[injected-fields]]
-name = "count"
-type = "NUMBER"
-value = "abc"
-
-[tables.users]
-fields = [
-    { name = "id", type = "NUMBER", primary-key = true },
-    { name = "name", type = "TEXT" },
-]
-
-[tables.users.csv]
-source = "users.csv"
-"#,
-    );
-
-    let err = format!("{:#}", Config::load(tmp.path()).unwrap_err());
-    assert!(
-        err.contains("invalid number"),
-        "should report unparseable value: {err}"
     );
 }
 

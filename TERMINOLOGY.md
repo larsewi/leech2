@@ -38,9 +38,9 @@ config does not register as a layout change.
 ### Injected field
 
 A column added to all generated SQL but absent from the CSV source. Values are
-configured statically in `[[injected-fields]]` or supplied at runtime via `lch
-patch inject`. When any injected fields are present, full-state patches scope
-their `DELETE` with a `WHERE` on them so co-tenants' rows are preserved.
+supplied at runtime via `lch patch inject` or `lch_patch_inject`. When any
+injected fields are present, full-state patches scope their `DELETE` with a
+`WHERE` on them so co-tenants' rows are preserved.
 
 ## Data (the contents)
 

@@ -10,8 +10,8 @@ use prost::Message;
 use prost_types::Timestamp;
 
 use crate::block::Block;
-use crate::cell::{Cell, parse_typed_cell};
-use crate::config::{Config, InjectedFieldConfig, TableConfig};
+use crate::cell::Cell;
+use crate::config::{Config, TableConfig};
 use crate::delta::Delta;
 use crate::event;
 use crate::head;
@@ -23,19 +23,6 @@ use crate::proto::table::Table as ProtoTable;
 use crate::stats::{self, Stage, StageStats};
 use crate::utils;
 use crate::utils::{GENESIS_HASH, validate_field_name};
-
-impl TryFrom<&InjectedFieldConfig> for InjectedField {
-    type Error = anyhow::Error;
-
-    fn try_from(config: &InjectedFieldConfig) -> Result<Self> {
-        let value = parse_typed_cell(&config.value, config.kind)
-            .with_context(|| format!("injected field '{}'", config.name))?;
-        Ok(InjectedField {
-            name: config.name.clone(),
-            value: Some(value.into()),
-        })
-    }
-}
 
 fn fmt_payload<T: fmt::Display>(
     payload: &HashMap<String, T>,
@@ -328,17 +315,6 @@ fn try_consolidate(
     Ok((num_blocks, result_deltas, result_states))
 }
 
-/// Build the injected-field list from config, converting each entry to its
-/// proto `InjectedField`. Shared by `Patch::create` and `full_state_size` so the
-/// baseline and the real patch carry the same injected fields.
-fn build_injected_fields(config: &Config) -> Result<Vec<InjectedField>> {
-    let mut injected_fields = Vec::with_capacity(config.injected_fields.len());
-    for field_config in &config.injected_fields {
-        injected_fields.push(InjectedField::try_from(field_config)?);
-    }
-    Ok(injected_fields)
-}
-
 /// Encoded protobuf size of a full-state patch for the current HEAD, carrying
 /// `num_blocks` so it matches the framing of the actual patch. Used as the
 /// baseline for measuring how many bytes delta merging saved on the wire; when
@@ -349,14 +325,7 @@ fn full_state_size(config: &Config, num_blocks: u32) -> Result<u64> {
     let created = Block::load_header(&state_dir, &head, config.file_mode)
         .ok()
         .and_then(|header| header.created);
-    let injected_fields = build_injected_fields(config)?;
-    let mut patch = full_state_patch(
-        &state_dir,
-        &head,
-        created,
-        injected_fields,
-        config.file_mode,
-    )?;
+    let mut patch = full_state_patch(&state_dir, &head, created, config.file_mode)?;
     patch.num_blocks = num_blocks;
     Ok(patch.encoded_len() as u64)
 }
@@ -367,7 +336,6 @@ fn full_state_patch(
     work_dir: &Path,
     head: &str,
     created: Option<Timestamp>,
-    injected_fields: Vec<InjectedField>,
     mode: u32,
 ) -> Result<Patch> {
     let state =
@@ -375,7 +343,6 @@ fn full_state_patch(
     Ok(Patch {
         head: head.to_string(),
         created,
-        injected_fields,
         states: state.tables,
         ..Default::default()
     })
@@ -384,16 +351,11 @@ fn full_state_patch(
 /// Build a full-state patch for when there is no known reference to start
 /// from. It carries no events: those of every stored block could make the
 /// patch too big.
-fn unknown_reference_patch(
-    work_dir: &Path,
-    head: &str,
-    injected_fields: Vec<InjectedField>,
-    mode: u32,
-) -> Result<Patch> {
+fn unknown_reference_patch(work_dir: &Path, head: &str, mode: u32) -> Result<Patch> {
     let created = Block::load_header(work_dir, head, mode)
         .ok()
         .and_then(|header| header.created);
-    let patch = full_state_patch(work_dir, head, created, injected_fields, mode)?;
+    let patch = full_state_patch(work_dir, head, created, mode)?;
     log::info!("Consolidated patch:\n{}", patch);
     Ok(patch)
 }
@@ -450,12 +412,9 @@ impl Patch {
 
         let head = head::load(&state_dir, file_mode)?;
 
-        let injected_fields = build_injected_fields(config)?;
-
         if head == GENESIS_HASH {
             let patch = Patch {
                 head,
-                injected_fields,
                 ..Default::default()
             };
             log::info!("Consolidated patch:\n{}", patch);
@@ -469,14 +428,14 @@ impl Patch {
             Ok(hash) if hash != GENESIS_HASH => hash,
             Ok(_) => {
                 log::info!("Reference is genesis, producing full state patch");
-                return unknown_reference_patch(&state_dir, &head, injected_fields, file_mode);
+                return unknown_reference_patch(&state_dir, &head, file_mode);
             }
             Err(e) => {
                 log::warn!(
                     "Reference block not found, producing full state patch: {}",
                     e
                 );
-                return unknown_reference_patch(&state_dir, &head, injected_fields, file_mode);
+                return unknown_reference_patch(&state_dir, &head, file_mode);
             }
         };
 
@@ -487,7 +446,7 @@ impl Patch {
                 Ok(result) => result,
                 Err(e) => {
                     log::warn!("Consolidation failed, falling back to full state: {}", e);
-                    return unknown_reference_patch(&state_dir, &head, injected_fields, file_mode);
+                    return unknown_reference_patch(&state_dir, &head, file_mode);
                 }
             };
 
@@ -504,8 +463,7 @@ impl Patch {
                 log::warn!("Consolidation failed, falling back to full state: {}", e);
                 // The reference is known, so the events of the blocks
                 // after it are all the receiver lacks.
-                let mut patch =
-                    full_state_patch(&state_dir, &head, created, injected_fields, file_mode)?;
+                let mut patch = full_state_patch(&state_dir, &head, created, file_mode)?;
                 patch.events = events;
                 log::info!("Consolidated patch:\n{}", patch);
                 return Ok(patch);
@@ -515,11 +473,11 @@ impl Patch {
         let patch = Patch {
             head,
             created,
-            injected_fields,
             num_blocks,
             deltas,
             states,
             events,
+            ..Default::default()
         };
 
         log::info!("Consolidated patch:\n{}", patch);
@@ -528,9 +486,9 @@ impl Patch {
 
     /// Add or overwrite an injected field on this patch. Validates that the
     /// name is non-empty and the value is not [`Cell::Null`]. If a field
-    /// with the same name already exists (whether from static config or a
-    /// previous inject_field call), its value is replaced; a warning is
-    /// logged when the replacement actually differs from the existing value.
+    /// with the same name already exists from a previous inject_field call, its
+    /// value is replaced; a warning is logged when the replacement actually
+    /// differs from the existing value.
     pub fn inject_field(&mut self, name: &str, value: Cell) -> Result<()> {
         validate_field_name(name).context("inject_field")?;
         if matches!(value, Cell::Null) {

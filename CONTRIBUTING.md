@@ -267,14 +267,14 @@ skipped.
 Column types defined in the config control how values are formatted in the SQL
 output (quoting for `TEXT`, bare numbers for `NUMBER`, etc.).
 
-When a patch carries injected fields (see `[[injected-fields]]` config section
-in [README.md](README.md)), those columns are injected into all SQL output:
+When a patch carries injected fields (see "Injected fields" in
+[README.md](README.md)), those columns are injected into all SQL output:
 `INSERT` values include them, `DELETE`/`UPDATE`- `WHERE` clauses are scoped by
 them, and state payloads scope their `DELETE FROM` with a `WHERE` clause on them
-to preserve other agents data. Injected fields can also be added or overwritten
-after the fact via `Patch::inject_field()` (and its CLI / C FFI counterparts),
-which the receiving side of a connection can use to attach authoritative values
-derived from the authenticated peer.
+to preserve other agents data. Injected fields are added or overwritten via
+`Patch::inject_field()` (and its CLI / C FFI counterparts), which the receiving
+side of a connection can use to attach authoritative values derived from the
+authenticated peer.
 
 ### Patch::applied()
 

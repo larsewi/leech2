@@ -138,9 +138,7 @@ impl<'a> TableSchema<'a> {
     }
 
     /// Reject injected fields whose name collides with a real column of this
-    /// table. The config loader rejects such collisions for config-declared
-    /// injected fields; this covers the wire path, where an injected name
-    /// duplicating a column would splice the column in twice and produce an
+    /// table. Such a name would splice the column in twice and produce an
     /// INSERT with a duplicate column that every database rejects.
     fn reject_injected_collisions(
         &self,
