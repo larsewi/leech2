@@ -367,7 +367,7 @@ lch_buffer_t patch = {0};
 lch_patch_create(cfg, NULL, &patch);
 
 char *sql;
-lch_patch_to_sql(cfg, &patch, &sql);
+lch_patch_to_sql(cfg, &patch, NULL, 0, &sql);
 printf("%s", sql);
 lch_string_free(sql);
 
