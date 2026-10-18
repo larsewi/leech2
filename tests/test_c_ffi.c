@@ -274,7 +274,6 @@ int main(int argc, char *argv[]) {
     return EXIT_FAILURE;
   }
 
-
   ret = lch_patch_applied(cfg, &patch);
   if (ret == LCH_FAILURE) {
     fprintf(stderr, "lch_patch_applied failed\n");
