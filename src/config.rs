@@ -342,14 +342,18 @@ fn default_log_timestamp_field() -> String {
     "timestamp".to_string()
 }
 
-/// Opt-in change log for a table. Each insert, update and delete applied to
-/// the table is also recorded as a row in the log table. Full states are not
-/// logged.
+/// Opt-in change log for a table. Each insert, update and delete in a block is
+/// recorded as an event, which the receiver writes as a row in the log table.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LogConfig {
     /// Name of the log table.
     pub table: String,
+    /// Log column that receives each row's event ID, built from the hash of
+    /// the block that recorded the change and the change's position in that
+    /// block.
+    #[serde(rename = "id-field")]
+    pub id_field: String,
     /// Log column that receives the operation (see `operations`).
     #[serde(default = "default_log_operation_field", rename = "operation-field")]
     pub operation_field: String,
@@ -367,16 +371,23 @@ pub struct LogConfig {
 impl LogConfig {
     fn validate(&self, fields: &[FieldConfig]) -> Result<()> {
         validate_field_name(&self.table).context("log.table")?;
+        validate_field_name(&self.id_field).context("log.id-field")?;
         validate_field_name(&self.operation_field).context("log.operation-field")?;
         validate_field_name(&self.timestamp_field).context("log.timestamp-field")?;
-        if self.operation_field == self.timestamp_field {
-            bail!(
-                "log.operation-field and log.timestamp-field are both '{}'",
-                self.operation_field
-            );
+        let columns = [
+            ("id-field", &self.id_field),
+            ("operation-field", &self.operation_field),
+            ("timestamp-field", &self.timestamp_field),
+        ];
+        for (index, (name, column)) in columns.iter().enumerate() {
+            for (other_name, other_column) in &columns[index + 1..] {
+                if column == other_column {
+                    bail!("log.{} and log.{} are both '{}'", name, other_name, column);
+                }
+            }
         }
 
-        for column in [&self.operation_field, &self.timestamp_field] {
+        for column in [&self.id_field, &self.operation_field, &self.timestamp_field] {
             if fields.iter().any(|field| &field.name == column) {
                 bail!("log column '{}' collides with a field", column);
             }
@@ -541,15 +552,24 @@ impl Validate for Config {
         if self.tables.is_empty() && self.events.is_empty() {
             bail!("at least one table or event stream must be declared");
         }
+        let mut log_tables = HashSet::new();
         for (name, table) in &self.tables {
             table
                 .validate()
                 .with_context(|| format!("table '{}'", name))?;
-            if let Some(log) = &table.log
-                && (self.tables.contains_key(&log.table) || self.events.contains_key(&log.table))
-            {
+            let Some(log) = &table.log else {
+                continue;
+            };
+            if self.tables.contains_key(&log.table) || self.events.contains_key(&log.table) {
                 bail!(
                     "table '{}': log.table '{}' is also declared as a table or event stream",
+                    name,
+                    log.table
+                );
+            }
+            if !log_tables.insert(log.table.as_str()) {
+                bail!(
+                    "table '{}': log.table '{}' is used by another table",
                     name,
                     log.table
                 );
@@ -1383,7 +1403,7 @@ fields = [
         Config::load(dir.path())
     }
 
-    const LOG_TABLE: &str = "table = \"userslog\"\n";
+    const LOG_TABLE: &str = "table = \"userslog\"\nid-field = \"eventid\"\n";
 
     fn load_log_error(extra: &str) -> String {
         let err = load_with_log(&format!("{LOG_TABLE}{extra}")).unwrap_err();
@@ -1404,6 +1424,7 @@ exclude = ["email"]
         let table = &config.tables["users"];
         let log = table.log.as_ref().unwrap();
         assert_eq!(log.table, "userslog");
+        assert_eq!(log.id_field, "eventid");
         assert_eq!(log.operation_field, "op");
         assert_eq!(log.timestamp_field, "ts");
         assert_eq!(log.operations.insert, "ADD");
@@ -1439,6 +1460,24 @@ exclude = ["email"]
     fn test_log_requires_table() {
         let msg = format!("{:#}", load_with_log("").unwrap_err());
         assert!(msg.contains("missing field `table`"), "got: {msg}");
+    }
+
+    #[test]
+    fn test_log_requires_id_field() {
+        let msg = format!("{:#}", load_with_log("table = \"userslog\"\n").unwrap_err());
+        assert!(msg.contains("missing field `id-field`"), "got: {msg}");
+    }
+
+    #[test]
+    fn test_log_rejects_id_field_collision() {
+        let msg = load_log_error("operation-field = \"eventid\"\n");
+        assert!(msg.contains("are both 'eventid'"), "got: {msg}");
+
+        let msg = format!(
+            "{:#}",
+            load_with_log("table = \"userslog\"\nid-field = \"name\"\n").unwrap_err()
+        );
+        assert!(msg.contains("collides with a field"), "got: {msg}");
     }
 
     #[test]
@@ -1479,8 +1518,34 @@ exclude = ["email"]
 
     #[test]
     fn test_log_rejects_table_name_of_declared_table() {
-        let msg = format!("{:#}", load_with_log("table = \"users\"\n").unwrap_err());
+        let msg = format!(
+            "{:#}",
+            load_with_log("table = \"users\"\nid-field = \"eventid\"\n").unwrap_err()
+        );
         assert!(msg.contains("also declared as a table"), "got: {msg}");
+    }
+
+    #[test]
+    fn test_log_rejects_table_shared_by_two_tables() {
+        let dir = tempfile::tempdir().unwrap();
+        let toml_input = r#"
+[tables.users]
+fields = [{ name = "id", type = "NUMBER", primary-key = true }]
+
+[tables.users.log]
+table = "changes"
+id-field = "eventid"
+
+[tables.groups]
+fields = [{ name = "id", type = "NUMBER", primary-key = true }]
+
+[tables.groups.log]
+table = "changes"
+id-field = "eventid"
+"#;
+        fs::write(dir.path().join("config.toml"), toml_input).unwrap();
+        let msg = format!("{:#}", Config::load(dir.path()).unwrap_err());
+        assert!(msg.contains("used by another table"), "got: {msg}");
     }
 
     /// Load a config with an `alerts` event stream. `extra` is appended to the

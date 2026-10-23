@@ -1521,6 +1521,7 @@ mod tests {
         table_config.change_timestamp = Some("changed".to_string());
         table_config.log = Some(LogConfig {
             table: "userslog".to_string(),
+            id_field: "eventid".to_string(),
             operation_field: "operation".to_string(),
             timestamp_field: "timestamp".to_string(),
             operations: Default::default(),

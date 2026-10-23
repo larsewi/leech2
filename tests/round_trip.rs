@@ -113,7 +113,7 @@ fields = [
     s.push_str("[tables.users.csv]\n");
     s.push_str("source = \"users.csv\"\n");
     s.push_str(&format!("null = \"^{EMAIL_NULL_SENTINEL}$\"\n"));
-    s.push_str("\n[tables.users.log]\ntable = \"users_log\"\n");
+    s.push_str("\n[tables.users.log]\ntable = \"users_log\"\nid-field = \"eventid\"\n");
     s.push_str("\n[stats]\nenable = true\n");
     s
 }
