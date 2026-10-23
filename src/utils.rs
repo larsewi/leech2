@@ -88,6 +88,14 @@ pub fn format_timestamp(timestamp: &prost_types::Timestamp) -> String {
     }
 }
 
+/// Format a protobuf timestamp as an ISO 8601 UTC string, as written to SQL.
+pub fn format_iso_timestamp(timestamp: &prost_types::Timestamp) -> Result<String> {
+    let Some(datetime) = chrono::DateTime::from_timestamp(timestamp.seconds, 0) else {
+        bail!("timestamp {} is out of range", timestamp.seconds);
+    };
+    Ok(datetime.format("%Y-%m-%dT%H:%M:%SZ").to_string())
+}
+
 /// Validate a column / field name. Rejects the empty string and any control
 /// character (ASCII C0 / DEL plus the C1 range). A NUL would be treated as
 /// a string terminator by some database drivers and tooling; newlines / CR

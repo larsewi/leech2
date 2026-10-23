@@ -285,7 +285,7 @@ impl Default for Config {
 }
 
 /// One column in a table record.
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct FieldConfig {
     /// Column name. Matches a CSV header when `csv.header = true`; otherwise
@@ -407,6 +407,28 @@ impl LogConfig {
         }
         Ok(())
     }
+
+    /// The event stream the log is recorded in: the table's `fields` minus
+    /// `exclude`, then the operation and timestamp fields as TEXT.
+    pub fn event_config(&self, fields: &[FieldConfig]) -> EventConfig {
+        let mut event_fields = Vec::new();
+        for field in fields {
+            if !self.exclude.contains(&field.name) {
+                event_fields.push(field.clone());
+            }
+        }
+        for name in [&self.operation_field, &self.timestamp_field] {
+            event_fields.push(FieldConfig {
+                name: name.clone(),
+                kind: Kind::Text,
+                ..Default::default()
+            });
+        }
+        EventConfig {
+            fields: event_fields,
+            id_field: self.id_field.clone(),
+        }
+    }
 }
 
 /// Configure where the table data comes from and how its columns map to SQL.
@@ -500,17 +522,12 @@ impl TableConfig {
             .map(|field| field.name.clone())
             .collect()
     }
-
-    /// Whether patch creation tracks per-record change times for this table.
-    pub fn tracks_changes(&self) -> bool {
-        self.change_timestamp.is_some() || self.log.is_some()
-    }
 }
 
 /// An event stream. Each block stores the events supplied since the previous
 /// block, and the receiver only ever inserts them. Events are pulled from the
 /// FFI cell callback.
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EventConfig {
     /// Column definitions. Events have no primary key.
@@ -714,6 +731,22 @@ fn resolve_includes(
 }
 
 impl Config {
+    /// Look up an event stream by name: a declared `[events.X]` stream, or the
+    /// stream a table's change log is recorded in.
+    pub fn event_stream(&self, name: &str) -> Option<EventConfig> {
+        if let Some(event_config) = self.events.get(name) {
+            return Some(event_config.clone());
+        }
+        for table_config in self.tables.values() {
+            if let Some(log) = &table_config.log
+                && log.table == name
+            {
+                return Some(log.event_config(&table_config.fields));
+            }
+        }
+        None
+    }
+
     /// Directory holding state files, resolved from the optional `state-dir`
     /// config value: relative to `work_dir`, absolute as-is, or the `state`
     /// subdirectory of `work_dir` when unset.
@@ -1355,7 +1388,6 @@ fields = [
         let config = load_with_change_timestamp("changetimestamp").unwrap();
         let table = &config.tables["users"];
         assert_eq!(table.change_timestamp.as_deref(), Some("changetimestamp"));
-        assert!(table.tracks_changes());
     }
 
     #[test]
@@ -1367,7 +1399,7 @@ fields = [{ name = "id", type = "NUMBER", primary-key = true }]
 "#;
         fs::write(dir.path().join("config.toml"), toml_input).unwrap();
         let config = Config::load(dir.path()).unwrap();
-        assert!(!config.tables["users"].tracks_changes());
+        assert!(config.tables["users"].change_timestamp.is_none());
     }
 
     #[test]
@@ -1431,7 +1463,6 @@ exclude = ["email"]
         assert_eq!(log.operations.update, "CHANGE");
         assert_eq!(log.operations.delete, "REMOVE");
         assert_eq!(log.exclude, vec!["email".to_string()]);
-        assert!(table.tracks_changes());
     }
 
     #[test]

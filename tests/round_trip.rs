@@ -64,7 +64,8 @@ CREATE TABLE "users_log" (
     "email" TEXT,
     "active" BOOLEAN,
     "operation" TEXT,
-    "timestamp" TIMESTAMPTZ
+    "timestamp" TIMESTAMPTZ,
+    "eventid" TEXT
 );
 "#;
 
@@ -88,7 +89,8 @@ CREATE TABLE "users_log" (
     "email" TEXT,
     "active" BOOLEAN,
     "operation" TEXT,
-    "timestamp" TIMESTAMPTZ
+    "timestamp" TIMESTAMPTZ,
+    "eventid" TEXT
 );
 "#;
 
@@ -139,19 +141,37 @@ struct AgentSim {
     email_active: bool,
     /// CSV rows as of the last block, to detect which rows a block changed.
     block_rows: BTreeMap<i64, String>,
+    /// Model rows as of the last block. A delete's log row holds these.
+    block_model: BTreeMap<i64, Row>,
+    /// Whether no block has been created yet. The first block has no delta,
+    /// so it logs nothing.
+    first_block: bool,
+    /// Whether the schema changed since the last block. Such a block has no
+    /// delta, so it logs nothing.
+    layout_changed: bool,
     /// Creation time (seconds) of the last block that changed each row.
     last_changed: BTreeMap<i64, i64>,
-    /// Creation time (seconds) of the last block that deleted each row.
-    deleted_at: BTreeMap<i64, i64>,
     /// CSV rows as of the last ship, to detect which rows a patch changes.
     shipped_rows: BTreeMap<i64, String>,
-    /// Model rows as of the last ship. A delete's log row copies these.
-    shipped_model: BTreeMap<i64, Row>,
     /// The `changed` value the hub should hold for each row (`None` = NULL).
     hub_changed: BTreeMap<i64, Option<i64>>,
+    /// Log rows recorded by blocks since the last ship.
+    pending_log: Vec<LogEntry>,
     /// The rows the hub's change log should hold, formatted like the
     /// `users_log` query in [`HubSim::assert_log_matches`].
     log: Vec<String>,
+}
+
+/// One change a block recorded in the change log.
+struct LogEntry {
+    id: i64,
+    /// The row's values: after the change, or before it for a delete.
+    row: Row,
+    operation: &'static str,
+    /// Creation time (seconds) of the block.
+    timestamp: i64,
+    /// Whether the block's layout had the `email` field.
+    has_email: bool,
 }
 
 impl AgentSim {
@@ -164,11 +184,13 @@ impl AgentSim {
             model: BTreeMap::new(),
             email_active: true,
             block_rows: BTreeMap::new(),
+            block_model: BTreeMap::new(),
+            first_block: true,
+            layout_changed: false,
             last_changed: BTreeMap::new(),
-            deleted_at: BTreeMap::new(),
             shipped_rows: BTreeMap::new(),
-            shipped_model: BTreeMap::new(),
             hub_changed: BTreeMap::new(),
+            pending_log: Vec::new(),
             log: Vec::new(),
         };
         agent.write_config()?;
@@ -218,20 +240,50 @@ impl AgentSim {
 
     /// Record a new block created at `created` (seconds): every row that
     /// differs from the previous block takes it as its last change time.
+    ///
+    /// The block also logs one entry per inserted, updated or deleted row,
+    /// unless it is the first block or follows a schema change.
     fn record_block(&mut self, created: i64) {
         let rows = self.csv_rows();
+        let logs_changes = !self.first_block && !self.layout_changed;
         for (id, line) in &rows {
-            if self.block_rows.get(id) != Some(line) {
-                self.last_changed.insert(*id, created);
+            let operation = match self.block_rows.get(id) {
+                None => "INSERT",
+                Some(previous) if previous != line => "UPDATE",
+                Some(_) => continue,
+            };
+            self.last_changed.insert(*id, created);
+            if logs_changes {
+                self.pending_log
+                    .push(self.log_entry(*id, &self.model[id], operation, created));
             }
         }
         for id in self.block_rows.keys() {
-            if !rows.contains_key(id) {
-                self.deleted_at.insert(*id, created);
+            if logs_changes && !rows.contains_key(id) {
+                self.pending_log.push(self.log_entry(
+                    *id,
+                    &self.block_model[id],
+                    "DELETE",
+                    created,
+                ));
             }
         }
         self.last_changed.retain(|id, _| rows.contains_key(id));
         self.block_rows = rows;
+        self.block_model = self.model.clone();
+        self.first_block = false;
+        self.layout_changed = false;
+    }
+
+    /// Build one log entry for a block with the current schema.
+    fn log_entry(&self, id: i64, row: &Row, operation: &'static str, timestamp: i64) -> LogEntry {
+        LogEntry {
+            id,
+            row: row.clone(),
+            operation,
+            timestamp,
+            has_email: self.email_active,
+        }
     }
 
     /// Record a ship and update the `changed` values the hub should hold.
@@ -239,9 +291,10 @@ impl AgentSim {
     /// time of each row that differs from the previous ship; other rows keep
     /// their value, since merging cancels changes that net out to nothing.
     ///
-    /// A delta also extends the expected change log with one row per
-    /// inserted, updated or deleted record. A full state is not logged.
-    fn record_ship(&mut self, full_state: bool) {
+    /// The log entries of the shipped blocks are added to the expected change
+    /// log, unless the patch starts from genesis: such a patch carries no
+    /// events.
+    fn record_ship(&mut self, full_state: bool, from_genesis: bool) {
         let rows = self.csv_rows();
         let mut hub_changed = BTreeMap::new();
         for (id, line) in &rows {
@@ -255,28 +308,15 @@ impl AgentSim {
             hub_changed.insert(*id, changed);
         }
 
-        if !full_state {
-            for (id, line) in &rows {
-                let operation = match self.shipped_rows.get(id) {
-                    None => "INSERT",
-                    Some(shipped) if shipped != line => "UPDATE",
-                    Some(_) => continue,
-                };
-                let entry = self.log_entry(*id, &self.model[id], operation, self.last_changed[id]);
-                self.log.push(entry);
-            }
-            for id in self.shipped_rows.keys() {
-                if !rows.contains_key(id) {
-                    let entry =
-                        self.log_entry(*id, &self.shipped_model[id], "DELETE", self.deleted_at[id]);
-                    self.log.push(entry);
-                }
+        let pending_log = std::mem::take(&mut self.pending_log);
+        if !from_genesis {
+            for entry in &pending_log {
+                self.log.push(self.format_log_entry(entry));
             }
         }
 
         self.hub_changed = hub_changed;
         self.shipped_rows = rows;
-        self.shipped_model = self.model.clone();
     }
 
     /// The email the hub should hold for `row`: empty (NULL) when the column
@@ -289,16 +329,17 @@ impl AgentSim {
         }
     }
 
-    /// Format one expected change log row.
-    fn log_entry(&self, id: i64, row: &Row, operation: &str, timestamp: i64) -> String {
+    /// Format one expected change log row. The hub skips `email` when its
+    /// config, which is the current one, lacks the field.
+    fn format_log_entry(&self, entry: &LogEntry) -> String {
+        let email = if entry.has_email {
+            self.expected_email(&entry.row)
+        } else {
+            ""
+        };
         format!(
             "{},{},{},{},{},{}",
-            id,
-            row.name,
-            self.expected_email(row),
-            row.active,
-            operation,
-            timestamp
+            entry.id, entry.row.name, email, entry.row.active, entry.operation, entry.timestamp
         )
     }
 
@@ -362,6 +403,7 @@ impl AgentSim {
     /// that crosses this boundary.
     fn toggle_email_active(&mut self, rng: &mut StdRng) {
         self.email_active = !self.email_active;
+        self.layout_changed = true;
         if self.email_active {
             for row in self.model.values_mut() {
                 row.email = random_email(rng);
@@ -749,7 +791,10 @@ fn run_round_for_agent(
         head,
     );
     let patch = Patch::create(&config, &run.last_known).unwrap();
-    run.agent.record_ship(patch.states.contains_key("users"));
+    run.agent.record_ship(
+        patch.states.contains_key("users"),
+        run.last_known == GENESIS_HASH,
+    );
 
     // Exercise the full ship pipeline (encode) so the compression stage is
     // recorded, then finalize the run into the STATS file.
