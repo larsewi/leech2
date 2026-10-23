@@ -1,11 +1,10 @@
 use std::collections::{HashMap, HashSet};
 
 use anyhow::{Context, Result, anyhow, bail};
-use chrono::DateTime;
 use prost_types::Timestamp;
 
 use crate::cell::{Cell, Kind};
-use crate::config::{Config, EventConfig, FieldConfig, LogConfig};
+use crate::config::{Config, EventConfig, FieldConfig};
 use crate::proto::cell::Cell as ProtoCell;
 use crate::proto::patch::Delete as ProtoDelete;
 use crate::proto::patch::Delta as ProtoDelta;
@@ -15,7 +14,7 @@ use crate::proto::patch::Patch as ProtoPatch;
 use crate::proto::patch::Update as ProtoUpdate;
 use crate::proto::record::Record as ProtoRecord;
 use crate::proto::table::Table as ProtoTable;
-use crate::utils::validate_field_name;
+use crate::utils::{format_iso_timestamp, validate_field_name};
 
 /// Schema information for a single table, derived from the wire-declared
 /// field lists. Column ordering follows the wire (i.e. the agent's
@@ -34,8 +33,6 @@ struct TableSchema<'a> {
     /// Hub-config column that receives each record's change timestamp, if
     /// any.
     change_timestamp: Option<&'a str>,
-    /// Hub-config change log, if any.
-    log: Option<&'a LogConfig>,
 }
 
 impl<'a> TableSchema<'a> {
@@ -125,7 +122,6 @@ impl<'a> TableSchema<'a> {
             subsidiary_value_names: wire_subsidiary_value_names,
             field_configs,
             change_timestamp: table_config.change_timestamp.as_deref(),
-            log: table_config.log.as_ref(),
         })
     }
 
@@ -155,12 +151,8 @@ impl<'a> TableSchema<'a> {
         table_name: &str,
     ) -> Result<()> {
         for injected in injected_fields {
-            let collides_with_log = self.log.is_some_and(|log| {
-                log.operation_field == injected.name || log.timestamp_field == injected.name
-            });
             if self.field_configs.contains_key(injected.name.as_str())
                 || self.change_timestamp == Some(injected.name.as_str())
-                || collides_with_log
             {
                 bail!(
                     "injected field '{}' collides with a column of table '{}'",
@@ -261,9 +253,8 @@ fn change_timestamp_literal(timestamp: Option<&Timestamp>) -> Result<String> {
     let Some(timestamp) = timestamp else {
         return Ok("NULL".to_string());
     };
-    let datetime = DateTime::from_timestamp(timestamp.seconds, 0)
-        .with_context(|| format!("change timestamp {} is out of range", timestamp.seconds))?;
-    Ok(format!("'{}'", datetime.format("%Y-%m-%dT%H:%M:%SZ")))
+    let formatted = format_iso_timestamp(timestamp).context("change timestamp")?;
+    Ok(format!("'{}'", formatted))
 }
 
 /// Convert key + value proto-cell slices into a list of SQL literal strings.
@@ -308,18 +299,6 @@ fn emit_deletes(
     for delete in deletes {
         let where_clause = primary_key_where_clause(&delete.key, schema, injected_fields)
             .with_context(|| format!("key {:?}", delete.key))?;
-        // Log before deleting, while the row is still there to copy.
-        if let Some(log) = schema.log {
-            out.push_str(&format_log_select(
-                log,
-                &log.operations.delete,
-                delete.change_timestamp.as_ref(),
-                schema,
-                injected_fields,
-                quoted_table,
-                &where_clause,
-            )?);
-        }
         out.push_str(&format!(
             "DELETE FROM {}\nWHERE {};\n",
             quoted_table, where_clause
@@ -349,16 +328,6 @@ fn emit_inserts(
             "INSERT INTO {} ({})\nVALUES ({});\n",
             quoted_table, columns, values
         ));
-        if let Some(log) = schema.log {
-            out.push_str(&format_log_insert(
-                log,
-                &row,
-                change_timestamp,
-                schema,
-                injected_fields,
-                &injected_values,
-            )?);
-        }
     }
 
     Ok(())
@@ -420,85 +389,6 @@ fn insert_values(
         literals.push(change_timestamp_literal(change_timestamp)?);
     }
     Ok(literals.join(", "))
-}
-
-/// Quoted names of the columns a log row copies from the table: injected
-/// fields, then the fields not in `log.exclude`.
-fn log_copied_columns(
-    log: &LogConfig,
-    schema: &TableSchema,
-    injected_fields: &[InjectedField],
-) -> Vec<String> {
-    let mut columns: Vec<String> = injected_fields
-        .iter()
-        .map(InjectedField::quoted_column)
-        .collect();
-    for name in schema.field_names() {
-        if !log.exclude.contains(name) {
-            columns.push(quote_identifier(name));
-        }
-    }
-    columns
-}
-
-/// Build the quoted column list of a log INSERT: the copied columns, then the
-/// operation and timestamp columns.
-fn log_columns(log: &LogConfig, schema: &TableSchema, injected_fields: &[InjectedField]) -> String {
-    let mut columns = log_copied_columns(log, schema, injected_fields);
-    columns.push(quote_identifier(&log.operation_field));
-    columns.push(quote_identifier(&log.timestamp_field));
-    columns.join(", ")
-}
-
-/// Format a log INSERT for an inserted record, using the values from the
-/// patch. `row` holds the field literals from [`format_row`].
-fn format_log_insert(
-    log: &LogConfig,
-    row: &[String],
-    change_timestamp: Option<&Timestamp>,
-    schema: &TableSchema,
-    injected_fields: &[InjectedField],
-    injected_values: &[String],
-) -> Result<String> {
-    let mut literals = injected_values.to_vec();
-    for (name, literal) in schema.field_names().zip(row) {
-        if !log.exclude.contains(name) {
-            literals.push(literal.clone());
-        }
-    }
-    literals.push(quote_literal(&Cell::Text(log.operations.insert.clone())));
-    literals.push(change_timestamp_literal(change_timestamp)?);
-    Ok(format!(
-        "INSERT INTO {} ({})\nVALUES ({});\n",
-        quote_identifier(&log.table),
-        log_columns(log, schema, injected_fields),
-        literals.join(", ")
-    ))
-}
-
-/// Format a log INSERT that copies the record matching `where_clause` from the
-/// table. Updates and deletes are sparse on the wire, so the full row comes
-/// from the table.
-fn format_log_select(
-    log: &LogConfig,
-    operation: &str,
-    change_timestamp: Option<&Timestamp>,
-    schema: &TableSchema,
-    injected_fields: &[InjectedField],
-    quoted_table: &str,
-    where_clause: &str,
-) -> Result<String> {
-    let mut selected = log_copied_columns(log, schema, injected_fields);
-    selected.push(quote_literal(&Cell::Text(operation.to_string())));
-    selected.push(change_timestamp_literal(change_timestamp)?);
-    Ok(format!(
-        "INSERT INTO {} ({})\nSELECT {}\nFROM {}\nWHERE {};\n",
-        quote_identifier(&log.table),
-        log_columns(log, schema, injected_fields),
-        selected.join(", "),
-        quoted_table,
-        where_clause
-    ))
 }
 
 /// Format a single UPDATE statement for the record matching `where_clause`.
@@ -583,18 +473,6 @@ fn emit_updates(
         )
         .with_context(|| format!("key {:?}", update.key))?;
         out.push_str(&stmt);
-        // Log after updating, so the copied row holds the new values.
-        if let Some(log) = schema.log {
-            out.push_str(&format_log_select(
-                log,
-                &log.operations.update,
-                update.change_timestamp.as_ref(),
-                schema,
-                injected_fields,
-                quoted_table,
-                &where_clause,
-            )?);
-        }
     }
 
     Ok(())
@@ -694,23 +572,15 @@ fn state_table_to_sql(
 }
 
 /// Look up the hub field config of each wire field name of an event batch, in
-/// wire order. As for tables, the wire must name exactly the hub's fields: a
-/// missing name would leave a column at its default, and an unknown one could
-/// target a column leech2 was never meant to write.
+/// wire order. A stream's fields can change while unreported blocks still hold
+/// events in the old layout. So an unknown wire field resolves to `None` and
+/// is skipped with a warning, and a hub field missing from the wire is left at
+/// its column default.
 fn resolve_event_fields<'a>(
     wire_field_names: &[String],
     event_config: &'a EventConfig,
     name: &str,
-) -> Result<Vec<&'a FieldConfig>> {
-    if wire_field_names.len() != event_config.fields.len() {
-        bail!(
-            "wire field count {} disagrees with hub config field count {} for event stream '{}'",
-            wire_field_names.len(),
-            event_config.fields.len(),
-            name
-        );
-    }
-
+) -> Result<Vec<Option<&'a FieldConfig>>> {
     let mut seen = HashSet::new();
     let mut fields = Vec::with_capacity(wire_field_names.len());
     for wire_name in wire_field_names {
@@ -724,13 +594,14 @@ fn resolve_event_fields<'a>(
         let field = event_config
             .fields
             .iter()
-            .find(|field| &field.name == wire_name)
-            .with_context(|| {
-                format!(
-                    "wire field '{}' is not declared in hub config for event stream '{}'",
-                    wire_name, name
-                )
-            })?;
+            .find(|field| &field.name == wire_name);
+        if field.is_none() {
+            log::warn!(
+                "Skipping wire field '{}' of event stream '{}': not declared in hub config",
+                wire_name,
+                name
+            );
+        }
         fields.push(field);
     }
     Ok(fields)
@@ -749,8 +620,7 @@ fn events_to_sql(
     out: &mut String,
 ) -> Result<()> {
     let event_config = config
-        .events
-        .get(name)
+        .event_stream(name)
         .with_context(|| format!("event stream '{}' not found in config", name))?;
 
     for injected in injected_fields {
@@ -776,13 +646,13 @@ fn events_to_sql(
         let Some(events) = &batch.events else {
             continue;
         };
-        let fields = resolve_event_fields(&events.field_names, event_config, name)?;
+        let fields = resolve_event_fields(&events.field_names, &event_config, name)?;
 
         let mut columns: Vec<String> = injected_fields
             .iter()
             .map(InjectedField::quoted_column)
             .collect();
-        for field in &fields {
+        for field in fields.iter().flatten() {
             columns.push(quote_identifier(&field.name));
         }
         columns.push(id_column.clone());
@@ -802,6 +672,9 @@ fn events_to_sql(
 
             let mut literals = injected_values.clone();
             for (proto_value, field) in event.values.iter().zip(&fields) {
+                let Some(field) = field else {
+                    continue;
+                };
                 let value = Cell::try_from(proto_value)
                     .with_context(|| format!("field '{}'", field.name))?;
                 check_value_matches_field(&value, field)?;
@@ -880,7 +753,7 @@ pub fn patch_to_sql(
 mod tests {
     use super::*;
     use crate::cell::text_proto_cells;
-    use crate::config::FieldConfig;
+    use crate::config::{FieldConfig, LogConfig};
     use crate::proto::event::Event as ProtoEvent;
     use crate::proto::event::Events as ProtoEvents;
     use crate::proto::patch::EventBatch as ProtoEventBatch;
@@ -1544,13 +1417,12 @@ mod tests {
         assert!(msg.contains("out of range"), "got: {msg}");
     }
 
-    /// A `users` table with a change-timestamp column and a change log that
-    /// excludes `email`.
+    /// A `users` table with a change log in `userslog` that excludes `email`.
     fn log_config() -> Config {
         let mut table_config = dummy_table(&[("id", true), ("name", false), ("email", false)]);
-        table_config.change_timestamp = Some("changed".to_string());
         table_config.log = Some(LogConfig {
             table: "userslog".to_string(),
+            id_field: "eventid".to_string(),
             operation_field: "operation".to_string(),
             timestamp_field: "timestamp".to_string(),
             operations: Default::default(),
@@ -1562,25 +1434,41 @@ mod tests {
         }
     }
 
+    /// A patch whose `userslog` stream has one batch of log events from block
+    /// `abc123`.
+    fn log_patch(field_names: &[&str], events: Vec<Vec<&str>>) -> ProtoPatch {
+        let mut proto_events = Vec::new();
+        for values in events {
+            proto_events.push(ProtoEvent {
+                values: text_proto_cells(&values),
+            });
+        }
+        let batches = ProtoEventBatches {
+            batches: vec![ProtoEventBatch {
+                block: "abc123".to_string(),
+                events: Some(ProtoEvents {
+                    field_names: field_names.iter().map(|name| name.to_string()).collect(),
+                    events: proto_events,
+                }),
+            }],
+        };
+        ProtoPatch {
+            events: HashMap::from([("userslog".to_string(), batches)]),
+            ..Default::default()
+        }
+    }
+
+    const LOG_FIELDS: &[&str] = &["id", "name", "operation", "timestamp"];
+
     #[test]
     fn test_patch_to_sql_writes_change_log() {
-        let mut delta = dummy_delta(&["id"], &["name", "email"]);
-        delta.deletes.push(ProtoDelete {
-            key: text_proto_cells(&["1"]),
-            change_timestamp: Some(CHANGED),
-        });
-        delta.inserts.push(ProtoInsert {
-            key: text_proto_cells(&["2"]),
-            value: text_proto_cells(&["Bob", "bob@example.com"]),
-            change_timestamp: Some(CHANGED),
-        });
-        delta.updates.push(ProtoUpdate {
-            key: text_proto_cells(&["3"]),
-            changed_indices: vec![0],
-            new_value: text_proto_cells(&["Caroline"]),
-            change_timestamp: Some(CHANGED),
-        });
-        let patch = dummy_patch(HashMap::from([("users".to_string(), delta)]));
+        let patch = log_patch(
+            LOG_FIELDS,
+            vec![
+                vec!["1", "Alice", "DELETE", "2026-10-09T08:30:00Z"],
+                vec!["2", "Bob", "INSERT", "2026-10-09T08:30:00Z"],
+            ],
+        );
         let injected = [InjectedField::new("host", Cell::from("h1")).unwrap()];
 
         let sql = patch_to_sql(&log_config(), &patch, &injected)
@@ -1588,25 +1476,14 @@ mod tests {
             .unwrap();
 
         let log_columns =
-            r#"INSERT INTO "userslog" ("host", "id", "name", "operation", "timestamp")"#;
+            r#"INSERT INTO "userslog" ("host", "id", "name", "operation", "timestamp", "eventid")"#;
         let expected = [
             log_columns,
-            r#"SELECT "host", "id", "name", 'DELETE', '2026-10-09T08:30:00Z'"#,
-            r#"FROM "users""#,
-            r#"WHERE "id" = '1' AND "host" = 'h1';"#,
-            r#"DELETE FROM "users""#,
-            r#"WHERE "id" = '1' AND "host" = 'h1';"#,
-            r#"INSERT INTO "users" ("host", "id", "name", "email", "changed")"#,
-            r#"VALUES ('h1', '2', 'Bob', 'bob@example.com', '2026-10-09T08:30:00Z');"#,
+            r#"SELECT 'h1', '1', 'Alice', 'DELETE', '2026-10-09T08:30:00Z', 'abc123:0'"#,
+            r#"WHERE NOT EXISTS (SELECT 1 FROM "userslog" WHERE "eventid" = 'abc123:0' AND "host" = 'h1');"#,
             log_columns,
-            r#"VALUES ('h1', '2', 'Bob', 'INSERT', '2026-10-09T08:30:00Z');"#,
-            r#"UPDATE "users""#,
-            r#"SET "name" = 'Caroline', "changed" = '2026-10-09T08:30:00Z'"#,
-            r#"WHERE "id" = '3' AND "host" = 'h1';"#,
-            log_columns,
-            r#"SELECT "host", "id", "name", 'UPDATE', '2026-10-09T08:30:00Z'"#,
-            r#"FROM "users""#,
-            r#"WHERE "id" = '3' AND "host" = 'h1';"#,
+            r#"SELECT 'h1', '2', 'Bob', 'INSERT', '2026-10-09T08:30:00Z', 'abc123:1'"#,
+            r#"WHERE NOT EXISTS (SELECT 1 FROM "userslog" WHERE "eventid" = 'abc123:1' AND "host" = 'h1');"#,
         ]
         .join("\n")
             + "\n";
@@ -1614,32 +1491,8 @@ mod tests {
     }
 
     #[test]
-    fn test_patch_to_sql_full_state_writes_no_change_log() {
-        let table = ProtoTable {
-            primary_key_names: vec!["id".to_string()],
-            subsidiary_value_names: vec!["name".to_string(), "email".to_string()],
-            records: vec![ProtoRecord {
-                key: text_proto_cells(&["1"]),
-                value: text_proto_cells(&["Alice", "alice@example.com"]),
-            }],
-        };
-        let mut patch = dummy_patch(HashMap::new());
-        patch.states.insert("users".to_string(), table);
-
-        let sql = patch_to_sql(&log_config(), &patch, &[]).unwrap().unwrap();
-
-        assert!(!sql.contains("userslog"), "got:\n{sql}");
-    }
-
-    /// Entries lack a change timestamp when the agent does not track changes
-    /// for the table while the hub is configured to write a change log.
-    #[test]
-    fn test_patch_to_sql_change_log_writes_null_without_change_timestamp() {
+    fn test_patch_to_sql_delta_writes_no_change_log() {
         let mut delta = dummy_delta(&["id"], &["name", "email"]);
-        delta.deletes.push(ProtoDelete {
-            key: text_proto_cells(&["1"]),
-            change_timestamp: None,
-        });
         delta.inserts.push(ProtoInsert {
             key: text_proto_cells(&["2"]),
             value: text_proto_cells(&["Bob", "bob@example.com"]),
@@ -1649,30 +1502,40 @@ mod tests {
 
         let sql = patch_to_sql(&log_config(), &patch, &[]).unwrap().unwrap();
 
-        assert!(
-            sql.contains(r#"SELECT "id", "name", 'DELETE', NULL"#),
-            "got:\n{sql}"
+        assert!(!sql.contains("userslog"), "got:\n{sql}");
+    }
+
+    #[test]
+    fn test_patch_to_sql_skips_change_log_field_excluded_by_hub() {
+        let patch = log_patch(
+            &["id", "name", "email", "operation", "timestamp"],
+            vec![vec!["2", "Bob", "b@x", "INSERT", "2026-10-09T08:30:00Z"]],
         );
-        assert!(
-            sql.contains(r#"VALUES ('2', 'Bob', 'INSERT', NULL);"#),
-            "got:\n{sql}"
-        );
+
+        let sql = patch_to_sql(&log_config(), &patch, &[]).unwrap().unwrap();
+
+        let expected = [
+            r#"INSERT INTO "userslog" ("id", "name", "operation", "timestamp", "eventid")"#,
+            r#"SELECT '2', 'Bob', 'INSERT', '2026-10-09T08:30:00Z', 'abc123:0'"#,
+            r#"WHERE NOT EXISTS (SELECT 1 FROM "userslog" WHERE "eventid" = 'abc123:0');"#,
+        ]
+        .join("\n")
+            + "\n";
+        assert_eq!(sql, expected);
     }
 
     #[test]
     fn test_patch_to_sql_rejects_injected_field_colliding_with_log_column() {
-        let mut delta = dummy_delta(&["id"], &["name", "email"]);
-        delta.inserts.push(ProtoInsert {
-            key: text_proto_cells(&["1"]),
-            value: text_proto_cells(&["Alice", "alice@example.com"]),
-            ..Default::default()
-        });
-        let patch = dummy_patch(HashMap::from([("users".to_string(), delta)]));
-        let injected = [InjectedField::new("operation", Cell::from("agent-1")).unwrap()];
-
-        let err = patch_to_sql(&log_config(), &patch, &injected).unwrap_err();
-        let msg = format!("{:#}", err);
-        assert!(msg.contains("collides with a column"), "got: {msg}");
+        let patch = log_patch(
+            LOG_FIELDS,
+            vec![vec!["2", "Bob", "INSERT", "2026-10-09T08:30:00Z"]],
+        );
+        for name in ["operation", "eventid"] {
+            let injected = [InjectedField::new(name, Cell::from("agent-1")).unwrap()];
+            let err = patch_to_sql(&log_config(), &patch, &injected).unwrap_err();
+            let msg = format!("{:#}", err);
+            assert!(msg.contains("collides with a column"), "got: {msg}");
+        }
     }
 
     /// An `alerts` event stream with a TEXT `message` and a NUMBER
@@ -1752,8 +1615,10 @@ mod tests {
         assert_eq!(sql, expected);
     }
 
+    /// An unknown wire field is skipped, and a hub field missing from the wire
+    /// is left at its column default.
     #[test]
-    fn test_patch_to_sql_rejects_unknown_event_field() {
+    fn test_patch_to_sql_skips_unknown_event_field() {
         let patch = events_patch(
             &["message", "level"],
             vec![vec![
@@ -1761,12 +1626,19 @@ mod tests {
                 Cell::number(2.0).unwrap(),
             ]],
         );
-        let err = patch_to_sql(&events_config(), &patch, &[]).unwrap_err();
-        let msg = format!("{:#}", err);
-        assert!(
-            msg.contains("wire field 'level' is not declared"),
-            "got: {msg}"
-        );
+
+        let sql = patch_to_sql(&events_config(), &patch, &[])
+            .unwrap()
+            .unwrap();
+
+        let expected = [
+            r#"INSERT INTO "alerts" ("message", "eventid")"#,
+            r#"SELECT 'disk full', 'abc123:0'"#,
+            r#"WHERE NOT EXISTS (SELECT 1 FROM "alerts" WHERE "eventid" = 'abc123:0');"#,
+        ]
+        .join("\n")
+            + "\n";
+        assert_eq!(sql, expected);
     }
 
     #[test]

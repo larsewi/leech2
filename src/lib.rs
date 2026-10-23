@@ -8,6 +8,7 @@ use crate::ffi::{
 pub mod block;
 mod callbacks;
 pub mod cell;
+mod changelog;
 pub mod config;
 pub mod delete;
 pub mod delta;

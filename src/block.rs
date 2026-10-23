@@ -5,8 +5,10 @@ use std::time::SystemTime;
 
 use anyhow::{Context, Result, bail};
 use prost::Message;
+use prost_types::Timestamp;
 
 use crate::callbacks::Callbacks;
+use crate::changelog;
 use crate::config::Config;
 use crate::delta;
 use crate::event;
@@ -108,12 +110,12 @@ impl Block {
             state::State::compute(config, callbacks).context("failed to compute current state")?;
         // Events are stored in every block, including the first one: unlike
         // table deltas, they are new data rather than a diff against STATE.
-        let events = event::load(config, callbacks).context("failed to load events")?;
+        let mut events = event::load(config, callbacks).context("failed to load events")?;
 
         let parent_hash =
             head::load(&state_dir, file_mode).context("failed to load head of chain")?;
 
-        let created = Some(SystemTime::now().into());
+        let created: Timestamp = SystemTime::now().into();
 
         // When starting a fresh chain (HEAD is genesis), store an empty payload.
         // The first block's deltas are never used during patch creation: a genesis
@@ -126,15 +128,26 @@ impl Block {
             let previous_state = state::State::load(&state_dir, file_mode)
                 .context("failed to load previous state")?;
 
-            delta::Delta::compute(previous_state, &current_state)
-                .into_iter()
-                .map(|(name, delta)| (name, TableChange::from(delta)))
-                .collect()
+            let mut payload = HashMap::new();
+            for (name, delta) in delta::Delta::compute(previous_state, &current_state) {
+                // The changes of a table with a change log are also recorded
+                // as events in its log table.
+                if let Some(delta) = &delta
+                    && let Some(table_config) = config.tables.get(&name)
+                    && let Some(log) = &table_config.log
+                    && let Some(log_events) = changelog::events(log, delta, &created)
+                        .with_context(|| format!("failed to log changes of table '{}'", name))?
+                {
+                    events.insert(log.table.clone(), log_events);
+                }
+                payload.insert(name, TableChange::from(delta));
+            }
+            payload
         };
 
         let block = Block {
             parent: parent_hash,
-            created,
+            created: Some(created),
             payload,
             events,
         };

@@ -110,8 +110,9 @@ struct DeltaCounts {
 /// `parent.merge(child)`. A table's first block is merged into an empty delta,
 /// so every block passes through the merge rules.
 ///
-/// For tables that track changes, the block's creation time is passed to the
-/// merge and becomes the change timestamp of the entries it touches.
+/// For tables with a change-timestamp column, the block's creation time is
+/// passed to the merge and becomes the change timestamp of the entries it
+/// touches.
 ///
 /// Tables that are new or whose layout changed (delta is `None`), or whose
 /// merge failed, are added to `skipped_tables` and fall back to full state.
@@ -144,9 +145,9 @@ fn merge_block_deltas(
         counts.updates += proto_delta.updates.len();
         counts.deletes += proto_delta.deletes.len();
 
-        // A table removed from config does not track changes.
+        // A table removed from config has no change-timestamp column.
         let created = match table_configs.get(&table_name) {
-            Some(table_config) if table_config.tracks_changes() => block.created,
+            Some(table_config) if table_config.change_timestamp.is_some() => block.created,
             _ => None,
         };
 

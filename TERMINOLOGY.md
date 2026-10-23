@@ -100,6 +100,13 @@ One row of an event stream. Use **event** for event streams and **record** for
 tables: an event has no key, so it is identified by its block and position
 instead.
 
+### Change log
+
+An event stream recording the changes to a table, declared under
+`[tables.X.log]`. Each insert, update and delete in a block becomes one event.
+Use **change log** for the stream and **log table** for the table it is
+written to on the hub.
+
 ## Changes (between states)
 
 ### Insert
