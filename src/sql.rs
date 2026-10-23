@@ -86,10 +86,20 @@ impl<'a> TableSchema<'a> {
             );
         }
 
+        // With the count check above, distinct known names cover every hub
+        // field.
+        let mut seen = HashSet::new();
         for name in wire_primary_key_names
             .iter()
             .chain(wire_subsidiary_value_names)
         {
+            if !seen.insert(name.as_str()) {
+                bail!(
+                    "wire field '{}' appears twice in table '{}'",
+                    name,
+                    table_name
+                );
+            }
             if !field_configs.contains_key(name.as_str()) {
                 bail!(
                     "wire field '{}' is not declared in hub config for table '{}'",
@@ -1158,6 +1168,26 @@ mod tests {
         let result = TableSchema::resolve(&primary_keys, &subsidiary_values, &hub_config, "users");
         let msg = format!("{:#}", result.err().unwrap());
         assert!(msg.contains("not declared in hub config"), "got: {msg}");
+    }
+
+    #[test]
+    fn test_resolve_rejects_duplicate_wire_field() {
+        // A repeated name keeps the field count right while leaving a hub
+        // column unwritten.
+        let hub_config_table = dummy_table(&[("id", true), ("name", false), ("email", false)]);
+        let hub_config = Config {
+            tables: HashMap::from([("users".to_string(), hub_config_table)]),
+            ..Default::default()
+        };
+
+        let primary_keys = vec!["id".to_string()];
+        let subsidiary_values = vec!["name".to_string(), "name".to_string()];
+        let result = TableSchema::resolve(&primary_keys, &subsidiary_values, &hub_config, "users");
+        let msg = format!("{:#}", result.err().unwrap());
+        assert!(
+            msg.contains("wire field 'name' appears twice"),
+            "got: {msg}"
+        );
     }
 
     #[test]
