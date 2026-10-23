@@ -352,6 +352,7 @@ src/
   state.rs      Snapshot of all tables, protobuf persistence
   event.rs      Event stream loading (callback path) and collecting events
                 for patches
+  changelog.rs  Recording a table's changes as change log events
   cell.rs       Domain Cell type + conversions to/from proto::cell::Cell
   record.rs     Record type (Vec<Cell> key + value)
   insert.rs     Delta insert map + block/patch insert conversions

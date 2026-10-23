@@ -197,37 +197,6 @@ true  = "^Y$"
 false = "^N$"
 ```
 
-### Change logs
-
-Add a `[tables.X.log]` section to keep a history of changes to a table. For each
-insert, update and delete, leech2 also adds a row to the log table. Tables
-without the section are not affected. Only `table` is required.
-
-```toml
-[tables.users.log]
-table           = "users_log"  # name of the log table
-operation-field = "operation"  # column that receives the operation (default)
-timestamp-field = "timestamp"  # column that receives the change timestamp (default)
-exclude         = ["email"]    # fields the log table does not have (default: [])
-operations      = { insert = "INSERT", update = "UPDATE", delete = "DELETE" } # (default)
-```
-
-- The log table has the same column names as the table, minus `exclude`, plus
-  any injected fields, `operation-field` and `timestamp-field`. The table's
-  `change-timestamp` column is not copied.
-- For an insert, the log row takes its values from the patch. For an update or
-  delete, the patch only carries the changed columns or the key. So the log row
-  is copied from the table, after the UPDATE or before the DELETE.
-- `timestamp-field` gets the creation time of the last block that changed the
-  record. It gets `NULL` when the agent does not send it (e.g. agents older than
-  leech2 5.7.0).
-- Full states are not logged. Consider setting
-  `use-full-state-if-smaller = false` on tables with a log, so changes are not
-  lost to a full state.
-- `exclude` must name existing non-primary-key fields. `operation-field` and
-  `timestamp-field` must not be fields or injected fields.
-- leech2 only appends to the log table. Retention is up to you.
-
 ### Events
 
 Event streams are for data that is only ever added, such as audit logs. The
@@ -261,9 +230,45 @@ fields = [
 - Events stay on the source until truncation removes their block. With the
   default `[truncate]` settings, that happens once they are reported.
   `max-blocks` and `max-age` can remove events that were never reported.
+- A stream's fields can change while unreported blocks still hold events with
+  the old fields. The hub skips fields it does not know, and leaves fields an
+  event lacks at their column default. So add a new field on the hub first,
+  and give its column a default, then add it on the agents.
 - Retention on the receiver is up to you.
 - Fields must not be primary keys. `id-field` must not be a field or an
   injected field. Event streams cannot be CSV-backed.
+
+### Change logs
+
+A change log is an event stream that records the changes to a table. Add a
+`[tables.X.log]` section, and every insert, update and delete in a block
+becomes an event in the stream named by `table`. The events are shipped and
+written like those of any other event stream (see [Events](#events)). Tables
+without the section are not affected. `table` and `id-field` are required.
+
+```toml
+[tables.users.log]
+table           = "users_log"  # name of the log table (the event stream)
+id-field        = "eventid"    # column that receives each event's ID
+operation-field = "operation"  # column that receives the operation (default)
+timestamp-field = "timestamp"  # column that receives the block's creation time (default)
+exclude         = ["email"]    # fields the log table does not have (default: [])
+operations      = { insert = "INSERT", update = "UPDATE", delete = "DELETE" } # (default)
+```
+
+- An event's fields are the table's fields minus `exclude`, then
+  `operation-field` and `timestamp-field`.
+- Inserts and updates record the values after the change. Deletes record them
+  before the change. An update that only changes excluded fields is still
+  recorded.
+- Changes are recorded even when the hub gets the table as a full state. A
+  block that stores a full state for the table (a new table, or a layout
+  change) records nothing. Neither does the first block.
+- Agents apply `exclude` and `operations`, so give agents and the hub the same
+  `[tables.X.log]` section. Agents older than leech2 7.0.0 record nothing.
+- `exclude` must name existing non-primary-key fields. `id-field`,
+  `operation-field` and `timestamp-field` must not be fields or injected
+  fields. Two tables cannot share a log table.
 
 ### Injected fields
 
