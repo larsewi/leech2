@@ -53,19 +53,32 @@ struct RunStats {
 }
 
 impl RunStats {
-    /// Total bytes saved end to end (delta merging then compression). The
-    /// stages telescope: delta's output is compression's input, so the sum is
-    /// the full-state size minus the final wire size.
+    /// Size of the events in the patch. Delta merging measures the patch
+    /// without events, while compression measures it with them, so the
+    /// difference is the events.
+    fn events_size(&self) -> i64 {
+        self.compression.bytes_in as i64 - self.delta_merging.bytes_out as i64
+    }
+
+    /// Size of the patch with neither delta merging nor compression: the full
+    /// state plus the events.
+    fn baseline_size(&self) -> i64 {
+        self.delta_merging.bytes_in as i64 + self.events_size()
+    }
+
+    /// Total bytes saved end to end (delta merging then compression). Equals
+    /// the baseline size minus the final wire size.
     fn total_saved(&self) -> i64 {
         self.delta_merging.saved() + self.compression.saved()
     }
 
-    /// Percentage of the full-state size saved end to end.
+    /// Percentage of the baseline size saved end to end.
     fn total_percent_saved(&self) -> f64 {
-        if self.delta_merging.bytes_in == 0 {
+        let baseline = self.baseline_size();
+        if baseline <= 0 {
             0.0
         } else {
-            self.total_saved() as f64 / self.delta_merging.bytes_in as f64 * 100.0
+            self.total_saved() as f64 / baseline as f64 * 100.0
         }
     }
 }
@@ -218,7 +231,7 @@ pub struct Summary {
     pub compression_percent: Aggregate,
     /// Total bytes saved end to end (delta merging then compression).
     pub total_bytes: Aggregate,
-    /// Percentage of the full-state size saved end to end.
+    /// Percentage of the full state plus events saved end to end.
     pub total_percent: Aggregate,
 }
 
@@ -438,5 +451,31 @@ mod tests {
         append(&config, sample_run()).unwrap();
 
         assert!(!config.state_dir().join(STATS_FILE).exists());
+    }
+
+    #[test]
+    fn test_total_saved_with_events() {
+        // Delta merging measures the patch without events, because its
+        // full-state baseline has none. Compression measures the patch with
+        // events. Here the events add 2000 bytes, so compression's input
+        // (3000) is larger than delta merging's output (1000). The total
+        // saving (5000) must be compared against the full state plus the
+        // events (6000), not the full state alone (4000), which gives 125%.
+        let run = RunStats {
+            timestamp: "2026-07-14T10:32:05.123Z".to_string(),
+            delta_merging: StageStats {
+                duration_ms: 0.5,
+                bytes_in: 4000,
+                bytes_out: 1000,
+            },
+            compression: StageStats {
+                duration_ms: 0.1,
+                bytes_in: 3000,
+                bytes_out: 1000,
+            },
+        };
+
+        assert_eq!(run.total_saved(), 5000);
+        assert_eq!(run.total_percent_saved(), 5000.0 / 6000.0 * 100.0);
     }
 }
