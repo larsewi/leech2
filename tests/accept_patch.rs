@@ -289,3 +289,44 @@ source = "products.csv"
 
     common::assert_wire_roundtrip(&config, &patch);
 }
+
+#[test]
+fn test_updates_cancelling_out_omit_table() {
+    let tmp = tempfile::tempdir().unwrap();
+    let work_dir = tmp.path();
+
+    common::write_config(
+        work_dir,
+        "config.toml",
+        r#"
+[tables.products]
+fields = [
+    { name = "id", type = "NUMBER", primary-key = true },
+    { name = "name", type = "TEXT" },
+    { name = "price", type = "NUMBER" },
+]
+
+[tables.products.csv]
+source = "products.csv"
+"#,
+    );
+
+    // Block 1: initial data
+    common::write_csv(work_dir, "products.csv", "3,Widget,249.95\n");
+    let config = Config::load(work_dir).unwrap();
+    let hash1 = Block::create(&config, None).unwrap();
+
+    // Block 2: bump price 249.95 -> 249.96
+    common::write_csv(work_dir, "products.csv", "3,Widget,249.96\n");
+    Block::create(&config, None).unwrap();
+
+    // Block 3: revert price 249.96 -> 249.95
+    common::write_csv(work_dir, "products.csv", "3,Widget,249.95\n");
+    Block::create(&config, None).unwrap();
+
+    // The two updates cancel out, so the table is left out of the patch.
+    let patch = Patch::create(&config, &hash1).unwrap();
+    assert_eq!(patch.num_blocks, 2);
+    assert!(patch.deltas.is_empty());
+    assert!(patch.states.is_empty());
+}

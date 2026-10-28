@@ -282,6 +282,15 @@ fn try_consolidate(
             merged_delta.deletes.len(),
         );
 
+        // The merge rules can cancel out every operation.
+        if merged_delta.inserts.is_empty()
+            && merged_delta.updates.is_empty()
+            && merged_delta.deletes.is_empty()
+        {
+            log::info!("Table '{}': no changes after merging", table_name);
+            continue;
+        }
+
         // A table removed from config has no setting; keep the default.
         let use_full_state_if_smaller = match table_configs.get(&table_name) {
             Some(table_config) => table_config.use_full_state_if_smaller,
