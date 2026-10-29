@@ -22,7 +22,7 @@ On Linux and Windows, grab a package from the
 Linux, an `.msi` for Windows. Nothing below is needed to install a package; the
 build dependencies only matter if you build from source.
 
-### Upgrading
+## Upgrading
 
 When upgrading, upgrade the [hub](TERMINOLOGY.md#hub) before its
 [agents](TERMINOLOGY.md#agent). A hub reads patches from older agents, but an
