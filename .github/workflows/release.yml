@@ -180,7 +180,7 @@ jobs:
           cp "target/${{ matrix.target }}/release/man/"*.1 "dist/${DIR}/man/"
           cp "target/${{ matrix.target }}/release/man/"*.3 "dist/${DIR}/man/"
           cp README.md "dist/${DIR}/"
-          cp CONFIGURATION.md "dist/${DIR}/"
+          cp CONFIGURE.md "dist/${DIR}/"
           cp LICENSE "dist/${DIR}/"
           tar czf "dist/${DIR}.tar.gz" -C dist "${DIR}"
 
@@ -197,7 +197,7 @@ jobs:
           cp "target/${{ matrix.target }}/release/${{ steps.ext.outputs.lib }}.lib" "dist/${DIR}/"
           cp include/leech2.h "dist/${DIR}/"
           cp README.md "dist/${DIR}/"
-          cp CONFIGURATION.md "dist/${DIR}/"
+          cp CONFIGURE.md "dist/${DIR}/"
           cp LICENSE "dist/${DIR}/"
           cd dist && 7z a "${DIR}.zip" "${DIR}"
 

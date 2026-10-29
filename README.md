@@ -75,7 +75,7 @@ have ...` done without changing anything on the disk.
 
 ## Configuration
 
-See [CONFIGURATION.md](CONFIGURATION.md) for the configuration reference.
+See [CONFIGURE.md](CONFIGURE.md) for the configuration reference.
 
 ```toml
 [tables.products]
