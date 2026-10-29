@@ -12,7 +12,7 @@
  * inputs; its state (the HEAD, STATE, REPORTED, and STATS files, plus the
  * content-addressable block files) lives in a separate state directory, by
  * default a `state` subdirectory of the work directory. The configuration
- * format is described in CONFIGURATION.md in the project documentation.
+ * format is described in CONFIGURE.md in the project documentation.
  *
  * Concurrency: the library serializes access to its own state files with
  * advisory locks, so multiple processes may safely share one working directory.

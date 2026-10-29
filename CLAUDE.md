@@ -19,7 +19,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Always run `clang-format -i` and `cppcheck --error-exitcode=1 --enable=warning,style,performance,portability` after changing C code.
 - Always run `shfmt -w -i 4` and `shellcheck` after changing shell scripts.
 - Always run `prettier --write "**/*.md"` after changing Markdown files.
-- Update documentation ([README.md](README.md), [CONFIGURATION.md](CONFIGURATION.md), [CONTRIBUTING.md](CONTRIBUTING.md), [DELTA_MERGING_RULES.md](DELTA_MERGING_RULES.md), [RELEASING.md](RELEASING.md)) when changing or adding features.
+- Update documentation ([README.md](README.md), [CONFIGURE.md](CONFIGURE.md), [CONTRIBUTING.md](CONTRIBUTING.md), [DELTA_MERGING_RULES.md](DELTA_MERGING_RULES.md), [RELEASING.md](RELEASING.md)) when changing or adding features.
 - Follow the vocabulary in [TERMINOLOGY.md](TERMINOLOGY.md) when naming types, fields, and concepts in code, comments, and docs.
 - The `lch.1` and `libleech2` man pages are generated (see [CONTRIBUTING.md](CONTRIBUTING.md)): `lch.1` from the clap definitions in `src/cli.rs`, the `libleech2` pages from the doc comments in `include/leech2.h` via doxygen. There are no man-page source files to edit; keep the clap help text and header doc comments accurate and the pages follow. The `xtask` crate holds the generator.
 - Avoid `unwrap()`, `expect()`, and other panicking functions in production code. Use proper error handling (`?`, `ok_or_else`, pattern matching, etc.) instead. Panicking in tests is acceptable.
