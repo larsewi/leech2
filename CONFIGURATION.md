@@ -51,6 +51,12 @@ config field is matched to a CSV column by name. Hence, columns may appear in
 any order. Every config field name must be present in the header; extra CSV
 columns are ignored.
 
+leech2 takes a shared advisory lock on each CSV source while reading it. To keep
+leech2 from reading a half-written file, the producer should either replace the
+file atomically (write a temporary file in the same directory, then rename it
+into place), or hold an exclusive lock on it while rewriting it in place. leech2
+waits for that lock before reading.
+
 The `[csv]` block can declare per-table regex sentinels. `null` maps matching
 cell values to SQL `NULL`. `true` / `false` override the strings recognized as
 boolean true/false (only meaningful for BOOLEAN fields). Patterns are unanchored
