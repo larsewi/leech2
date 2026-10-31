@@ -98,11 +98,8 @@ impl Block {
     /// through `callbacks`. Pass `None` when every table in `config` is
     /// CSV-backed.
     ///
-    /// The write window -- store the new block file, then store STATE, then
-    /// advance HEAD -- is held under an exclusive lock on `.chain.lock` so a
-    /// concurrent truncation cannot observe the new block file before HEAD
-    /// points at it (which would orphan-mark and delete it). Truncation runs
-    /// after HEAD advances, once the lock has been released.
+    /// See [`commit`] for how the block is stored. Truncation runs after HEAD
+    /// advances, once the chain lock has been released.
     pub fn create(config: &Config, callbacks: Option<&Callbacks>) -> Result<String> {
         let state_dir = config.ensure_state_dir()?;
         let file_mode = config.file_mode;
@@ -165,19 +162,7 @@ impl Block {
             println!("Would have created block '{:.7}...'\n{}", hash, block);
         }
 
-        let chain_lock = storage::acquire_lock(&state_dir, "chain", true, file_mode)
-            .context("failed to acquire chain lock")?;
-
-        storage::store(&state_dir, &hash, &encoded, file_mode, config.dry_run)
-            .with_context(|| format!("failed to store block {:.7}", hash))?;
-
-        current_state
-            .store(&state_dir, &hash, file_mode, config.dry_run)
-            .context("failed to store current state")?;
-        head::store(&state_dir, &hash, file_mode, config.dry_run)
-            .context("failed to update head of state")?;
-
-        drop(chain_lock);
+        commit(config, &block.parent, &hash, &encoded, &current_state)?;
 
         // In dry-run this reports what truncation would remove; otherwise it
         // does the real cleanup.
@@ -187,6 +172,47 @@ impl Block {
 
         Ok(hash)
     }
+}
+
+/// Store the block file, STATE and HEAD under an exclusive lock on
+/// `.chain.lock`, so a concurrent truncation cannot see the block file before
+/// HEAD points at it (which would orphan-mark and delete it).
+///
+/// If HEAD is no longer `parent_hash`, another block was created since the
+/// chain was read. Only one of two concurrent block creations may succeed, so
+/// this one is discarded before anything is written.
+fn commit(
+    config: &Config,
+    parent_hash: &str,
+    hash: &str,
+    encoded: &[u8],
+    current_state: &state::State,
+) -> Result<()> {
+    let state_dir = config.state_dir();
+    let file_mode = config.file_mode;
+    let chain_lock = storage::acquire_lock(&state_dir, "chain", true, file_mode)
+        .context("failed to acquire chain lock")?;
+
+    let head_hash = head::load(&state_dir, file_mode).context("failed to load head of chain")?;
+    if head_hash != parent_hash {
+        bail!(
+            "HEAD moved from '{:.7}...' to '{:.7}...' during block creation, discarding block '{:.7}...'",
+            parent_hash,
+            head_hash,
+            hash
+        );
+    }
+
+    storage::store(&state_dir, hash, encoded, file_mode, config.dry_run)
+        .with_context(|| format!("failed to store block {:.7}", hash))?;
+    current_state
+        .store(&state_dir, hash, file_mode, config.dry_run)
+        .context("failed to store current state")?;
+    head::store(&state_dir, hash, file_mode, config.dry_run)
+        .context("failed to update head of state")?;
+
+    drop(chain_lock);
+    Ok(())
 }
 
 #[cfg(test)]
@@ -256,5 +282,51 @@ mod tests {
   Events (1 streams):
     'alerts' [message]";
         assert_eq!(block.to_string(), expected);
+    }
+
+    /// A block built on a parent that is no longer HEAD lost the race against
+    /// a concurrent block creation, and must be discarded without touching the
+    /// chain.
+    #[test]
+    fn test_commit_discards_block_when_head_moved() {
+        let work_dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            work_dir.path().join("config.toml"),
+            r#"
+[tables.users]
+fields = [{ name = "id", type = "NUMBER", primary-key = true }]
+
+[tables.users.csv]
+source = "users.csv"
+"#,
+        )
+        .unwrap();
+        let config = Config::load(work_dir.path()).unwrap();
+        let state_dir = config.state_dir();
+
+        std::fs::write(work_dir.path().join("users.csv"), "1\n").unwrap();
+        let hash1 = Block::create(&config, None).unwrap();
+        std::fs::write(work_dir.path().join("users.csv"), "1\n2\n").unwrap();
+        let hash2 = Block::create(&config, None).unwrap();
+
+        // Built on block 1, but block 2 was created in the meantime.
+        let block = Block {
+            parent: hash1.clone(),
+            ..dummy_block()
+        };
+        let mut encoded = Vec::new();
+        block.encode(&mut encoded).unwrap();
+        let hash = utils::compute_hash(&encoded);
+        let current_state = state::State::compute(&config, None).unwrap();
+
+        let error = commit(&config, &hash1, &hash, &encoded, &current_state).unwrap_err();
+        assert!(error.to_string().contains("HEAD moved"));
+
+        assert_eq!(head::load(&state_dir, config.file_mode).unwrap(), hash2);
+        let stored_state = state::ProtoState::load(&state_dir, config.file_mode)
+            .unwrap()
+            .unwrap();
+        assert_eq!(stored_state.block_hash, hash2);
+        assert!(!state_dir.join(&hash).exists());
     }
 }
