@@ -37,7 +37,7 @@ type.
 
 | Type      | SQL literal    | Notes                                                       |
 | --------- | -------------- | ----------------------------------------------------------- |
-| `TEXT`    | `'value'`      | Single quotes, escaped                                      |
+| `TEXT`    | `'value'`      | Single quotes, escaped; NUL characters are rejected         |
 | `NUMBER`  | `42` / `3.14`  | Stored as `f64`; integers above 2^53 lose precision         |
 | `BOOLEAN` | `TRUE`/`FALSE` | Accepts the exact strings `true` / `false` (case-sensitive) |
 

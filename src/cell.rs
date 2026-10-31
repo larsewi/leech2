@@ -277,10 +277,13 @@ fn describe_sentinel(pattern: Option<&Regex>, default: &str) -> String {
 /// parsing uses the default literals; CSV-parsing callers that honor
 /// per-table regex overrides should call [`parse_boolean`] directly.
 /// Passing [`Kind::Null`] is rejected -- Null is set via the table's
-/// null-sentinel mechanism, not by parsing.
+/// null-sentinel mechanism, not by parsing. Text containing a NUL character is
+/// rejected, since it can't be passed on as a C string or stored as SQL text.
 pub fn parse_typed_cell(value: &str, kind: Kind) -> Result<Cell> {
     match kind {
         Kind::Null => bail!("cannot parse value as NULL"),
+        // The value is left out of the message: it would carry the NUL along.
+        Kind::Text if value.contains('\0') => bail!("text contains a NUL character"),
         Kind::Text => Ok(Cell::Text(value.to_string())),
         Kind::Number => {
             let parsed: f64 = value
@@ -448,6 +451,11 @@ mod tests {
         assert_eq!(Cell::Text("x".into()).kind(), Kind::Text);
         assert_eq!(Cell::Number(1.0).kind(), Kind::Number);
         assert_eq!(Cell::Boolean(true).kind(), Kind::Boolean);
+    }
+
+    #[test]
+    fn test_parse_typed_cell_rejects_nul_in_text() {
+        assert!(parse_typed_cell("a\0b", Kind::Text).is_err());
     }
 
     #[test]
