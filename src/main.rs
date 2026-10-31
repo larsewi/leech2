@@ -1,4 +1,4 @@
-use std::io::{IsTerminal, Write};
+use std::io::{ErrorKind, IsTerminal, Write};
 use std::path::PathBuf;
 use std::process::{Command as ProcessCommand, ExitCode, Stdio};
 
@@ -95,7 +95,7 @@ fn cmd_init(work_dir: &std::path::Path) -> Result<()> {
          3,Monitor,249.95\n",
     )?;
 
-    println!("Initialized {}", work_dir.display());
+    print_stdout(&format!("Initialized {}", work_dir.display()))?;
     Ok(())
 }
 
@@ -104,7 +104,7 @@ fn cmd_block_create(config: &Config) -> Result<()> {
     // In a dry run, `Block::create` prints the block that would have been
     // created; otherwise report the new block's hash.
     if !config.dry_run {
-        println!("{}", hash);
+        print_stdout(&hash)?;
     }
     Ok(())
 }
@@ -145,7 +145,7 @@ fn cmd_patch_create(
     // In a dry run, `Patch::create` prints the patch that would have been
     // created; otherwise report the head the patch was built against.
     if !config.dry_run {
-        println!("{}", patch.head);
+        print_stdout(&patch.head)?;
     }
     Ok(())
 }
@@ -251,7 +251,7 @@ fn cmd_patch_applied(config: &Config) -> Result<()> {
         leech2::reported::save(&state_dir, &patch.head, config.file_mode, config.dry_run)?;
     }
 
-    println!("{}", patch.head);
+    print_stdout(&patch.head)?;
     Ok(())
 }
 
@@ -265,10 +265,9 @@ fn cmd_state_show(config: &Config) -> Result<String> {
 
 fn cmd_stats_show(config: &Config) -> Result<()> {
     match leech2::stats::summarize(config)? {
-        Some(summary) => println!("{}", summary),
-        None => println!("No stats recorded yet"),
+        Some(summary) => print_stdout(&summary.to_string()),
+        None => print_stdout("No stats recorded yet"),
     }
-    Ok(())
 }
 
 fn cmd_patch_failed(config: &Config) -> Result<()> {
@@ -279,8 +278,25 @@ fn cmd_patch_failed(config: &Config) -> Result<()> {
     }
 
     // Without REPORTED, the next patch is built from genesis.
-    println!("{}", GENESIS_HASH);
-    Ok(())
+    print_stdout(GENESIS_HASH)
+}
+
+/// Print `content` to stdout, followed by a newline unless it already ends
+/// with one. A reader that closed the pipe early (e.g. `lch block log | head
+/// -1`) already has all the output it wanted, so a broken pipe is not an error.
+fn print_stdout(content: &str) -> Result<()> {
+    let mut stdout = std::io::stdout().lock();
+    let mut result = stdout.write_all(content.as_bytes());
+    if result.is_ok() && !content.ends_with('\n') {
+        result = stdout.write_all(b"\n");
+    }
+    if result.is_ok() {
+        result = stdout.flush();
+    }
+    match result {
+        Err(e) if e.kind() == ErrorKind::BrokenPipe => Ok(()),
+        result => result.context("failed to write to stdout"),
+    }
 }
 
 /// Print `content` to stdout, piping through a pager (e.g. `less`) when the
@@ -288,24 +304,14 @@ fn cmd_patch_failed(config: &Config) -> Result<()> {
 /// stdout is not a TTY, the terminal size is unavailable, or the pager fails
 /// to launch. Honors the `PAGER` environment variable. A trailing newline is
 /// added only when `content` does not already end with one.
-fn print_with_pager(content: &str) {
-    /// Print `content` followed by exactly one trailing newline.
-    fn print_unpaged(content: &str) {
-        if content.ends_with('\n') {
-            print!("{}", content);
-        } else {
-            println!("{}", content);
-        }
-    }
-
+fn print_with_pager(content: &str) -> Result<()> {
     let is_tty = std::io::stdout().is_terminal();
     let exceeds_height =
         terminal_size::terminal_size().is_some_and(|(_, h)| content.lines().count() > h.0 as usize);
     let use_pager = is_tty && exceeds_height;
 
     if !use_pager {
-        print_unpaged(content);
-        return;
+        return print_stdout(content);
     }
 
     let default_pager = if cfg!(windows) { "more" } else { "less" };
@@ -316,10 +322,7 @@ fn print_with_pager(content: &str) {
         .spawn()
     {
         Ok(child) => child,
-        Err(_) => {
-            print_unpaged(content);
-            return;
-        }
+        Err(_) => return print_stdout(content),
     };
 
     if let Some(mut stdin) = child.stdin.take() {
@@ -327,6 +330,7 @@ fn print_with_pager(content: &str) {
     }
 
     let _ = child.wait();
+    Ok(())
 }
 
 fn run(cli: Cli) -> Result<()> {
@@ -341,11 +345,11 @@ fn run(cli: Cli) -> Result<()> {
                 BlockCmd::Create => cmd_block_create(&config)?,
                 BlockCmd::Show { reference, n } => {
                     let output = cmd_block_show(&config, reference.as_deref(), *n)?;
-                    print_with_pager(&output);
+                    print_with_pager(&output)?;
                 }
                 BlockCmd::Log => {
                     let output = cmd_block_log(&config)?;
-                    print_with_pager(&output);
+                    print_with_pager(&output)?;
                 }
             }
         }
@@ -358,11 +362,11 @@ fn run(cli: Cli) -> Result<()> {
                 }
                 PatchCmd::Show => {
                     let output = cmd_patch_show(&config)?;
-                    print_with_pager(&output);
+                    print_with_pager(&output)?;
                 }
                 PatchCmd::Sql { inject } => {
                     let output = cmd_patch_sql(&config, inject)?;
-                    print_with_pager(&output);
+                    print_with_pager(&output)?;
                 }
                 PatchCmd::Applied => {
                     cmd_patch_applied(&config)?;
@@ -377,7 +381,7 @@ fn run(cli: Cli) -> Result<()> {
             match command {
                 StateCmd::Show => {
                     let output = cmd_state_show(&config)?;
-                    print_with_pager(&output);
+                    print_with_pager(&output)?;
                 }
             }
         }
