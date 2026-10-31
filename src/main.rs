@@ -302,8 +302,9 @@ fn print_stdout(content: &str) -> Result<()> {
 /// Print `content` to stdout, piping through a pager (e.g. `less`) when the
 /// output exceeds the terminal height. Falls back to plain printing when
 /// stdout is not a TTY, the terminal size is unavailable, or the pager fails
-/// to launch. Honors the `PAGER` environment variable. A trailing newline is
-/// added only when `content` does not already end with one.
+/// to launch. Honors the `PAGER` environment variable, which may include
+/// arguments on Unix. A trailing newline is added only when `content` does not
+/// already end with one.
 fn print_with_pager(content: &str) -> Result<()> {
     let is_tty = std::io::stdout().is_terminal();
     let exceeds_height =
@@ -317,10 +318,17 @@ fn print_with_pager(content: &str) -> Result<()> {
     let default_pager = if cfg!(windows) { "more" } else { "less" };
     let pager_cmd = std::env::var("PAGER").unwrap_or_else(|_| default_pager.to_string());
 
-    let mut child = match ProcessCommand::new(&pager_cmd)
-        .stdin(Stdio::piped())
-        .spawn()
-    {
+    // On Unix, run the pager through the shell, as git does with `$PAGER` (see
+    // `core.pager` in git-config(1)), so that a `PAGER` with arguments works.
+    let mut command = if cfg!(unix) {
+        let mut command = ProcessCommand::new("sh");
+        command.arg("-c").arg(&pager_cmd);
+        command
+    } else {
+        ProcessCommand::new(&pager_cmd)
+    };
+
+    let mut child = match command.stdin(Stdio::piped()).spawn() {
         Ok(child) => child,
         Err(_) => return print_stdout(content),
     };
@@ -329,7 +337,13 @@ fn print_with_pager(content: &str) -> Result<()> {
         let _ = stdin.write_all(content.as_bytes());
     }
 
-    let _ = child.wait();
+    // The shell exits with 127 when the pager is not found, and 126 when it
+    // can't be executed. The output was not shown then, so print it instead.
+    if let Ok(status) = child.wait()
+        && matches!(status.code(), Some(126 | 127))
+    {
+        return print_stdout(content);
+    }
     Ok(())
 }
 
