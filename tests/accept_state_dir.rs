@@ -22,8 +22,8 @@ fn test_state_dir_defaults_to_subdir() {
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
-    common::write_config(work_dir, "config.toml", TABLE);
-    common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
+    common::write_file(work_dir, "config.toml", TABLE);
+    common::write_csv!(work_dir, "users.csv", "1,Alice", "2,Bob");
 
     let config = Config::load(work_dir).unwrap();
     assert_eq!(config.state_dir(), work_dir.join("state"));
@@ -48,12 +48,12 @@ fn test_state_dir_absolute_redirect() {
     let work_dir = work.path();
     let state_dir = state.path();
 
-    common::write_config(
+    common::write_file(
         work_dir,
         "config.toml",
         &format!("state-dir = {:?}\n{}", state_dir, TABLE),
     );
-    common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
+    common::write_csv!(work_dir, "users.csv", "1,Alice", "2,Bob");
 
     let config = Config::load(work_dir).unwrap();
     assert_eq!(config.state_dir(), state_dir);
@@ -77,12 +77,12 @@ fn test_state_dir_relative_to_work_dir() {
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
-    common::write_config(
+    common::write_file(
         work_dir,
         "config.toml",
         &format!("state-dir = \"db\"\n{}", TABLE),
     );
-    common::write_csv(work_dir, "users.csv", "1,Alice\n");
+    common::write_csv!(work_dir, "users.csv", "1,Alice");
 
     let config = Config::load(work_dir).unwrap();
     assert_eq!(config.state_dir(), work_dir.join("db"));

@@ -14,13 +14,15 @@ fn test_field_reorder_in_config_produces_no_delta() {
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
-    common::write_csv(
+    common::write_csv!(
         work_dir,
         "users.csv",
-        "id,name,email\n1,Alice,a@example.com\n2,Bob,b@example.com\n",
+        "id,name,email",
+        "1,Alice,a@example.com",
+        "2,Bob,b@example.com",
     );
 
-    common::write_config(
+    common::write_file(
         work_dir,
         "config.toml",
         r#"
@@ -40,7 +42,7 @@ header = true
 
     // Reorder fields (id is still the only primary key, but its position in
     // the declared field list moves; subsidiaries are also reordered).
-    common::write_config(
+    common::write_file(
         work_dir,
         "config.toml",
         r#"

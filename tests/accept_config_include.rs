@@ -13,7 +13,7 @@ fn test_include_fragment_table_round_trip() {
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
-    common::write_config(
+    common::write_file(
         work_dir,
         "config.toml",
         r#"
@@ -31,7 +31,7 @@ source = "users.csv"
     );
 
     std::fs::create_dir(work_dir.join("conf.d")).unwrap();
-    common::write_config(
+    common::write_file(
         &work_dir.join("conf.d"),
         "products.toml",
         r#"
@@ -46,8 +46,8 @@ source = "products.csv"
 "#,
     );
 
-    common::write_csv(work_dir, "users.csv", "1,Alice\n");
-    common::write_csv(work_dir, "products.csv", "ABC,100\n");
+    common::write_csv!(work_dir, "users.csv", "1,Alice");
+    common::write_csv!(work_dir, "products.csv", "ABC,100");
 
     let config = Config::load(work_dir).unwrap();
     assert!(config.tables.contains_key("users"));

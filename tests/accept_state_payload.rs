@@ -12,7 +12,7 @@ fn test_state_payload_when_smaller_than_deltas() {
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
-    common::write_config(
+    common::write_file(
         work_dir,
         "config.toml",
         r#"
@@ -32,12 +32,12 @@ source = "items.csv"
     for i in 1..=20 {
         csv.push_str(&format!("{},item{}\n", i, i));
     }
-    common::write_csv(work_dir, "items.csv", &csv);
+    common::write_file(work_dir, "items.csv", &csv);
     let config = Config::load(work_dir).unwrap();
     let hash1 = Block::create(&config, None).unwrap();
 
     // Block 2: keep only 2 rows (delete 18)
-    common::write_csv(work_dir, "items.csv", "1,item1\n2,item2\n");
+    common::write_csv!(work_dir, "items.csv", "1,item1", "2,item2");
     let _hash2 = Block::create(&config, None).unwrap();
 
     // Patch from hash1: delta has 18 deletes, state has 2 rows.
@@ -72,7 +72,7 @@ fn test_mixed_payload_deltas_and_states() {
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
-    common::write_config(
+    common::write_file(
         work_dir,
         "config.toml",
         r#"
@@ -103,16 +103,16 @@ source = "logs.csv"
         items_csv.push_str(&format!("{},item{}\n", i, i));
         logs_csv.push_str(&format!("{},log message number {}\n", i, i));
     }
-    common::write_csv(work_dir, "items.csv", &items_csv);
-    common::write_csv(work_dir, "logs.csv", &logs_csv);
+    common::write_file(work_dir, "items.csv", &items_csv);
+    common::write_file(work_dir, "logs.csv", &logs_csv);
     let config = Config::load(work_dir).unwrap();
     let hash1 = Block::create(&config, None).unwrap();
 
     // Block 2: items drops to 2 rows (18 deletes -> state wins),
     //          logs adds 1 row (1 insert -> delta wins).
-    common::write_csv(work_dir, "items.csv", "1,item1\n2,item2\n");
+    common::write_csv!(work_dir, "items.csv", "1,item1", "2,item2");
     logs_csv.push_str("21,log message number 21\n");
-    common::write_csv(work_dir, "logs.csv", &logs_csv);
+    common::write_file(work_dir, "logs.csv", &logs_csv);
     let _hash2 = Block::create(&config, None).unwrap();
 
     let patch = Patch::create(&config, &hash1).unwrap();
@@ -172,7 +172,7 @@ fn test_use_full_state_if_smaller_disabled_keeps_delta() {
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
-    common::write_config(
+    common::write_file(
         work_dir,
         "config.toml",
         r#"
@@ -204,17 +204,18 @@ source = "logs.csv"
         items_csv.push_str(&format!("{},item{}\n", i, i));
         logs_csv.push_str(&format!("{},log message number {}\n", i, i));
     }
-    common::write_csv(work_dir, "items.csv", &items_csv);
-    common::write_csv(work_dir, "logs.csv", &logs_csv);
+    common::write_file(work_dir, "items.csv", &items_csv);
+    common::write_file(work_dir, "logs.csv", &logs_csv);
     let config = Config::load(work_dir).unwrap();
     let hash1 = Block::create(&config, None).unwrap();
 
     // Block 2: both tables drop to 2 rows (18 deletes -> state is smaller).
-    common::write_csv(work_dir, "items.csv", "1,item1\n2,item2\n");
-    common::write_csv(
+    common::write_csv!(work_dir, "items.csv", "1,item1", "2,item2");
+    common::write_csv!(
         work_dir,
         "logs.csv",
-        "1,log message number 1\n2,log message number 2\n",
+        "1,log message number 1",
+        "2,log message number 2",
     );
     let _hash2 = Block::create(&config, None).unwrap();
 

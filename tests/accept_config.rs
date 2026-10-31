@@ -23,7 +23,7 @@ fn test_missing_config_file() {
 #[test]
 fn test_config_no_primary_key() {
     let tmp = tempfile::tempdir().unwrap();
-    common::write_config(
+    common::write_file(
         tmp.path(),
         "config.toml",
         r#"
@@ -49,7 +49,7 @@ source = "users.csv"
 #[test]
 fn test_config_duplicate_field_names() {
     let tmp = tempfile::tempdir().unwrap();
-    common::write_config(
+    common::write_file(
         tmp.path(),
         "config.toml",
         r#"
@@ -75,7 +75,7 @@ source = "users.csv"
 #[test]
 fn test_config_invalid_toml_syntax() {
     let tmp = tempfile::tempdir().unwrap();
-    common::write_config(tmp.path(), "config.toml", "this is not valid toml [[[");
+    common::write_file(tmp.path(), "config.toml", "this is not valid toml [[[");
     let result = Config::load(tmp.path());
     assert!(result.is_err());
     assert!(
@@ -90,7 +90,7 @@ fn test_config_invalid_toml_syntax() {
 #[test]
 fn test_config_invalid_json_syntax() {
     let tmp = tempfile::tempdir().unwrap();
-    common::write_config(tmp.path(), "config.json", "{not valid json}");
+    common::write_file(tmp.path(), "config.json", "{not valid json}");
     let result = Config::load(tmp.path());
     assert!(result.is_err());
     assert!(
@@ -105,7 +105,7 @@ fn test_config_invalid_json_syntax() {
 #[test]
 fn test_truncate_config_max_blocks_invalid() {
     let tmp = tempfile::tempdir().unwrap();
-    common::write_config(
+    common::write_file(
         tmp.path(),
         "config.toml",
         r#"
@@ -134,7 +134,7 @@ source = "users.csv"
 #[test]
 fn test_truncate_config_max_age_invalid() {
     let tmp = tempfile::tempdir().unwrap();
-    common::write_config(
+    common::write_file(
         tmp.path(),
         "config.toml",
         r#"
@@ -163,7 +163,7 @@ source = "users.csv"
 #[test]
 fn test_truncate_config_no_truncate_section() {
     let tmp = tempfile::tempdir().unwrap();
-    common::write_config(
+    common::write_file(
         tmp.path(),
         "config.toml",
         r#"
@@ -188,7 +188,7 @@ fn test_json_config_file() {
     let work_dir = tmp.path();
 
     // Use config.json instead of config.toml
-    common::write_config(
+    common::write_file(
         work_dir,
         "config.json",
         r#"{
@@ -204,7 +204,7 @@ fn test_json_config_file() {
 }"#,
     );
 
-    common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
+    common::write_csv!(work_dir, "users.csv", "1,Alice", "2,Bob");
     let config = Config::load(work_dir).unwrap();
 
     let hash = Block::create(&config, None).unwrap();
@@ -222,7 +222,7 @@ fn test_json_config_file() {
 #[test]
 fn test_empty_tables_map_rejected() {
     let tmp = tempfile::tempdir().unwrap();
-    common::write_config(tmp.path(), "config.toml", "[tables]\n");
+    common::write_file(tmp.path(), "config.toml", "[tables]\n");
 
     let err = format!("{:#}", Config::load(tmp.path()).unwrap_err());
     assert!(
@@ -234,7 +234,7 @@ fn test_empty_tables_map_rejected() {
 #[test]
 fn test_injected_fields_rejected() {
     let tmp = tempfile::tempdir().unwrap();
-    common::write_config(
+    common::write_file(
         tmp.path(),
         "config.toml",
         r#"
@@ -267,7 +267,7 @@ source = "users.csv"
 #[test]
 fn test_csv_filter_rejected() {
     let tmp = tempfile::tempdir().unwrap();
-    common::write_config(
+    common::write_file(
         tmp.path(),
         "config.toml",
         r#"
@@ -296,7 +296,7 @@ exclude = "^x$"
 #[test]
 fn test_empty_csv_source_rejected() {
     let tmp = tempfile::tempdir().unwrap();
-    common::write_config(
+    common::write_file(
         tmp.path(),
         "config.toml",
         r#"
@@ -321,7 +321,7 @@ source = ""
 #[test]
 fn test_field_empty_name_rejected() {
     let tmp = tempfile::tempdir().unwrap();
-    common::write_config(
+    common::write_file(
         tmp.path(),
         "config.toml",
         r#"
@@ -346,7 +346,7 @@ source = "users.csv"
 #[test]
 fn test_field_unknown_type_rejected() {
     let tmp = tempfile::tempdir().unwrap();
-    common::write_config(
+    common::write_file(
         tmp.path(),
         "config.toml",
         r#"
@@ -371,7 +371,7 @@ source = "users.csv"
 #[test]
 fn test_compression_level_out_of_range() {
     let tmp = tempfile::tempdir().unwrap();
-    common::write_config(
+    common::write_file(
         tmp.path(),
         "config.toml",
         r#"

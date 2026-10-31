@@ -11,7 +11,7 @@ use leech2::utils::GENESIS_HASH;
 
 /// Helper: write a two-field users table config.
 fn setup_users(work_dir: &std::path::Path) -> Config {
-    common::write_config(
+    common::write_file(
         work_dir,
         "config.toml",
         r#"
@@ -37,10 +37,10 @@ fn test_reported_block_truncated() {
     let work_dir = tmp.path();
     let config = setup_users(work_dir);
 
-    common::write_csv(work_dir, "users.csv", "1,Alice\n");
+    common::write_csv!(work_dir, "users.csv", "1,Alice");
     let hash1 = Block::create(&config, None).unwrap();
 
-    common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
+    common::write_csv!(work_dir, "users.csv", "1,Alice", "2,Bob");
     let hash2 = Block::create(&config, None).unwrap();
 
     // Mark block 1 as reported (simulates: database has data up to hash1)
@@ -73,7 +73,7 @@ fn test_reported_file_deleted() {
     let work_dir = tmp.path();
     let config = setup_users(work_dir);
 
-    common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
+    common::write_csv!(work_dir, "users.csv", "1,Alice", "2,Bob");
     let hash1 = Block::create(&config, None).unwrap();
 
     // Mark as reported, then delete the REPORTED file
@@ -106,7 +106,7 @@ fn test_head_file_deleted() {
     let work_dir = tmp.path();
     let config = setup_users(work_dir);
 
-    common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
+    common::write_csv!(work_dir, "users.csv", "1,Alice", "2,Bob");
     Block::create(&config, None).unwrap();
 
     // Delete HEAD -- load should return GENESIS
@@ -143,19 +143,26 @@ fn test_state_does_not_belong_to_head() {
     let work_dir = tmp.path();
     let config = setup_users(work_dir);
 
-    common::write_csv(work_dir, "users.csv", "1,Alice\n");
+    common::write_csv!(work_dir, "users.csv", "1,Alice");
     Block::create(&config, None).unwrap();
 
-    common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
+    common::write_csv!(work_dir, "users.csv", "1,Alice", "2,Bob");
     let hash2 = Block::create(&config, None).unwrap();
 
     // Store STATE with block 3, then roll HEAD back to block 2 (simulates
     // storing HEAD failing after STATE was stored).
-    common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n3,Charlie\n");
+    common::write_csv!(work_dir, "users.csv", "1,Alice", "2,Bob", "3,Charlie");
     Block::create(&config, None).unwrap();
     head::store(&config.state_dir(), &hash2, config.file_mode, false).unwrap();
 
-    common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n3,Charlie\n4,Dave\n");
+    common::write_csv!(
+        work_dir,
+        "users.csv",
+        "1,Alice",
+        "2,Bob",
+        "3,Charlie",
+        "4,Dave"
+    );
     let hash4 = Block::create(&config, None).unwrap();
     assert_eq!(
         Block::load(&config.state_dir(), &hash4, config.file_mode)
@@ -183,13 +190,13 @@ fn test_block_chain_broken() {
     let work_dir = tmp.path();
     let config = setup_users(work_dir);
 
-    common::write_csv(work_dir, "users.csv", "1,Alice\n");
+    common::write_csv!(work_dir, "users.csv", "1,Alice");
     let hash1 = Block::create(&config, None).unwrap();
 
-    common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
+    common::write_csv!(work_dir, "users.csv", "1,Alice", "2,Bob");
     let hash2 = Block::create(&config, None).unwrap();
 
-    common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n3,Charlie\n");
+    common::write_csv!(work_dir, "users.csv", "1,Alice", "2,Bob", "3,Charlie");
     let hash3 = Block::create(&config, None).unwrap();
 
     // Delete the middle block -- chain is: hash3 -> hash2 (missing) -> hash1
@@ -219,12 +226,12 @@ fn test_patch_failed_forces_full_state() {
     let config = setup_users(work_dir);
 
     // Create initial data and mark as reported
-    common::write_csv(work_dir, "users.csv", "1,Alice\n");
+    common::write_csv!(work_dir, "users.csv", "1,Alice");
     let hash1 = Block::create(&config, None).unwrap();
     reported::save(&config.state_dir(), &hash1, config.file_mode, false).unwrap();
 
     // Add more data
-    common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
+    common::write_csv!(work_dir, "users.csv", "1,Alice", "2,Bob");
     let hash2 = Block::create(&config, None).unwrap();
 
     // Simulate patch failure: remove REPORTED
@@ -258,10 +265,10 @@ fn test_state_file_deleted_with_valid_chain() {
     let work_dir = tmp.path();
     let config = setup_users(work_dir);
 
-    common::write_csv(work_dir, "users.csv", "1,Alice\n");
+    common::write_csv!(work_dir, "users.csv", "1,Alice");
     let hash1 = Block::create(&config, None).unwrap();
 
-    common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
+    common::write_csv!(work_dir, "users.csv", "1,Alice", "2,Bob");
     let hash2 = Block::create(&config, None).unwrap();
 
     // Delete STATE -- consolidation should still work via block chain
@@ -297,7 +304,7 @@ fn test_layout_change_with_missing_state_fails() {
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
-    common::write_config(
+    common::write_file(
         work_dir,
         "config.toml",
         r#"
@@ -311,12 +318,12 @@ fields = [
 source = "users.csv"
 "#,
     );
-    common::write_csv(work_dir, "users.csv", "1,Alice\n");
+    common::write_csv!(work_dir, "users.csv", "1,Alice");
     let config = Config::load(work_dir).unwrap();
     let hash1 = Block::create(&config, None).unwrap();
 
     // Add a field: the next block records a layout change for users.
-    common::write_config(
+    common::write_file(
         work_dir,
         "config.toml",
         r#"
@@ -331,7 +338,7 @@ fields = [
 source = "users.csv"
 "#,
     );
-    common::write_csv(work_dir, "users.csv", "1,Alice,alice@example.com\n");
+    common::write_csv!(work_dir, "users.csv", "1,Alice,alice@example.com");
     let config = Config::load(work_dir).unwrap();
     let _hash2 = Block::create(&config, None).unwrap();
 

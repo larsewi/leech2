@@ -10,7 +10,7 @@ fn test_hash_prefix_resolution() {
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
-    common::write_config(
+    common::write_file(
         work_dir,
         "config.toml",
         r#"
@@ -25,11 +25,11 @@ source = "users.csv"
 "#,
     );
 
-    common::write_csv(work_dir, "users.csv", "1,Alice\n");
+    common::write_csv!(work_dir, "users.csv", "1,Alice");
     let config = Config::load(work_dir).unwrap();
     let hash1 = Block::create(&config, None).unwrap();
 
-    common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
+    common::write_csv!(work_dir, "users.csv", "1,Alice", "2,Bob");
     let hash2 = Block::create(&config, None).unwrap();
 
     // Use a short prefix of hash1 (first 8 chars)

@@ -10,7 +10,7 @@ fn test_composite_primary_keys() {
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
-    common::write_config(
+    common::write_file(
         work_dir,
         "config.toml",
         r#"
@@ -27,12 +27,18 @@ source = "enrollments.csv"
     );
 
     // Block 1: initial enrollments
-    common::write_csv(work_dir, "enrollments.csv", "1,101,A\n1,102,B\n2,101,C\n");
+    common::write_csv!(work_dir, "enrollments.csv", "1,101,A", "1,102,B", "2,101,C");
     let config = Config::load(work_dir).unwrap();
     let hash1 = Block::create(&config, None).unwrap();
 
     // Block 2: update (1,101) grade A->A+, delete (1,102), insert (2,103)
-    common::write_csv(work_dir, "enrollments.csv", "1,101,A+\n2,101,C\n2,103,B\n");
+    common::write_csv!(
+        work_dir,
+        "enrollments.csv",
+        "1,101,A+",
+        "2,101,C",
+        "2,103,B"
+    );
     let _hash2 = Block::create(&config, None).unwrap();
 
     // Patch from hash1

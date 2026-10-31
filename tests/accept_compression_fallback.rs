@@ -14,7 +14,7 @@ fn test_small_payload_kept_raw_when_compression_inflates() {
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
-    common::write_config(
+    common::write_file(
         work_dir,
         "config.toml",
         r#"
@@ -34,7 +34,7 @@ source = "users.csv"
 
     // A single tiny row: the protobuf is small enough that zstd's frame
     // overhead makes the "compressed" form larger.
-    common::write_csv(work_dir, "users.csv", "1,A\n");
+    common::write_csv!(work_dir, "users.csv", "1,A");
     let config = Config::load(work_dir).unwrap();
     Block::create(&config, None).unwrap();
 

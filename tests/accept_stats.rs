@@ -48,8 +48,8 @@ fn test_stats_enabled_writes_cumulative_records() {
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
-    common::write_config(work_dir, "config.toml", &config_toml(true));
-    common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
+    common::write_file(work_dir, "config.toml", &config_toml(true));
+    common::write_csv!(work_dir, "users.csv", "1,Alice", "2,Bob");
     let config = Config::load(work_dir).unwrap();
     Block::create(&config, None).unwrap();
 
@@ -81,8 +81,8 @@ fn test_stats_disabled_writes_nothing() {
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
-    common::write_config(work_dir, "config.toml", &config_toml(false));
-    common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
+    common::write_file(work_dir, "config.toml", &config_toml(false));
+    common::write_csv!(work_dir, "users.csv", "1,Alice", "2,Bob");
     let config = Config::load(work_dir).unwrap();
     Block::create(&config, None).unwrap();
 
@@ -96,8 +96,8 @@ fn test_stats_dry_run_writes_nothing() {
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
-    common::write_config(work_dir, "config.toml", &config_toml(true));
-    common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
+    common::write_file(work_dir, "config.toml", &config_toml(true));
+    common::write_csv!(work_dir, "users.csv", "1,Alice", "2,Bob");
     let mut config = Config::load(work_dir).unwrap();
     Block::create(&config, None).unwrap();
     config.dry_run = true;
@@ -122,8 +122,8 @@ fn test_summarize_aggregates_runs() {
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
-    common::write_config(work_dir, "config.toml", &config_toml(true));
-    common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
+    common::write_file(work_dir, "config.toml", &config_toml(true));
+    common::write_csv!(work_dir, "users.csv", "1,Alice", "2,Bob");
     let config = Config::load(work_dir).unwrap();
     Block::create(&config, None).unwrap();
 
@@ -168,8 +168,8 @@ fn test_summarize_returns_none_without_stats_file() {
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
-    common::write_config(work_dir, "config.toml", &config_toml(true));
-    common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
+    common::write_file(work_dir, "config.toml", &config_toml(true));
+    common::write_csv!(work_dir, "users.csv", "1,Alice", "2,Bob");
     let config = Config::load(work_dir).unwrap();
 
     assert!(stats::summarize(&config).unwrap().is_none());

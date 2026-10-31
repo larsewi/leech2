@@ -23,22 +23,36 @@ fn test_injected_field_delta_sql() {
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
-    common::write_config(work_dir, "config.toml", CONFIG);
+    common::write_file(work_dir, "config.toml", CONFIG);
 
     // Block 1: initial data (many rows so delta is smaller than state)
-    common::write_csv(
+    common::write_csv!(
         work_dir,
         "users.csv",
-        "1,Alice\n2,Bob\n3,Charlie\n4,Dave\n5,Eve\n6,Frank\n7,Grace\n8,Heidi\n",
+        "1,Alice",
+        "2,Bob",
+        "3,Charlie",
+        "4,Dave",
+        "5,Eve",
+        "6,Frank",
+        "7,Grace",
+        "8,Heidi",
     );
     let config = Config::load(work_dir).unwrap();
     let hash1 = Block::create(&config, None).unwrap();
 
     // Block 2: update Alice->Alicia, delete Bob, insert Ivan
-    common::write_csv(
+    common::write_csv!(
         work_dir,
         "users.csv",
-        "1,Alicia\n3,Charlie\n4,Dave\n5,Eve\n6,Frank\n7,Grace\n8,Heidi\n9,Ivan\n",
+        "1,Alicia",
+        "3,Charlie",
+        "4,Dave",
+        "5,Eve",
+        "6,Frank",
+        "7,Grace",
+        "8,Heidi",
+        "9,Ivan",
     );
     Block::create(&config, None).unwrap();
 
@@ -84,10 +98,10 @@ fn test_injected_field_state_sql() {
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
-    common::write_config(work_dir, "config.toml", CONFIG);
+    common::write_file(work_dir, "config.toml", CONFIG);
 
     // Create a single row so the state is small enough to be used as payload
-    common::write_csv(work_dir, "users.csv", "1,Alice\n");
+    common::write_csv!(work_dir, "users.csv", "1,Alice");
     let config = Config::load(work_dir).unwrap();
     Block::create(&config, None).unwrap();
 
@@ -112,9 +126,9 @@ fn test_no_injected_fields_unchanged_sql() {
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
-    common::write_config(work_dir, "config.toml", CONFIG);
+    common::write_file(work_dir, "config.toml", CONFIG);
 
-    common::write_csv(work_dir, "users.csv", "1,Alice\n");
+    common::write_csv!(work_dir, "users.csv", "1,Alice");
     let config = Config::load(work_dir).unwrap();
     Block::create(&config, None).unwrap();
 
@@ -133,9 +147,9 @@ fn test_injected_field_integer_type() {
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
-    common::write_config(work_dir, "config.toml", CONFIG);
+    common::write_file(work_dir, "config.toml", CONFIG);
 
-    common::write_csv(work_dir, "users.csv", "1,Alice\n");
+    common::write_csv!(work_dir, "users.csv", "1,Alice");
     let config = Config::load(work_dir).unwrap();
     Block::create(&config, None).unwrap();
 
@@ -158,22 +172,36 @@ fn test_multiple_injected_fields() {
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
-    common::write_config(work_dir, "config.toml", CONFIG);
+    common::write_file(work_dir, "config.toml", CONFIG);
 
     // Block 1: initial data (many rows so delta is smaller than state)
-    common::write_csv(
+    common::write_csv!(
         work_dir,
         "users.csv",
-        "1,Alice\n2,Bob\n3,Charlie\n4,Dave\n5,Eve\n6,Frank\n7,Grace\n8,Heidi\n",
+        "1,Alice",
+        "2,Bob",
+        "3,Charlie",
+        "4,Dave",
+        "5,Eve",
+        "6,Frank",
+        "7,Grace",
+        "8,Heidi",
     );
     let config = Config::load(work_dir).unwrap();
     let hash1 = Block::create(&config, None).unwrap();
 
     // Block 2: update Alice->Alicia, delete Bob, insert Ivan
-    common::write_csv(
+    common::write_csv!(
         work_dir,
         "users.csv",
-        "1,Alicia\n3,Charlie\n4,Dave\n5,Eve\n6,Frank\n7,Grace\n8,Heidi\n9,Ivan\n",
+        "1,Alicia",
+        "3,Charlie",
+        "4,Dave",
+        "5,Eve",
+        "6,Frank",
+        "7,Grace",
+        "8,Heidi",
+        "9,Ivan",
     );
     Block::create(&config, None).unwrap();
 
@@ -226,9 +254,9 @@ fn test_multiple_injected_fields_state_sql() {
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
-    common::write_config(work_dir, "config.toml", CONFIG);
+    common::write_file(work_dir, "config.toml", CONFIG);
 
-    common::write_csv(work_dir, "users.csv", "1,Alice\n");
+    common::write_csv!(work_dir, "users.csv", "1,Alice");
     let config = Config::load(work_dir).unwrap();
     Block::create(&config, None).unwrap();
 
