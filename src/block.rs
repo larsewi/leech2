@@ -125,7 +125,7 @@ impl Block {
         let payload = if parent_hash == utils::GENESIS_HASH {
             HashMap::new()
         } else {
-            let previous_state = state::State::load(&state_dir, file_mode)
+            let previous_state = state::State::load(&state_dir, &parent_hash, file_mode)
                 .context("failed to load previous state")?;
 
             let mut payload = HashMap::new();
@@ -172,7 +172,7 @@ impl Block {
             .with_context(|| format!("failed to store block {:.7}", hash))?;
 
         current_state
-            .store(&state_dir, file_mode, config.dry_run)
+            .store(&state_dir, &hash, file_mode, config.dry_run)
             .context("failed to store current state")?;
         head::store(&state_dir, &hash, file_mode, config.dry_run)
             .context("failed to update head of state")?;

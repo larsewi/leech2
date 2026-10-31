@@ -43,7 +43,10 @@ impl From<State> for ProtoState {
             .into_iter()
             .map(|(name, table)| (name, ProtoTable::from(table)))
             .collect();
-        ProtoState { tables }
+        ProtoState {
+            tables,
+            ..Default::default()
+        }
     }
 }
 
@@ -78,10 +81,24 @@ impl ProtoState {
 }
 
 impl State {
-    pub fn load(work_dir: &Path, mode: u32) -> Result<Option<Self>> {
+    /// Load the STATE file.
+    ///
+    /// STATE and HEAD are written separately, so a failure between the two
+    /// writes would leave them out of sync. Hence, this returns `None` if STATE
+    /// does not belong to the block HEAD references. This way the tables fall
+    /// back to full state instead of computing deltas against the wrong
+    /// baseline.
+    pub fn load(work_dir: &Path, head: &str, mode: u32) -> Result<Option<Self>> {
         let Some(proto) = ProtoState::load(work_dir, mode)? else {
             return Ok(None);
         };
+        if proto.block_hash != head {
+            log::warn!(
+                "STATE does not belong to the block referenced by HEAD '{:.7}...', all tables will use full state",
+                head
+            );
+            return Ok(None);
+        }
         Ok(Some(State::try_from(proto)?))
     }
 
@@ -121,8 +138,11 @@ impl State {
         Ok(state)
     }
 
-    pub fn store(&self, work_dir: &Path, mode: u32, dry_run: bool) -> Result<()> {
-        let proto_state = ProtoState::from(self.clone());
+    /// Store this snapshot as the STATE file, recording `block_hash` as the hash of
+    /// the block it was stored with.
+    pub fn store(&self, work_dir: &Path, block_hash: &str, mode: u32, dry_run: bool) -> Result<()> {
+        let mut proto_state = ProtoState::from(self.clone());
+        proto_state.block_hash = block_hash.to_string();
         let mut buf = Vec::new();
         proto_state.encode(&mut buf)?;
         storage::store(work_dir, STATE_FILE, &buf, mode, dry_run)?;

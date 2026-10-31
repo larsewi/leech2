@@ -8,4 +8,7 @@ import "table.proto";
 // Used exclusively for the STATE file on disk (not in patches or blocks).
 message State {
   map<string, table.Table> tables = 1;
+  // Hash of the block created with this snapshot. Block creation ignores STATE
+  // if this hash is not HEAD.
+  string block_hash = 2;
 }

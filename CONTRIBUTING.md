@@ -136,6 +136,12 @@ Tables missing from the STATE file (e.g. newly added to the config) are recorded
 the same way. The receiver may already hold rows for such a table, so a full
 state replaces them instead of appending to them.
 
+The STATE file also records the hash of the block it was stored with. If that
+hash is not the current HEAD, STATE is ignored and every table is recorded the
+same way. This happens when storing HEAD fails after STATE was stored, or when
+STATE was stored by a version that did not record the hash. A delta computed
+against such a STATE would use the wrong baseline and silently drop changes.
+
 All table changes are bundled into a block together with a parent hash and a
 timestamp, SHA-1 hashed, and stored as a file named by its hash. The `HEAD`
 pointer is then advanced to point at the new block.
@@ -401,7 +407,7 @@ option):
 | ---------- | -------------------------------------------------------------------- |
 | `HEAD`     | Current block hash (40-character hex string)                         |
 | `REPORTED` | Hash of last successfully reported patch head (used by truncation)   |
-| `STATE`    | Protobuf-encoded snapshot of all tables                              |
+| `STATE`    | Protobuf-encoded snapshot of all tables, and the block it belongs to |
 | `PATCH`    | Last generated patch (CLI only)                                      |
 | `STATS`    | Cumulative JSON patch-creation stats (opt-in via `[stats]`)          |
 | `<sha1>`   | Protobuf-encoded block files, named by their hash                    |
