@@ -64,13 +64,22 @@ impl fmt::Display for ProtoState {
 }
 
 impl ProtoState {
+    /// Load the STATE file. A STATE file that can't be decoded (corrupt, or
+    /// written in an incompatible format) is treated as missing, so every
+    /// table falls back to full state and the next block stores a fresh one.
     pub fn load(work_dir: &Path) -> Result<Option<Self>> {
         let Some(data) = storage::load(work_dir, STATE_FILE)? else {
             log::info!("No previous state found");
             return Ok(None);
         };
 
-        let proto_state = ProtoState::decode(data.as_slice())?;
+        let proto_state = match ProtoState::decode(data.as_slice()) {
+            Ok(proto_state) => proto_state,
+            Err(e) => {
+                log::warn!("Failed to decode STATE file, treating it as missing: {}", e);
+                return Ok(None);
+            }
+        };
         log::debug!(
             "Loaded previous state with {} tables",
             proto_state.tables.len()
@@ -99,7 +108,16 @@ impl State {
             );
             return Ok(None);
         }
-        Ok(Some(State::try_from(proto)?))
+        match State::try_from(proto) {
+            Ok(state) => Ok(Some(state)),
+            Err(e) => {
+                log::warn!(
+                    "STATE file holds invalid tables, all tables will use full state: {:#}",
+                    e
+                );
+                Ok(None)
+            }
+        }
     }
 
     /// Build a fresh snapshot of every table declared in `config`.
