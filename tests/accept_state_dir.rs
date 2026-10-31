@@ -33,10 +33,7 @@ fn test_state_dir_defaults_to_subdir() {
     // State landed in the subdirectory, not next to the config.
     assert!(work_dir.join("state").join("HEAD").exists());
     assert!(!work_dir.join("HEAD").exists());
-    assert_eq!(
-        head::load(&config.state_dir(), config.file_mode).unwrap(),
-        hash
-    );
+    assert_eq!(head::load(&config.state_dir()).unwrap(), hash);
 }
 
 /// An absolute `state-dir` puts all state files there, while CSV inputs are

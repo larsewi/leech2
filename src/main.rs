@@ -48,25 +48,20 @@ fn resolve_ref(
     reference: Option<&str>,
     num_blocks: Option<u32>,
 ) -> Result<String> {
+    if reference.is_some() && num_blocks.is_some() {
+        bail!("cannot specify both a hash prefix and -n");
+    }
+    let state_dir = config.ensure_state_dir()?;
+    let _lock = leech2::storage::lock(&state_dir, false, config.file_mode)?;
     match (reference, num_blocks) {
-        (Some(_), Some(_)) => bail!("cannot specify both a hash prefix and -n"),
-        (Some(reference), None) => {
-            let state_dir = config.ensure_state_dir()?;
-            leech2::storage::resolve_hash_prefix(&state_dir, reference)
-        }
-        (None, Some(num_blocks)) => {
-            let state_dir = config.ensure_state_dir()?;
-            walk_back(&state_dir, num_blocks, config.file_mode)
-        }
-        (None, None) => {
-            let state_dir = config.ensure_state_dir()?;
-            leech2::head::load(&state_dir, config.file_mode)
-        }
+        (Some(reference), _) => leech2::storage::resolve_hash_prefix(&state_dir, reference),
+        (None, Some(num_blocks)) => walk_back(&state_dir, num_blocks),
+        (None, None) => leech2::head::load(&state_dir),
     }
 }
 
-fn walk_back(work_dir: &std::path::Path, num_blocks: u32, mode: u32) -> Result<String> {
-    let mut hash = leech2::head::load(work_dir, mode)?;
+fn walk_back(work_dir: &std::path::Path, num_blocks: u32) -> Result<String> {
+    let mut hash = leech2::head::load(work_dir)?;
     for i in 0..num_blocks {
         if hash == GENESIS_HASH {
             bail!(
@@ -75,7 +70,7 @@ fn walk_back(work_dir: &std::path::Path, num_blocks: u32, mode: u32) -> Result<S
                 i
             );
         }
-        hash = Block::load_header(work_dir, &hash, mode)?.parent;
+        hash = Block::load_header(work_dir, &hash)?.parent;
     }
     Ok(hash)
 }
@@ -124,7 +119,8 @@ fn cmd_patch_create(
     // new blocks. Fall back to the genesis hash if nothing has been reported yet.
     let hash = if reference.is_none() && num_blocks.is_none() {
         let state_dir = config.ensure_state_dir()?;
-        leech2::reported::load(&state_dir, config.file_mode)?
+        let _lock = leech2::storage::lock(&state_dir, false, config.file_mode)?;
+        leech2::reported::load(&state_dir)?
             .unwrap_or_else(|| leech2::utils::GENESIS_HASH.to_string())
     } else {
         resolve_ref(config, reference, num_blocks)?
@@ -133,13 +129,16 @@ fn cmd_patch_create(
 
     let encoded = leech2::wire::encode_patch(config, &patch)?;
     let state_dir = config.ensure_state_dir()?;
-    leech2::storage::store(
-        &state_dir,
-        PATCH_FILE,
-        &encoded,
-        config.file_mode,
-        config.dry_run,
-    )?;
+    {
+        let _lock = leech2::storage::lock(&state_dir, true, config.file_mode)?;
+        leech2::storage::store(
+            &state_dir,
+            PATCH_FILE,
+            &encoded,
+            config.file_mode,
+            config.dry_run,
+        )?;
+    }
 
     leech2::stats::finalize_patch_create(config);
 
@@ -153,7 +152,8 @@ fn cmd_patch_create(
 
 fn cmd_block_log(config: &Config) -> Result<String> {
     let state_dir = config.ensure_state_dir()?;
-    let mut hash = leech2::head::load(&state_dir, config.file_mode)?;
+    let _lock = leech2::storage::lock(&state_dir, false, config.file_mode)?;
+    let mut hash = leech2::head::load(&state_dir)?;
 
     if hash == GENESIS_HASH {
         bail!("no blocks exist yet");
@@ -161,7 +161,7 @@ fn cmd_block_log(config: &Config) -> Result<String> {
 
     let mut output = String::new();
     loop {
-        let block = match Block::load(&state_dir, &hash, config.file_mode) {
+        let block = match Block::load(&state_dir, &hash) {
             Ok(block) => block,
             Err(_) => break, // block was truncated, end of reachable chain
         };
@@ -202,13 +202,15 @@ fn cmd_block_show(config: &Config, reference: Option<&str>, n: Option<u32>) -> R
         bail!("cannot show the genesis block");
     }
     let state_dir = config.ensure_state_dir()?;
-    let block = Block::load(&state_dir, &hash, config.file_mode)?;
+    let _lock = leech2::storage::lock(&state_dir, false, config.file_mode)?;
+    let block = Block::load(&state_dir, &hash)?;
     Ok(block.to_string())
 }
 
 fn load_patch(config: &Config) -> Result<leech2::patch::Patch> {
     let state_dir = config.ensure_state_dir()?;
-    let data = leech2::storage::load(&state_dir, PATCH_FILE, config.file_mode)?
+    let _lock = leech2::storage::lock(&state_dir, false, config.file_mode)?;
+    let data = leech2::storage::load(&state_dir, PATCH_FILE)?
         .context("no patch file found, run `lch patch create` first")?;
     leech2::wire::decode_patch(&data).context("failed to decode patch")
 }
@@ -244,7 +246,10 @@ fn cmd_patch_sql(config: &Config, inject: &[String]) -> Result<String> {
 fn cmd_patch_applied(config: &Config) -> Result<()> {
     let patch = load_patch(config)?;
     let state_dir = config.ensure_state_dir()?;
-    leech2::reported::save(&state_dir, &patch.head, config.file_mode, config.dry_run)?;
+    {
+        let _lock = leech2::storage::lock(&state_dir, true, config.file_mode)?;
+        leech2::reported::save(&state_dir, &patch.head, config.file_mode, config.dry_run)?;
+    }
 
     println!("{}", patch.head);
     Ok(())
@@ -252,7 +257,8 @@ fn cmd_patch_applied(config: &Config) -> Result<()> {
 
 fn cmd_state_show(config: &Config) -> Result<String> {
     let state_dir = config.ensure_state_dir()?;
-    let state = ProtoState::load(&state_dir, config.file_mode)?
+    let _lock = leech2::storage::lock(&state_dir, false, config.file_mode)?;
+    let state = ProtoState::load(&state_dir)?
         .context("no STATE file found, run `lch block create` first")?;
     Ok(state.to_string())
 }
@@ -267,7 +273,10 @@ fn cmd_stats_show(config: &Config) -> Result<()> {
 
 fn cmd_patch_failed(config: &Config) -> Result<()> {
     let state_dir = config.ensure_state_dir()?;
-    leech2::reported::remove(&state_dir, config.file_mode, config.dry_run)?;
+    {
+        let _lock = leech2::storage::lock(&state_dir, true, config.file_mode)?;
+        leech2::reported::remove(&state_dir, config.dry_run)?;
+    }
 
     // Without REPORTED, the next patch is built from genesis.
     println!("{}", GENESIS_HASH);

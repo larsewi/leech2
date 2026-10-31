@@ -47,7 +47,7 @@ fn test_reported_block_truncated() {
     reported::save(&config.state_dir(), &hash1, config.file_mode, false).unwrap();
 
     // Delete block 1 from disk (simulates truncation)
-    storage::remove(&config.state_dir(), &hash1, config.file_mode, false).unwrap();
+    storage::remove(&config.state_dir(), &hash1, false).unwrap();
     assert!(!config.state_dir().join(&hash1).exists());
 
     // Patch from REPORTED should fall back to STATE (DELETE + INSERT)
@@ -78,12 +78,8 @@ fn test_reported_file_deleted() {
 
     // Mark as reported, then delete the REPORTED file
     reported::save(&config.state_dir(), &hash1, config.file_mode, false).unwrap();
-    storage::remove(&config.state_dir(), "REPORTED", config.file_mode, false).unwrap();
-    assert!(
-        reported::load(&config.state_dir(), config.file_mode)
-            .unwrap()
-            .is_none()
-    );
+    storage::remove(&config.state_dir(), "REPORTED", false).unwrap();
+    assert!(reported::load(&config.state_dir()).unwrap().is_none());
 
     // CLI/FFI would resolve to GENESIS when REPORTED is missing
     let patch = Patch::create(&config, GENESIS_HASH).unwrap();
@@ -110,11 +106,8 @@ fn test_head_file_deleted() {
     Block::create(&config, None).unwrap();
 
     // Delete HEAD -- load should return GENESIS
-    storage::remove(&config.state_dir(), "HEAD", config.file_mode, false).unwrap();
-    assert_eq!(
-        head::load(&config.state_dir(), config.file_mode).unwrap(),
-        GENESIS_HASH
-    );
+    storage::remove(&config.state_dir(), "HEAD", false).unwrap();
+    assert_eq!(head::load(&config.state_dir()).unwrap(), GENESIS_HASH);
 
     // Patch from GENESIS with HEAD=GENESIS -> empty patch (no blocks exist)
     let patch = Patch::create(&config, GENESIS_HASH).unwrap();
@@ -165,9 +158,7 @@ fn test_state_does_not_belong_to_head() {
     );
     let hash4 = Block::create(&config, None).unwrap();
     assert_eq!(
-        Block::load(&config.state_dir(), &hash4, config.file_mode)
-            .unwrap()
-            .parent,
+        Block::load(&config.state_dir(), &hash4).unwrap().parent,
         hash2
     );
 
@@ -200,7 +191,7 @@ fn test_block_chain_broken() {
     let hash3 = Block::create(&config, None).unwrap();
 
     // Delete the middle block -- chain is: hash3 -> hash2 (missing) -> hash1
-    storage::remove(&config.state_dir(), &hash2, config.file_mode, false).unwrap();
+    storage::remove(&config.state_dir(), &hash2, false).unwrap();
     assert!(!config.state_dir().join(&hash2).exists());
 
     // Patch from hash1: consolidation walks hash3 -> tries hash2 -> fails -> STATE
@@ -235,12 +226,8 @@ fn test_patch_failed_forces_full_state() {
     let hash2 = Block::create(&config, None).unwrap();
 
     // Simulate patch failure: remove REPORTED
-    reported::remove(&config.state_dir(), config.file_mode, false).unwrap();
-    assert!(
-        reported::load(&config.state_dir(), config.file_mode)
-            .unwrap()
-            .is_none()
-    );
+    reported::remove(&config.state_dir(), false).unwrap();
+    assert!(reported::load(&config.state_dir()).unwrap().is_none());
 
     // Next patch from genesis should be full state
     let patch = Patch::create(&config, GENESIS_HASH).unwrap();
@@ -272,7 +259,7 @@ fn test_state_file_deleted_with_valid_chain() {
     let hash2 = Block::create(&config, None).unwrap();
 
     // Delete STATE -- consolidation should still work via block chain
-    storage::remove(&config.state_dir(), "STATE", config.file_mode, false).unwrap();
+    storage::remove(&config.state_dir(), "STATE", false).unwrap();
 
     let patch = Patch::create(&config, &hash1).unwrap();
     assert_eq!(patch.head, hash2);
@@ -343,7 +330,7 @@ source = "users.csv"
     let _hash2 = Block::create(&config, None).unwrap();
 
     // Delete STATE: the layout-changed table can no longer be sourced.
-    storage::remove(&config.state_dir(), "STATE", config.file_mode, false).unwrap();
+    storage::remove(&config.state_dir(), "STATE", false).unwrap();
 
     // Must error rather than silently drop the changed table from the patch.
     assert!(Patch::create(&config, &hash1).is_err());

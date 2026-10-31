@@ -19,6 +19,7 @@ use crate::proto::patch::EventBatches as ProtoEventBatches;
 use crate::proto::state::State as ProtoState;
 use crate::proto::table::Table as ProtoTable;
 use crate::stats::{self, Stage, StageStats};
+use crate::storage;
 use crate::utils;
 use crate::utils::GENESIS_HASH;
 
@@ -70,9 +71,8 @@ fn collect_block_hashes(
     work_dir: &Path,
     head: &str,
     last_known: &str,
-    mode: u32,
 ) -> Result<(Option<Timestamp>, Vec<String>)> {
-    let block = Block::load_header(work_dir, head, mode)?;
+    let block = Block::load_header(work_dir, head)?;
     let created = block.created;
 
     if head == last_known {
@@ -84,7 +84,7 @@ fn collect_block_hashes(
 
     while parent != GENESIS_HASH && parent != last_known {
         hashes.push(parent.clone());
-        parent = Block::load_header(work_dir, &parent, mode)?.parent;
+        parent = Block::load_header(work_dir, &parent)?.parent;
     }
 
     if parent != last_known {
@@ -193,7 +193,6 @@ type ConsolidateResult = (
 fn try_consolidate(
     work_dir: &Path,
     block_hashes: &[String],
-    mode: u32,
     table_configs: &HashMap<String, TableConfig>,
     events: &mut HashMap<String, ProtoEventBatches>,
 ) -> Result<ConsolidateResult> {
@@ -218,7 +217,7 @@ fn try_consolidate(
             num_blocks,
             hash
         );
-        let mut block = match Block::load(work_dir, hash, mode) {
+        let mut block = match Block::load(work_dir, hash) {
             Ok(block) => block,
             Err(e) => {
                 // Keep loading the remaining blocks for their events, but stop
@@ -243,7 +242,7 @@ fn try_consolidate(
     }
 
     // Load state for per-table size comparison and fallback.
-    let state_tables = match ProtoState::load(work_dir, mode)? {
+    let state_tables = match ProtoState::load(work_dir)? {
         Some(state) => state.tables,
         None => HashMap::new(),
     };
@@ -322,25 +321,19 @@ fn try_consolidate(
 /// the actual patch is itself full state, this makes the saving exactly zero.
 fn full_state_size(config: &Config, num_blocks: u32) -> Result<u64> {
     let state_dir = config.ensure_state_dir()?;
-    let head = head::load(&state_dir, config.file_mode)?;
-    let created = Block::load_header(&state_dir, &head, config.file_mode)
+    let head = head::load(&state_dir)?;
+    let created = Block::load_header(&state_dir, &head)
         .ok()
         .and_then(|header| header.created);
-    let mut patch = full_state_patch(&state_dir, &head, created, config.file_mode)?;
+    let mut patch = full_state_patch(&state_dir, &head, created)?;
     patch.num_blocks = num_blocks;
     Ok(patch.encoded_len() as u64)
 }
 
 /// Build a full-state patch from the STATE file. `created` is the HEAD
 /// block's creation time, which callers have already read.
-fn full_state_patch(
-    work_dir: &Path,
-    head: &str,
-    created: Option<Timestamp>,
-    mode: u32,
-) -> Result<Patch> {
-    let state =
-        ProtoState::load(work_dir, mode)?.context("no STATE file found for full state patch")?;
+fn full_state_patch(work_dir: &Path, head: &str, created: Option<Timestamp>) -> Result<Patch> {
+    let state = ProtoState::load(work_dir)?.context("no STATE file found for full state patch")?;
     Ok(Patch {
         head: head.to_string(),
         created,
@@ -352,11 +345,11 @@ fn full_state_patch(
 /// Build a full-state patch for when there is no known reference to start
 /// from. It carries no events: those of every stored block could make the
 /// patch too big.
-fn unknown_reference_patch(work_dir: &Path, head: &str, mode: u32) -> Result<Patch> {
-    let created = Block::load_header(work_dir, head, mode)
+fn unknown_reference_patch(work_dir: &Path, head: &str) -> Result<Patch> {
+    let created = Block::load_header(work_dir, head)
         .ok()
         .and_then(|header| header.created);
-    let patch = full_state_patch(work_dir, head, created, mode)?;
+    let patch = full_state_patch(work_dir, head, created)?;
     log::info!("Consolidated patch:\n{}", patch);
     Ok(patch)
 }
@@ -365,8 +358,13 @@ impl Patch {
     /// Consolidate the chain from `last_known` to HEAD into a patch. When stats
     /// are enabled, times the consolidation and records the delta-merging stage
     /// (full-state size vs consolidated size) into the config's in-flight run.
+    ///
+    /// Holds a shared lock on the state directory throughout, so HEAD, the
+    /// blocks and STATE are all read from the same chain.
     pub fn create(config: &Config, last_known: &str) -> Result<Patch> {
         let start = Instant::now();
+        let state_dir = config.ensure_state_dir()?;
+        let _lock = storage::lock(&state_dir, false, config.file_mode)?;
         let mut patch = Self::create_consolidated(config, last_known)?;
 
         if config.stats.enable {
@@ -407,11 +405,10 @@ impl Patch {
 
     fn create_consolidated(config: &Config, last_known: &str) -> Result<Patch> {
         let state_dir = config.ensure_state_dir()?;
-        let file_mode = config.file_mode;
 
-        let resolved = crate::storage::resolve_hash_prefix(&state_dir, last_known);
+        let resolved = storage::resolve_hash_prefix(&state_dir, last_known);
 
-        let head = head::load(&state_dir, file_mode)?;
+        let head = head::load(&state_dir)?;
 
         if head == GENESIS_HASH {
             let patch = Patch {
@@ -429,47 +426,41 @@ impl Patch {
             Ok(hash) if hash != GENESIS_HASH => hash,
             Ok(_) => {
                 log::info!("Reference is genesis, producing full state patch");
-                return unknown_reference_patch(&state_dir, &head, file_mode);
+                return unknown_reference_patch(&state_dir, &head);
             }
             Err(e) => {
                 log::warn!(
                     "Reference block not found, producing full state patch: {}",
                     e
                 );
-                return unknown_reference_patch(&state_dir, &head, file_mode);
+                return unknown_reference_patch(&state_dir, &head);
             }
         };
 
         // A reference outside the chain (e.g. a broken chain) is as good as
         // unknown.
-        let (created, block_hashes) =
-            match collect_block_hashes(&state_dir, &head, &last_known, file_mode) {
-                Ok(result) => result,
-                Err(e) => {
-                    log::warn!("Consolidation failed, falling back to full state: {}", e);
-                    return unknown_reference_patch(&state_dir, &head, file_mode);
-                }
-            };
-
-        let mut events = HashMap::new();
-        let (num_blocks, deltas, states) = match try_consolidate(
-            &state_dir,
-            &block_hashes,
-            file_mode,
-            &config.tables,
-            &mut events,
-        ) {
+        let (created, block_hashes) = match collect_block_hashes(&state_dir, &head, &last_known) {
             Ok(result) => result,
             Err(e) => {
                 log::warn!("Consolidation failed, falling back to full state: {}", e);
-                // The reference is known, so the events of the blocks
-                // after it are all the receiver lacks.
-                let mut patch = full_state_patch(&state_dir, &head, created, file_mode)?;
-                patch.events = events;
-                log::info!("Consolidated patch:\n{}", patch);
-                return Ok(patch);
+                return unknown_reference_patch(&state_dir, &head);
             }
         };
+
+        let mut events = HashMap::new();
+        let (num_blocks, deltas, states) =
+            match try_consolidate(&state_dir, &block_hashes, &config.tables, &mut events) {
+                Ok(result) => result,
+                Err(e) => {
+                    log::warn!("Consolidation failed, falling back to full state: {}", e);
+                    // The reference is known, so the events of the blocks
+                    // after it are all the receiver lacks.
+                    let mut patch = full_state_patch(&state_dir, &head, created)?;
+                    patch.events = events;
+                    log::info!("Consolidated patch:\n{}", patch);
+                    return Ok(patch);
+                }
+            };
 
         let patch = Patch {
             head,

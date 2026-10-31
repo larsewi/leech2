@@ -150,11 +150,13 @@ pub fn finalize_patch_create(config: &Config) {
 
 /// Append `run` to the `STATS` JSON array in the state directory, creating the
 /// file if absent and replacing it wholesale if the existing content is not a
-/// valid JSON array.
+/// valid JSON array. Holds the exclusive lock across the read and the write,
+/// so concurrent appends cannot drop each other's entries.
 fn append(config: &Config, run: RunStats) -> Result<()> {
     let state_dir = config.ensure_state_dir()?;
+    let _lock = storage::lock(&state_dir, true, config.file_mode)?;
 
-    let mut entries: Vec<Value> = match storage::load(&state_dir, STATS_FILE, config.file_mode)? {
+    let mut entries: Vec<Value> = match storage::load(&state_dir, STATS_FILE)? {
         Some(bytes) => serde_json::from_slice(&bytes).unwrap_or_else(|e| {
             log::warn!(
                 "STATS file is not a valid JSON array, starting fresh: {}",
@@ -326,11 +328,12 @@ impl fmt::Display for Summary {
 pub fn summarize(config: &Config) -> Result<Option<Summary>> {
     let state_dir = config.state_dir();
     // Guard on existence so a missing state dir doesn't trip the lock-file
-    // creation in `storage::load`.
+    // creation in `storage::lock`.
     if !state_dir.join(STATS_FILE).exists() {
         return Ok(None);
     }
-    let Some(bytes) = storage::load(&state_dir, STATS_FILE, config.file_mode)? else {
+    let _lock = storage::lock(&state_dir, false, config.file_mode)?;
+    let Some(bytes) = storage::load(&state_dir, STATS_FILE)? else {
         return Ok(None);
     };
     let runs: Vec<RunStats> =
@@ -400,9 +403,7 @@ mod tests {
 
     fn load_entries(config: &Config) -> Vec<Value> {
         let state_dir = config.state_dir();
-        let bytes = storage::load(&state_dir, STATS_FILE, config.file_mode)
-            .unwrap()
-            .unwrap();
+        let bytes = storage::load(&state_dir, STATS_FILE).unwrap().unwrap();
         serde_json::from_slice(&bytes).unwrap()
     }
 

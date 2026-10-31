@@ -14,8 +14,8 @@
  * default a `state` subdirectory of the work directory. The configuration
  * format is described in CONFIGURE.md in the project documentation.
  *
- * Concurrency: the library serializes access to its own state files with
- * advisory locks, so multiple processes may safely share one working directory.
+ * Concurrency: the library serializes access to its own state files with an
+ * advisory lock, so multiple processes may safely share one working directory.
  */
 
 #ifndef __LEECH2_H__
@@ -122,6 +122,9 @@ typedef struct {
 
 /**
  * @brief Callback type for receiving log messages.
+ *
+ * leech2 may invoke the callback while holding its lock on the state
+ * directory, so the callback implementation must not call any lch_ function.
  *
  * @param level     Severity level of the message.
  * @param msg       Null-terminated log message string. Only valid for the

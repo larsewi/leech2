@@ -64,8 +64,8 @@ impl fmt::Display for ProtoState {
 }
 
 impl ProtoState {
-    pub fn load(work_dir: &Path, mode: u32) -> Result<Option<Self>> {
-        let Some(data) = storage::load(work_dir, STATE_FILE, mode)? else {
+    pub fn load(work_dir: &Path) -> Result<Option<Self>> {
+        let Some(data) = storage::load(work_dir, STATE_FILE)? else {
             log::info!("No previous state found");
             return Ok(None);
         };
@@ -88,8 +88,8 @@ impl State {
     /// does not belong to the block HEAD references. This way the tables fall
     /// back to full state instead of computing deltas against the wrong
     /// baseline.
-    pub fn load(work_dir: &Path, head: &str, mode: u32) -> Result<Option<Self>> {
-        let Some(proto) = ProtoState::load(work_dir, mode)? else {
+    pub fn load(work_dir: &Path, head: &str) -> Result<Option<Self>> {
+        let Some(proto) = ProtoState::load(work_dir)? else {
             return Ok(None);
         };
         if proto.block_hash != head {
