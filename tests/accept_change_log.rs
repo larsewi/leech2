@@ -48,7 +48,7 @@ fn log_rows(sql: &str) -> Vec<&str> {
 
 /// The creation time of block `hash`, as the quoted SQL literal of a log row.
 fn timestamp(config: &Config, hash: &str) -> String {
-    let header = Block::load_header(&config.state_dir(), hash, config.file_mode).unwrap();
+    let header = Block::load_header(&config.state_dir(), hash).unwrap();
     format!(
         "'{}'",
         format_iso_timestamp(&header.created.unwrap()).unwrap()
@@ -103,6 +103,6 @@ fn test_change_log_skips_first_block() {
     common::write_csv!(work_dir, "users.csv", "1,Alice");
     let hash = Block::create(&config, None).unwrap();
 
-    let block = Block::load(&config.state_dir(), &hash, config.file_mode).unwrap();
+    let block = Block::load(&config.state_dir(), &hash).unwrap();
     assert!(block.events.is_empty());
 }

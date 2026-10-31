@@ -161,27 +161,32 @@ source = "users.csv"
     let state_dir = config.state_dir();
     let hash1 = Block::create(&config, None).unwrap();
 
-    // Add a fake orphaned 40-hex file and a stale lock file
+    // Add a fake orphaned 40-hex file, and lock files left by older versions,
+    // which locked each file separately
     let orphan_hash = "aa00000000000000000000000000000000000000";
-    let stale_lock = format!(".{}.lock", orphan_hash);
+    let legacy_locks = [format!(".{}.lock", orphan_hash), ".HEAD.lock".to_string()];
     std::fs::write(state_dir.join(orphan_hash), b"fake").unwrap();
-    std::fs::write(state_dir.join(&stale_lock), b"").unwrap();
-    assert!(state_dir.join(orphan_hash).exists());
-    assert!(state_dir.join(&stale_lock).exists());
+    for legacy_lock in &legacy_locks {
+        std::fs::write(state_dir.join(legacy_lock), b"").unwrap();
+    }
 
     // Create another block -- truncation runs and should remove the orphan
     common::write_csv!(work_dir, "users.csv", "1,Alice", "2,Bob");
     let hash2 = Block::create(&config, None).unwrap();
 
-    // Orphan and its stale lock file should be gone
+    // Orphan and the legacy lock files should be gone; the current lock stays
     assert!(
         !state_dir.join(orphan_hash).exists(),
         "orphaned block should be removed"
     );
-    assert!(
-        !state_dir.join(&stale_lock).exists(),
-        "stale lock file should be removed"
-    );
+    for legacy_lock in &legacy_locks {
+        assert!(
+            !state_dir.join(legacy_lock).exists(),
+            "legacy lock file '{}' should be removed",
+            legacy_lock
+        );
+    }
+    assert!(state_dir.join(".lock").exists());
 
     // Chain blocks should still be on disk
     assert!(state_dir.join(&hash1).exists());

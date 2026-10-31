@@ -308,11 +308,24 @@ older than the `REPORTED` position, and blocks exceeding configured `max-blocks`
 or `max-age` limits.
 
 Truncation runs after `Block::create()` advances `HEAD`, before the call
-returns. Concurrent block creation and truncation in the same work directory
-serialize on an exclusive lock on `.chain.lock`. Under that lock, block creation
-checks that `HEAD` is still the parent it built the block on. If another block
-was created in the meantime, the block is discarded and the call fails, so of
-two concurrent block creations only one succeeds.
+returns. It also deletes the per-file `.<name>.lock` and `.chain.lock` files
+left by older versions.
+
+### Locking
+
+Access to the state directory is serialized by a single advisory lock on its
+`.lock` file. Each operation takes it once for its whole duration: shared to
+only read (patch creation, reading `REPORTED`, the CLI's show commands), and
+exclusive to change anything (storing a block, truncation, updating `REPORTED`
+or `STATS`). The functions in `storage.rs` do not lock themselves, so call them
+with the lock held, and never take the lock again while holding it.
+
+Block creation takes the snapshot without the lock, since it may call into the
+callbacks. It then reads `HEAD` and `STATE` under a shared lock, and stores the
+block under an exclusive lock. Under that lock, it checks that `HEAD` is still
+the parent it built the block on. If another block was created in the meantime,
+the block is discarded and the call fails, so of two concurrent block creations
+only one succeeds.
 
 ### Recovery from missing files
 
@@ -374,7 +387,7 @@ src/
   head.rs       HEAD file read/write
   reported.rs   REPORTED file read/write/remove (last reported patch hash)
   truncate.rs   History truncation (orphan, reported, max-blocks, max-age)
-  storage.rs    File I/O with advisory locking
+  storage.rs    File I/O and the state directory lock
   wire.rs       Protobuf encode/decode + zstd compression
   sql.rs        Patch-to-SQL conversion (consumes typed Values directly)
   proto.rs      Generated protobuf code (via build.rs)
@@ -414,7 +427,7 @@ option):
 | `PATCH`    | Last generated patch (CLI only)                                      |
 | `STATS`    | Cumulative JSON patch-creation stats (opt-in via `[stats]`)          |
 | `<sha1>`   | Protobuf-encoded block files, named by their hash                    |
-| `*.lock`   | Lock files for inter-process synchronization (created automatically) |
+| `.lock`    | Lock file for inter-process synchronization (created automatically)  |
 | `*.tmp`    | Temporary files used during atomic writes (should not persist)       |
 
 leech2 creates the state directory on demand, with permission bits from the

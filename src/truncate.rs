@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::path::Path;
 use std::time::SystemTime;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 
 use crate::block::Block;
 use crate::config::TruncateConfig;
@@ -11,21 +11,9 @@ use crate::reported;
 use crate::storage;
 use crate::utils::GENESIS_HASH;
 
-/// Lock-file name used to serialize chain-mutating operations (block creation
-/// advancing HEAD, and truncation walking the chain and removing orphans).
-/// Held exclusively by `Block::create` and by `truncate::run`; held for no
-/// other reason.
-const CHAIN_LOCK_NAME: &str = "chain";
-
 struct ChainEntry {
     hash: String,
     created: SystemTime,
-}
-
-/// Strips the leading `.` and trailing `.lock` from a lock file name,
-/// returning the inner block hash (e.g. `".abc123.lock"` -> `"abc123"`).
-fn strip_lock_affixes(name: &str) -> Option<&str> {
-    name.strip_prefix(".")?.strip_suffix(".lock")
 }
 
 /// Returns `true` if `s` is a 40-character hexadecimal string (i.e. a SHA-1 hash).
@@ -33,9 +21,15 @@ fn is_hex_hash(s: &str) -> bool {
     s.len() == 40 && s.chars().all(|c| c.is_ascii_hexdigit())
 }
 
-/// Returns `(block_hashes, stale_lock_files)` by scanning the work directory.
-/// Block hashes are 40-hex-char filenames. Stale lock files are `.<40-hex>.lock`
-/// files whose corresponding block is not on disk.
+/// Returns `true` if `name` is a lock file left by an older version, which
+/// locked each file separately (`.<name>.lock`) and the chain with
+/// `.chain.lock`.
+fn is_legacy_lock_file(name: &str) -> bool {
+    name != storage::LOCK_FILE && name.starts_with('.') && name.ends_with(".lock")
+}
+
+/// Returns `(block_hashes, legacy_lock_files)` by scanning the work directory.
+/// Block hashes are 40-hex-char filenames.
 fn scan_work_dir(work_dir: &Path) -> Result<(HashSet<String>, Vec<String>)> {
     let mut blocks = HashSet::new();
     let mut lock_files = Vec::new();
@@ -48,32 +42,23 @@ fn scan_work_dir(work_dir: &Path) -> Result<(HashSet<String>, Vec<String>)> {
         };
         if is_hex_hash(name) {
             blocks.insert(name.to_string());
-        } else if strip_lock_affixes(name).is_some_and(is_hex_hash) {
+        } else if is_legacy_lock_file(name) {
             lock_files.push(name.to_string());
         }
     }
-
-    // Keep only lock files whose block is not on disk
-    lock_files.retain(|name| {
-        let base = strip_lock_affixes(name);
-        match base {
-            Some(base) => !blocks.contains(base),
-            None => false,
-        }
-    });
 
     Ok((blocks, lock_files))
 }
 
 /// Walk the block chain from HEAD back toward GENESIS, returning an ordered
 /// list of chain entries and the set of reachable block hashes.
-fn walk_chain(work_dir: &Path, head_hash: &str, mode: u32) -> (Vec<ChainEntry>, HashSet<String>) {
+fn walk_chain(work_dir: &Path, head_hash: &str) -> (Vec<ChainEntry>, HashSet<String>) {
     let mut chain = Vec::new();
     let mut reachable = HashSet::new();
 
     let mut current_hash = head_hash.to_string();
     while current_hash != GENESIS_HASH {
-        let Ok(header) = Block::load_header(work_dir, &current_hash, mode) else {
+        let Ok(header) = Block::load_header(work_dir, &current_hash) else {
             // Reached end of chain
             log::trace!(
                 "Block '{:.7}...' not found (previously truncated), stopping chain walk",
@@ -106,18 +91,16 @@ fn walk_chain(work_dir: &Path, head_hash: &str, mode: u32) -> (Vec<ChainEntry>, 
     (chain, reachable)
 }
 
-/// Remove orphaned blocks (not reachable from HEAD) and stale lock files
-/// (whose corresponding block no longer exists on disk). This also cleans up
-/// corrupt blocks, since `walk_chain` stops before adding them to the
-/// reachable set.
+/// Remove orphaned blocks (not reachable from HEAD) and lock files left by
+/// older versions. This also cleans up corrupt blocks, since `walk_chain` stops
+/// before adding them to the reachable set.
 fn remove_orphans(
     work_dir: &Path,
     config: &TruncateConfig,
     reachable: &HashSet<String>,
-    mode: u32,
     dry_run: bool,
 ) -> Result<()> {
-    let (on_disk, stale_locks) = scan_work_dir(work_dir)?;
+    let (on_disk, legacy_locks) = scan_work_dir(work_dir)?;
 
     if config.remove_orphans {
         for hash in &on_disk {
@@ -125,20 +108,20 @@ fn remove_orphans(
                 if !dry_run {
                     log::info!("Removing orphaned block '{:.7}...'", hash);
                 }
-                storage::remove(work_dir, hash, mode, dry_run)?;
+                storage::remove(work_dir, hash, dry_run)?;
             }
         }
     }
 
-    for lock_file in &stale_locks {
+    for lock_file in &legacy_locks {
         if dry_run {
-            eprintln!("Would have removed stale lock file '{}'", lock_file);
+            eprintln!("Would have removed legacy lock file '{}'", lock_file);
             continue;
         }
-        log::info!("Removing stale lock file '{}'", lock_file);
+        log::info!("Removing legacy lock file '{}'", lock_file);
         if let Err(error) = std::fs::remove_file(work_dir.join(lock_file)) {
             log::warn!(
-                "Failed to remove stale lock file '{}': {}",
+                "Failed to remove legacy lock file '{}': {}",
                 lock_file,
                 error
             );
@@ -154,11 +137,10 @@ fn truncate_chain(
     work_dir: &Path,
     config: &TruncateConfig,
     chain: &[ChainEntry],
-    mode: u32,
     dry_run: bool,
 ) -> Result<()> {
     let reported_pos = if config.truncate_reported {
-        match reported::load(work_dir, mode)? {
+        match reported::load(work_dir)? {
             Some(hash) => chain
                 .iter()
                 .position(|chain_entry| chain_entry.hash == hash),
@@ -186,7 +168,7 @@ fn truncate_chain(
             if !dry_run {
                 log::info!("Truncating block '{:.7}...'", entry.hash);
             }
-            storage::remove(work_dir, &entry.hash, mode, dry_run)?;
+            storage::remove(work_dir, &entry.hash, dry_run)?;
             removed += 1;
         }
     }
@@ -202,20 +184,18 @@ fn truncate_chain(
     Ok(())
 }
 
-/// Run a single truncation pass under the chain lock. Blocks until the
-/// chain lock is available; serializes against `Block::create` and any
-/// other in-progress truncation in the same work directory.
+/// Run a single truncation pass under an exclusive lock on the state
+/// directory. Waits until the lock is available; serializes against every
+/// other operation on the state directory.
 pub fn run(work_dir: &Path, config: &TruncateConfig, mode: u32, dry_run: bool) -> Result<()> {
-    // Grab the chain lock even in dry-run so the reported preview reflects a
-    // consistent chain and cannot race a concurrent block creation or
-    // truncation pass.
-    let _chain_lock = storage::acquire_lock(work_dir, CHAIN_LOCK_NAME, true, mode)
-        .context("failed to acquire chain lock for truncation")?;
+    // Take the lock even in dry-run so the reported preview reflects a
+    // consistent chain.
+    let _lock = storage::lock(work_dir, true, mode)?;
 
-    let head_hash = head::load(work_dir, mode)?;
-    let (chain, reachable) = walk_chain(work_dir, &head_hash, mode);
-    remove_orphans(work_dir, config, &reachable, mode, dry_run)?;
-    truncate_chain(work_dir, config, &chain, mode, dry_run)?;
+    let head_hash = head::load(work_dir)?;
+    let (chain, reachable) = walk_chain(work_dir, &head_hash);
+    remove_orphans(work_dir, config, &reachable, dry_run)?;
+    truncate_chain(work_dir, config, &chain, dry_run)?;
 
     Ok(())
 }
@@ -225,24 +205,24 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_strip_lock_affixes() {
-        assert_eq!(strip_lock_affixes(".abc123.lock"), Some("abc123"));
-        assert_eq!(strip_lock_affixes(".hello.lock"), Some("hello"));
+    fn test_is_legacy_lock_file() {
+        assert!(is_legacy_lock_file(
+            ".a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2.lock"
+        ));
+        assert!(is_legacy_lock_file(".HEAD.lock"));
+        assert!(is_legacy_lock_file(".chain.lock"));
     }
 
     #[test]
-    fn test_strip_lock_affixes_missing_prefix() {
-        assert_eq!(strip_lock_affixes("abc123.lock"), None);
+    fn test_is_legacy_lock_file_keeps_current_lock() {
+        assert!(!is_legacy_lock_file(storage::LOCK_FILE));
     }
 
     #[test]
-    fn test_strip_lock_affixes_missing_suffix() {
-        assert_eq!(strip_lock_affixes(".abc123"), None);
-    }
-
-    #[test]
-    fn test_strip_lock_affixes_empty() {
-        assert_eq!(strip_lock_affixes(""), None);
+    fn test_is_legacy_lock_file_other_files() {
+        assert!(!is_legacy_lock_file("HEAD"));
+        assert!(!is_legacy_lock_file("HEAD.lock"));
+        assert!(!is_legacy_lock_file(".HEAD"));
     }
 
     #[test]

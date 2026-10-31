@@ -69,8 +69,8 @@ impl fmt::Display for Block {
 }
 
 impl Block {
-    pub fn load(work_dir: &Path, hash: &str, mode: u32) -> Result<Block> {
-        let Some(data) = storage::load(work_dir, hash, mode)? else {
+    pub fn load(work_dir: &Path, hash: &str) -> Result<Block> {
+        let Some(data) = storage::load(work_dir, hash)? else {
             bail!("failed to load block '{:.7}...'", hash);
         };
         let block = Block::decode(data.as_slice())
@@ -84,8 +84,8 @@ impl Block {
     /// [`BlockHeader`], which shares field tags with [`Block`] -- prost skips
     /// the unknown payload field so only the parent hash and timestamp are
     /// deserialized.
-    pub fn load_header(work_dir: &Path, hash: &str, mode: u32) -> Result<BlockHeader> {
-        let Some(data) = storage::load(work_dir, hash, mode)? else {
+    pub fn load_header(work_dir: &Path, hash: &str) -> Result<BlockHeader> {
+        let Some(data) = storage::load(work_dir, hash)? else {
             bail!("failed to load block '{:.7}...'", hash);
         };
         let header = BlockHeader::decode(data.as_slice())
@@ -98,8 +98,10 @@ impl Block {
     /// through `callbacks`. Pass `None` when every table in `config` is
     /// CSV-backed.
     ///
-    /// See [`commit`] for how the block is stored. Truncation runs after HEAD
-    /// advances, once the chain lock has been released.
+    /// The snapshot is taken without holding the state directory lock, since
+    /// it may call into `callbacks`. See [`commit`] for how the block is
+    /// stored. Truncation runs after HEAD advances, once the lock has been
+    /// released.
     pub fn create(config: &Config, callbacks: Option<&Callbacks>) -> Result<String> {
         let state_dir = config.ensure_state_dir()?;
         let file_mode = config.file_mode;
@@ -109,22 +111,28 @@ impl Block {
         // table deltas, they are new data rather than a diff against STATE.
         let mut events = event::load(config, callbacks).context("failed to load events")?;
 
-        let parent_hash =
-            head::load(&state_dir, file_mode).context("failed to load head of chain")?;
-
-        let created: Timestamp = SystemTime::now().into();
-
         // When starting a fresh chain (HEAD is genesis), store an empty payload.
         // The first block's deltas are never used during patch creation: a genesis
         // reference always produces a full state patch from the STATE file, and
         // non-genesis references exclude the first block from consolidation.
         // Any stale STATE file left from a previous run is also ignored.
-        let payload = if parent_hash == utils::GENESIS_HASH {
-            HashMap::new()
-        } else {
-            let previous_state = state::State::load(&state_dir, &parent_hash, file_mode)
-                .context("failed to load previous state")?;
+        let (parent_hash, previous_state) = {
+            let _lock = storage::lock(&state_dir, false, file_mode)?;
+            let parent_hash = head::load(&state_dir).context("failed to load head of chain")?;
+            let previous_state = if parent_hash == utils::GENESIS_HASH {
+                None
+            } else {
+                Some(
+                    state::State::load(&state_dir, &parent_hash)
+                        .context("failed to load previous state")?,
+                )
+            };
+            (parent_hash, previous_state)
+        };
 
+        let created: Timestamp = SystemTime::now().into();
+
+        let payload = if let Some(previous_state) = previous_state {
             let mut payload = HashMap::new();
             for (name, delta) in delta::Delta::compute(previous_state, &current_state) {
                 // The changes of a table with a change log are also recorded
@@ -140,6 +148,8 @@ impl Block {
                 payload.insert(name, TableChange::from(delta));
             }
             payload
+        } else {
+            HashMap::new()
         };
 
         let block = Block {
@@ -174,9 +184,9 @@ impl Block {
     }
 }
 
-/// Store the block file, STATE and HEAD under an exclusive lock on
-/// `.chain.lock`, so a concurrent truncation cannot see the block file before
-/// HEAD points at it (which would orphan-mark and delete it).
+/// Store the block file, STATE and HEAD under an exclusive lock on the state
+/// directory, so a concurrent truncation cannot see the block file before HEAD
+/// points at it (which would orphan-mark and delete it).
 ///
 /// If HEAD is no longer `parent_hash`, another block was created since the
 /// chain was read. Only one of two concurrent block creations may succeed, so
@@ -190,10 +200,9 @@ fn commit(
 ) -> Result<()> {
     let state_dir = config.state_dir();
     let file_mode = config.file_mode;
-    let chain_lock = storage::acquire_lock(&state_dir, "chain", true, file_mode)
-        .context("failed to acquire chain lock")?;
+    let lock = storage::lock(&state_dir, true, file_mode)?;
 
-    let head_hash = head::load(&state_dir, file_mode).context("failed to load head of chain")?;
+    let head_hash = head::load(&state_dir).context("failed to load head of chain")?;
     if head_hash != parent_hash {
         bail!(
             "HEAD moved from '{:.7}...' to '{:.7}...' during block creation, discarding block '{:.7}...'",
@@ -211,7 +220,7 @@ fn commit(
     head::store(&state_dir, hash, file_mode, config.dry_run)
         .context("failed to update head of state")?;
 
-    drop(chain_lock);
+    drop(lock);
     Ok(())
 }
 
@@ -322,10 +331,8 @@ source = "users.csv"
         let error = commit(&config, &hash1, &hash, &encoded, &current_state).unwrap_err();
         assert!(error.to_string().contains("HEAD moved"));
 
-        assert_eq!(head::load(&state_dir, config.file_mode).unwrap(), hash2);
-        let stored_state = state::ProtoState::load(&state_dir, config.file_mode)
-            .unwrap()
-            .unwrap();
+        assert_eq!(head::load(&state_dir).unwrap(), hash2);
+        let stored_state = state::ProtoState::load(&state_dir).unwrap().unwrap();
         assert_eq!(stored_state.block_hash, hash2);
         assert!(!state_dir.join(&hash).exists());
     }

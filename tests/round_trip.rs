@@ -768,7 +768,7 @@ fn run_round_for_agent(
     );
     run.agent.write_csv().unwrap();
     let head = Block::create(&config, None).unwrap();
-    let header = Block::load_header(&config.state_dir(), &head, config.file_mode).unwrap();
+    let header = Block::load_header(&config.state_dir(), &head).unwrap();
     run.agent.record_block(header.created.unwrap().seconds);
 
     let force_ship = round + 1 == ROUNDS;
