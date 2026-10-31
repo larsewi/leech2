@@ -11,7 +11,7 @@ fn test_two_blocks_insert_delete_update() {
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
-    common::write_config(
+    common::write_file(
         work_dir,
         "config.toml",
         r#"
@@ -27,12 +27,12 @@ source = "users.csv"
     );
 
     // Block 1: initial data
-    common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n3,Charlie\n");
+    common::write_csv!(work_dir, "users.csv", "1,Alice", "2,Bob", "3,Charlie");
     let config = Config::load(work_dir).unwrap();
     let hash1 = Block::create(&config, None).unwrap();
 
     // Block 2: update Alice->Alicia, delete Bob, insert Dave
-    common::write_csv(work_dir, "users.csv", "1,Alicia\n3,Charlie\n4,Dave\n");
+    common::write_csv!(work_dir, "users.csv", "1,Alicia", "3,Charlie", "4,Dave");
     let hash2 = Block::create(&config, None).unwrap();
     assert_ne!(hash1, hash2);
 
@@ -95,7 +95,7 @@ fn test_three_blocks_chain_consolidation() {
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
-    common::write_config(
+    common::write_file(
         work_dir,
         "config.toml",
         r#"
@@ -112,23 +112,26 @@ source = "users.csv"
     );
 
     // Block 1: initial data
-    common::write_csv(work_dir, "users.csv", "1,Alice,a@ex.com\n2,Bob,b@ex.com\n");
+    common::write_csv!(work_dir, "users.csv", "1,Alice,a@ex.com", "2,Bob,b@ex.com");
     let config = Config::load(work_dir).unwrap();
     let hash1 = Block::create(&config, None).unwrap();
 
     // Block 2: update Alice's email, insert Charlie
-    common::write_csv(
+    common::write_csv!(
         work_dir,
         "users.csv",
-        "1,Alice,a@new.com\n2,Bob,b@ex.com\n3,Charlie,c@ex.com\n",
+        "1,Alice,a@new.com",
+        "2,Bob,b@ex.com",
+        "3,Charlie,c@ex.com",
     );
     let hash2 = Block::create(&config, None).unwrap();
 
     // Block 3: delete Bob, update Charlie -> Charles with new email
-    common::write_csv(
+    common::write_csv!(
         work_dir,
         "users.csv",
-        "1,Alice,a@new.com\n3,Charles,ch@ex.com\n",
+        "1,Alice,a@new.com",
+        "3,Charles,ch@ex.com",
     );
     let hash3 = Block::create(&config, None).unwrap();
 
@@ -228,7 +231,7 @@ fn test_consecutive_updates_same_column_consolidate() {
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
-    common::write_config(
+    common::write_file(
         work_dir,
         "config.toml",
         r#"
@@ -245,16 +248,16 @@ source = "products.csv"
     );
 
     // Block 1: initial data
-    common::write_csv(work_dir, "products.csv", "3,Widget,249.95\n");
+    common::write_csv!(work_dir, "products.csv", "3,Widget,249.95");
     let config = Config::load(work_dir).unwrap();
     let hash1 = Block::create(&config, None).unwrap();
 
     // Block 2: bump price 249.95 -> 249.96
-    common::write_csv(work_dir, "products.csv", "3,Widget,249.96\n");
+    common::write_csv!(work_dir, "products.csv", "3,Widget,249.96");
     let _hash2 = Block::create(&config, None).unwrap();
 
     // Block 3: bump price 249.96 -> 249.97
-    common::write_csv(work_dir, "products.csv", "3,Widget,249.97\n");
+    common::write_csv!(work_dir, "products.csv", "3,Widget,249.97");
     let hash3 = Block::create(&config, None).unwrap();
 
     // Patch from hash1 should consolidate the two consecutive price updates
@@ -295,7 +298,7 @@ fn test_updates_cancelling_out_omit_table() {
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
-    common::write_config(
+    common::write_file(
         work_dir,
         "config.toml",
         r#"
@@ -312,16 +315,16 @@ source = "products.csv"
     );
 
     // Block 1: initial data
-    common::write_csv(work_dir, "products.csv", "3,Widget,249.95\n");
+    common::write_csv!(work_dir, "products.csv", "3,Widget,249.95");
     let config = Config::load(work_dir).unwrap();
     let hash1 = Block::create(&config, None).unwrap();
 
     // Block 2: bump price 249.95 -> 249.96
-    common::write_csv(work_dir, "products.csv", "3,Widget,249.96\n");
+    common::write_csv!(work_dir, "products.csv", "3,Widget,249.96");
     Block::create(&config, None).unwrap();
 
     // Block 3: revert price 249.96 -> 249.95
-    common::write_csv(work_dir, "products.csv", "3,Widget,249.95\n");
+    common::write_csv!(work_dir, "products.csv", "3,Widget,249.95");
     Block::create(&config, None).unwrap();
 
     // The two updates cancel out, so the table is left out of the patch.

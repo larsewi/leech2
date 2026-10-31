@@ -21,15 +21,27 @@ fn init_logging() {
         .try_init();
 }
 
-/// Write a config file to the work directory.
-pub fn write_config(work_dir: &Path, filename: &str, content: &str) {
+/// Write a file with the given content to the work directory.
+pub fn write_file(work_dir: &Path, filename: &str, content: &str) {
     std::fs::write(work_dir.join(filename), content).unwrap();
 }
 
-/// Write a CSV file to the work directory.
-pub fn write_csv(work_dir: &Path, filename: &str, content: &str) {
-    std::fs::write(work_dir.join(filename), content).unwrap();
+/// Write a CSV file to the work directory, one row per argument. Each row is
+/// terminated by a newline; with no rows the file is empty.
+#[allow(unused_macros)]
+macro_rules! write_csv {
+    ($work_dir:expr, $filename:expr $(, $row:expr)* $(,)?) => {{
+        #[allow(unused_mut)]
+        let mut content = String::new();
+        $(
+            content.push_str($row);
+            content.push('\n');
+        )*
+        crate::common::write_file($work_dir, $filename, &content);
+    }};
 }
+#[allow(unused_imports)]
+pub(crate) use write_csv;
 
 /// Parse SQL output into a set of individual statements. Handles
 /// non-deterministic ordering from HashMap iteration. A statement spans

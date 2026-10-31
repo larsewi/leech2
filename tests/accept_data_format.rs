@@ -11,7 +11,7 @@ fn test_csv_with_header_row() {
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
-    common::write_config(
+    common::write_file(
         work_dir,
         "config.toml",
         r#"
@@ -28,7 +28,7 @@ header = true
     );
 
     // CSV with header row -- the header should be skipped
-    common::write_csv(work_dir, "users.csv", "id,name\n1,Alice\n2,Bob\n");
+    common::write_csv!(work_dir, "users.csv", "id,name", "1,Alice", "2,Bob");
     let config = Config::load(work_dir).unwrap();
     Block::create(&config, None).unwrap();
 
@@ -53,7 +53,7 @@ fn test_csv_header_reordered_columns() {
     let work_dir = tmp.path();
 
     // Config declares fields in order: id, name, email
-    common::write_config(
+    common::write_file(
         work_dir,
         "config.toml",
         r#"
@@ -71,10 +71,12 @@ header = true
     );
 
     // CSV columns are in a different order: name, email, id
-    common::write_csv(
+    common::write_csv!(
         work_dir,
         "users.csv",
-        "name,email,id\nAlice,alice@example.com,1\nBob,bob@example.com,2\n",
+        "name,email,id",
+        "Alice,alice@example.com,1",
+        "Bob,bob@example.com,2",
     );
     let config = Config::load(work_dir).unwrap();
     Block::create(&config, None).unwrap();
@@ -103,7 +105,7 @@ fn test_empty_csv_table() {
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
-    common::write_config(
+    common::write_file(
         work_dir,
         "config.toml",
         r#"
@@ -119,7 +121,7 @@ source = "users.csv"
     );
 
     // Block 1: empty CSV (0 rows)
-    common::write_csv(work_dir, "users.csv", "");
+    common::write_csv!(work_dir, "users.csv");
     let config = Config::load(work_dir).unwrap();
     let hash1 = Block::create(&config, None).unwrap();
 
@@ -133,7 +135,7 @@ source = "users.csv"
     }
 
     // Block 2: add rows to previously empty table
-    common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
+    common::write_csv!(work_dir, "users.csv", "1,Alice", "2,Bob");
     let _hash2 = Block::create(&config, None).unwrap();
 
     // Patch from hash1: should show 2 inserts
@@ -149,7 +151,7 @@ fn test_field_type_sql_quoting() {
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
-    common::write_config(
+    common::write_file(
         work_dir,
         "config.toml",
         r#"
@@ -169,15 +171,15 @@ source = "records.csv"
     );
 
     // Block 1: initial data with all field types
-    common::write_csv(work_dir, "records.csv", "1,hello,42,true,36.6,first note\n");
+    common::write_csv!(work_dir, "records.csv", "1,hello,42,true,36.6,first note");
     let config = Config::load(work_dir).unwrap();
     let hash1 = Block::create(&config, None).unwrap();
 
     // Block 2: update all subsidiary fields
-    common::write_csv(
+    common::write_csv!(
         work_dir,
         "records.csv",
-        "1,it's a test,99,false,-3.14,second note\n",
+        "1,it's a test,99,false,-3.14,second note",
     );
     let _hash2 = Block::create(&config, None).unwrap();
 
@@ -221,7 +223,7 @@ fn test_null_sentinel() {
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
-    common::write_config(
+    common::write_file(
         work_dir,
         "config.toml",
         r#"
@@ -241,12 +243,12 @@ null = "^(N/A)?$"
     );
 
     // Block 1: row with non-null values. "Alice" doesn't match the null regex.
-    common::write_csv(work_dir, "items.csv", "1,Alice,some notes,42\n");
+    common::write_csv!(work_dir, "items.csv", "1,Alice,some notes,42");
     let config = Config::load(work_dir).unwrap();
     let hash1 = Block::create(&config, None).unwrap();
 
     // Block 2: notes -> empty (matches null), score -> "N/A" (matches null).
-    common::write_csv(work_dir, "items.csv", "1,Alice,,N/A\n");
+    common::write_csv!(work_dir, "items.csv", "1,Alice,,N/A");
     let _hash2 = Block::create(&config, None).unwrap();
 
     // Patch from genesis: consolidated insert should have NULLs.
@@ -273,7 +275,7 @@ fn test_custom_boolean_sentinels() {
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
-    common::write_config(
+    common::write_file(
         work_dir,
         "config.toml",
         r#"
@@ -290,7 +292,7 @@ false = "^N$"
 "#,
     );
 
-    common::write_csv(work_dir, "flags.csv", "1,Y\n2,N\n");
+    common::write_csv!(work_dir, "flags.csv", "1,Y", "2,N");
     let config = Config::load(work_dir).unwrap();
     Block::create(&config, None).unwrap();
 
@@ -308,7 +310,7 @@ fn test_default_boolean_sentinels_reject_legacy_synonyms() {
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
-    common::write_config(
+    common::write_file(
         work_dir,
         "config.toml",
         r#"
@@ -324,7 +326,7 @@ source = "flags.csv"
     );
 
     // "1" was accepted before the strict-default change; now it should fail.
-    common::write_csv(work_dir, "flags.csv", "1,1\n");
+    common::write_csv!(work_dir, "flags.csv", "1,1");
     let config = Config::load(work_dir).unwrap();
     let err = Block::create(&config, None).unwrap_err();
     let msg = format!("{:#}", err);
@@ -339,7 +341,7 @@ fn test_null_pattern_matching_primary_key_value_rejected() {
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
-    common::write_config(
+    common::write_file(
         work_dir,
         "config.toml",
         r#"
@@ -355,7 +357,7 @@ null = "^N/A$"
 "#,
     );
 
-    common::write_csv(work_dir, "items.csv", "N/A,Alice\n");
+    common::write_csv!(work_dir, "items.csv", "N/A,Alice");
     let config = Config::load(work_dir).unwrap();
     let err = Block::create(&config, None).unwrap_err();
     let msg = format!("{:#}", err);

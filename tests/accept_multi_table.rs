@@ -11,7 +11,7 @@ fn test_multiple_tables() {
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
-    common::write_config(
+    common::write_file(
         work_dir,
         "config.toml",
         r#"
@@ -36,14 +36,14 @@ source = "products.csv"
     );
 
     // Block 1: initial data for both tables
-    common::write_csv(work_dir, "users.csv", "1,Alice\n");
-    common::write_csv(work_dir, "products.csv", "ABC,100\n");
+    common::write_csv!(work_dir, "users.csv", "1,Alice");
+    common::write_csv!(work_dir, "products.csv", "ABC,100");
     let config = Config::load(work_dir).unwrap();
     let hash1 = Block::create(&config, None).unwrap();
 
     // Block 2: insert user, update product price
-    common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
-    common::write_csv(work_dir, "products.csv", "ABC,150\n");
+    common::write_csv!(work_dir, "users.csv", "1,Alice", "2,Bob");
+    common::write_csv!(work_dir, "products.csv", "ABC,150");
     let _hash2 = Block::create(&config, None).unwrap();
 
     // Patch from hash1: should have changes for both tables

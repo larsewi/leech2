@@ -12,7 +12,7 @@ fn test_empty_patch_before_any_blocks() {
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
-    common::write_config(
+    common::write_file(
         work_dir,
         "config.toml",
         r#"
@@ -26,7 +26,7 @@ fields = [
 source = "users.csv"
 "#,
     );
-    common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
+    common::write_csv!(work_dir, "users.csv", "1,Alice", "2,Bob");
 
     let config = Config::load(work_dir).unwrap();
 
@@ -46,7 +46,7 @@ fn test_genesis_block_creation() {
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
-    common::write_config(
+    common::write_file(
         work_dir,
         "config.toml",
         r#"
@@ -60,7 +60,7 @@ fields = [
 source = "users.csv"
 "#,
     );
-    common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
+    common::write_csv!(work_dir, "users.csv", "1,Alice", "2,Bob");
 
     let config = Config::load(work_dir).unwrap();
     let hash = Block::create(&config, None).unwrap();
@@ -77,7 +77,7 @@ fn test_genesis_patch_all_inserts() {
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
-    common::write_config(
+    common::write_file(
         work_dir,
         "config.toml",
         r#"
@@ -91,7 +91,7 @@ fields = [
 source = "users.csv"
 "#,
     );
-    common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
+    common::write_csv!(work_dir, "users.csv", "1,Alice", "2,Bob");
 
     let config = Config::load(work_dir).unwrap();
     let hash = Block::create(&config, None).unwrap();
@@ -122,7 +122,7 @@ fn test_noop_patch_when_at_head() {
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
-    common::write_config(
+    common::write_file(
         work_dir,
         "config.toml",
         r#"
@@ -136,7 +136,7 @@ fields = [
 source = "users.csv"
 "#,
     );
-    common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
+    common::write_csv!(work_dir, "users.csv", "1,Alice", "2,Bob");
 
     let config = Config::load(work_dir).unwrap();
     let hash = Block::create(&config, None).unwrap();

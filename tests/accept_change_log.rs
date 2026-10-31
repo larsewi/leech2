@@ -11,7 +11,7 @@ use leech2::utils::format_iso_timestamp;
 /// Write and load a config with a CSV-backed `users` table that logs its
 /// changes in `users_log`.
 fn load_config(work_dir: &Path) -> Config {
-    common::write_config(
+    common::write_file(
         work_dir,
         "config.toml",
         r#"
@@ -61,19 +61,19 @@ fn test_change_log_records_every_block() {
     let work_dir = tmp.path();
     let config = load_config(work_dir);
 
-    common::write_csv(work_dir, "users.csv", "1,Alice\n");
+    common::write_csv!(work_dir, "users.csv", "1,Alice");
     let hash1 = Block::create(&config, None).unwrap();
 
     // Block 2: update Alice.
-    common::write_csv(work_dir, "users.csv", "1,Alicia\n");
+    common::write_csv!(work_dir, "users.csv", "1,Alicia");
     let hash2 = Block::create(&config, None).unwrap();
 
     // Block 3: update Alicia again and insert Bob.
-    common::write_csv(work_dir, "users.csv", "1,Ali\n2,Bob\n");
+    common::write_csv!(work_dir, "users.csv", "1,Ali", "2,Bob");
     let hash3 = Block::create(&config, None).unwrap();
 
     // Block 4: delete Ali.
-    common::write_csv(work_dir, "users.csv", "2,Bob\n");
+    common::write_csv!(work_dir, "users.csv", "2,Bob");
     let hash4 = Block::create(&config, None).unwrap();
 
     let patch = Patch::create(&config, &hash1).unwrap();
@@ -100,7 +100,7 @@ fn test_change_log_skips_first_block() {
     let work_dir = tmp.path();
     let config = load_config(work_dir);
 
-    common::write_csv(work_dir, "users.csv", "1,Alice\n");
+    common::write_csv!(work_dir, "users.csv", "1,Alice");
     let hash = Block::create(&config, None).unwrap();
 
     let block = Block::load(&config.state_dir(), &hash, config.file_mode).unwrap();

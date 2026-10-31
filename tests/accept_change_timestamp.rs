@@ -24,7 +24,7 @@ fn test_change_timestamp_per_block() {
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
-    common::write_config(
+    common::write_file(
         work_dir,
         "config.toml",
         r#"
@@ -42,14 +42,17 @@ source = "users.csv"
     );
     let config = Config::load(work_dir).unwrap();
 
-    common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n3,Charlie\n");
+    common::write_csv!(work_dir, "users.csv", "1,Alice", "2,Bob", "3,Charlie");
     let hash1 = Block::create(&config, None).unwrap();
 
     // Block 2: update Alice, insert Dave.
-    common::write_csv(
+    common::write_csv!(
         work_dir,
         "users.csv",
-        "1,Alicia\n2,Bob\n3,Charlie\n4,Dave\n",
+        "1,Alicia",
+        "2,Bob",
+        "3,Charlie",
+        "4,Dave",
     );
     Block::create(&config, None).unwrap();
 
@@ -57,10 +60,14 @@ source = "users.csv"
     sleep(Duration::from_millis(1100));
 
     // Block 3: update Bob, insert Eve.
-    common::write_csv(
+    common::write_csv!(
         work_dir,
         "users.csv",
-        "1,Alicia\n2,Robert\n3,Charlie\n4,Dave\n5,Eve\n",
+        "1,Alicia",
+        "2,Robert",
+        "3,Charlie",
+        "4,Dave",
+        "5,Eve",
     );
     Block::create(&config, None).unwrap();
 

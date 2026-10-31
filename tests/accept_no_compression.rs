@@ -15,7 +15,7 @@ fn test_compression_disabled() {
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
 
-    common::write_config(
+    common::write_file(
         work_dir,
         "config.toml",
         r#"
@@ -33,7 +33,7 @@ source = "users.csv"
 "#,
     );
 
-    common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
+    common::write_csv!(work_dir, "users.csv", "1,Alice", "2,Bob");
     let config = Config::load(work_dir).unwrap();
     Block::create(&config, None).unwrap();
 

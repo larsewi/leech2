@@ -9,7 +9,7 @@ fn test_block_create_with_missing_csv() {
     let work_dir = tmp.path();
 
     // Config references a CSV that doesn't exist
-    common::write_config(
+    common::write_file(
         work_dir,
         "config.toml",
         r#"

@@ -13,7 +13,7 @@ fn test_config_change_produces_mixed_patch() {
     let work_dir = tmp.path();
 
     // Initial config: items (id, name) and logs (seq, message).
-    common::write_config(
+    common::write_file(
         work_dir,
         "config.toml",
         r#"
@@ -37,14 +37,14 @@ source = "logs.csv"
 "#,
     );
 
-    common::write_csv(work_dir, "items.csv", "1,apple\n2,banana\n");
-    common::write_csv(work_dir, "logs.csv", "1,hello\n2,world\n");
+    common::write_csv!(work_dir, "items.csv", "1,apple", "2,banana");
+    common::write_csv!(work_dir, "logs.csv", "1,hello", "2,world");
     let config = Config::load(work_dir).unwrap();
     let hash1 = Block::create(&config, None).unwrap();
 
     // Change items config: add a "price" field.
     // logs stays the same but gets a new row.
-    common::write_config(
+    common::write_file(
         work_dir,
         "config.toml",
         r#"
@@ -69,12 +69,14 @@ source = "logs.csv"
 "#,
     );
 
-    common::write_csv(
+    common::write_csv!(
         work_dir,
         "items.csv",
-        "1,apple,1.50\n2,banana,0.75\n3,cherry,2.00\n",
+        "1,apple,1.50",
+        "2,banana,0.75",
+        "3,cherry,2.00",
     );
-    common::write_csv(work_dir, "logs.csv", "1,hello\n2,world\n3,new entry\n");
+    common::write_csv!(work_dir, "logs.csv", "1,hello", "2,world", "3,new entry");
     let config = Config::load(work_dir).unwrap();
     let _hash2 = Block::create(&config, None).unwrap();
 
@@ -142,24 +144,24 @@ source = "logs.csv"
 "#;
 
     // Initial config: items only.
-    common::write_config(work_dir, "config.toml", items_config);
-    common::write_csv(work_dir, "items.csv", "1,apple\n");
+    common::write_file(work_dir, "config.toml", items_config);
+    common::write_csv!(work_dir, "items.csv", "1,apple");
     let config = Config::load(work_dir).unwrap();
     let hash1 = Block::create(&config, None).unwrap();
 
     // Add logs to the config. items gets a new row.
-    common::write_config(
+    common::write_file(
         work_dir,
         "config.toml",
         &format!("{items_config}{logs_config}"),
     );
-    common::write_csv(work_dir, "items.csv", "1,apple\n2,banana\n");
-    common::write_csv(work_dir, "logs.csv", "1,hello\n2,world\n");
+    common::write_csv!(work_dir, "items.csv", "1,apple", "2,banana");
+    common::write_csv!(work_dir, "logs.csv", "1,hello", "2,world");
     let config = Config::load(work_dir).unwrap();
     Block::create(&config, None).unwrap();
 
     // A later block carries a plain delta for logs.
-    common::write_csv(work_dir, "logs.csv", "1,hello\n2,world\n3,again\n");
+    common::write_csv!(work_dir, "logs.csv", "1,hello", "2,world", "3,again");
     Block::create(&config, None).unwrap();
 
     let patch = Patch::create(&config, &hash1).unwrap();
