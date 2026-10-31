@@ -1,5 +1,5 @@
 use std::io::{ErrorKind, IsTerminal, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command as ProcessCommand, ExitCode, Stdio};
 
 use anyhow::{Context, Result, bail};
@@ -10,6 +10,7 @@ use leech2::config::Config;
 use leech2::sql::InjectedField;
 use leech2::state::ProtoState;
 use leech2::utils::{GENESIS_HASH, format_timestamp};
+use prost::Message;
 
 mod cli;
 use cli::{BlockCmd, Cli, Cmd, PatchCmd, StateCmd, StatsCmd};
@@ -150,7 +151,20 @@ fn cmd_patch_create(
     Ok(())
 }
 
-fn cmd_block_log(config: &Config) -> Result<String> {
+/// Load block `hash` for the log. `None` means the block is not on disk: it was
+/// truncated, so the reachable chain ends there.
+fn load_logged_block(state_dir: &Path, hash: &str) -> Result<Option<Block>> {
+    let Some(data) = leech2::storage::load(state_dir, hash)? else {
+        return Ok(None);
+    };
+    let block = Block::decode(data.as_slice())
+        .with_context(|| format!("failed to decode block '{}'", hash))?;
+    Ok(Some(block))
+}
+
+/// Print the blocks reachable from HEAD, newest first. If a block can't be
+/// read, the blocks before it are still printed before the error is returned.
+fn cmd_block_log(config: &Config) -> Result<()> {
     let state_dir = config.ensure_state_dir()?;
     let _lock = leech2::storage::lock(&state_dir, false, config.file_mode)?;
     let mut hash = leech2::head::load(&state_dir)?;
@@ -160,10 +174,11 @@ fn cmd_block_log(config: &Config) -> Result<String> {
     }
 
     let mut output = String::new();
-    loop {
-        let block = match Block::load(&state_dir, &hash) {
-            Ok(block) => block,
-            Err(_) => break, // block was truncated, end of reachable chain
+    let error = loop {
+        let block = match load_logged_block(&state_dir, &hash) {
+            Ok(Some(block)) => block,
+            Ok(None) => break None, // block was truncated, end of reachable chain
+            Err(e) => break Some(e),
         };
 
         let timestamp = block
@@ -189,11 +204,17 @@ fn cmd_block_log(config: &Config) -> Result<String> {
 
         hash = block.parent.clone();
         if hash == GENESIS_HASH {
-            break;
+            break None;
         }
-    }
+    };
 
-    Ok(output)
+    if !output.is_empty() {
+        print_with_pager(&output)?;
+    }
+    match error {
+        Some(e) => Err(e),
+        None => Ok(()),
+    }
 }
 
 fn cmd_block_show(config: &Config, reference: Option<&str>, n: Option<u32>) -> Result<String> {
@@ -347,10 +368,7 @@ fn run(cli: Cli) -> Result<()> {
                     let output = cmd_block_show(&config, reference.as_deref(), *n)?;
                     print_with_pager(&output)?;
                 }
-                BlockCmd::Log => {
-                    let output = cmd_block_log(&config)?;
-                    print_with_pager(&output)?;
-                }
+                BlockCmd::Log => cmd_block_log(&config)?,
             }
         }
         Cmd::Patch { command } => {
