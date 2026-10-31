@@ -136,6 +136,43 @@ source = "users.csv"
     assert!(state_dir.join(&hash3).exists(), "HEAD should be preserved");
 }
 
+/// A `max-age` reaching further back than the system clock can represent means
+/// no block is old enough to remove. Block creation must not panic.
+#[test]
+fn test_truncate_max_age_beyond_clock_range() {
+    let tmp = tempfile::tempdir().unwrap();
+    let work_dir = tmp.path();
+
+    common::write_file(
+        work_dir,
+        "config.toml",
+        r#"
+[truncate]
+max-age = "20000000000000w"
+
+[tables.users]
+fields = [
+    { name = "id", type = "NUMBER", primary-key = true },
+    { name = "name", type = "TEXT" },
+]
+
+[tables.users.csv]
+source = "users.csv"
+"#,
+    );
+
+    common::write_csv!(work_dir, "users.csv", "1,Alice");
+    let config = Config::load(work_dir).unwrap();
+    let state_dir = config.state_dir();
+    let hash1 = Block::create(&config, None).unwrap();
+
+    common::write_csv!(work_dir, "users.csv", "1,Alice", "2,Bob");
+    let hash2 = Block::create(&config, None).unwrap();
+
+    assert!(state_dir.join(&hash1).exists(), "no block is too old");
+    assert!(state_dir.join(&hash2).exists(), "HEAD should be preserved");
+}
+
 #[test]
 fn test_orphaned_blocks_removed() {
     let tmp = tempfile::tempdir().unwrap();
