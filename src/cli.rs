@@ -64,7 +64,7 @@ pub enum BlockCmd {
 
 #[derive(Subcommand)]
 pub enum PatchCmd {
-    /// Create a patch from REF to HEAD and write to .leech2/PATCH
+    /// Create a patch from REF to HEAD and write it to the PATCH file in the state directory
     Create {
         /// Block hash prefix [default: REPORTED or GENESIS]
         #[arg(name = "REF")]
@@ -73,9 +73,9 @@ pub enum PatchCmd {
         #[arg(short)]
         n: Option<u32>,
     },
-    /// Show the contents of the .leech2/PATCH file
+    /// Show the contents of the PATCH file
     Show,
-    /// Convert the .leech2/PATCH file to SQL
+    /// Convert the PATCH file to SQL
     Sql {
         /// Add a column to all generated SQL. KIND is TEXT, NUMBER, or BOOLEAN.
         /// May be repeated.
