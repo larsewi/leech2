@@ -468,8 +468,10 @@ upgraded first.
   older agents can't produce, keep the old decoding path in the hub until those
   agents are no longer supported.
 - **Blocks and STATE** are local to the agent. If a block can't be decoded, patch
-  creation falls back to a full state, so block format changes self-heal. Make
-  sure old blocks fail to decode instead of decoding into wrong data.
+  creation falls back to a full state. A STATE file that can't be decoded is
+  treated as missing, so the next block uses full state for every table and
+  stores a fresh STATE. Format changes of either therefore self-heal. Make sure
+  old blocks and STATE files fail to decode instead of decoding into wrong data.
 
 ## Delta merging rules
 

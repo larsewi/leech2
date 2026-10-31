@@ -282,6 +282,45 @@ fn test_state_file_deleted_with_valid_chain() {
     common::assert_wire_roundtrip(&config, &patch);
 }
 
+/// A STATE file that can't be decoded is treated as missing: patches still
+/// build from the block chain, and the next block falls back to full state for
+/// every table and stores a fresh STATE, instead of failing until STATE is
+/// deleted by hand.
+#[test]
+fn test_corrupt_state_file_heals() {
+    let tmp = tempfile::tempdir().unwrap();
+    let work_dir = tmp.path();
+    let config = setup_users(work_dir);
+
+    common::write_csv!(work_dir, "users.csv", "1,Alice");
+    let hash1 = Block::create(&config, None).unwrap();
+
+    common::write_csv!(work_dir, "users.csv", "1,Alice", "2,Bob");
+    let hash2 = Block::create(&config, None).unwrap();
+
+    // A lone varint continuation byte never decodes.
+    std::fs::write(config.state_dir().join("STATE"), [0xff]).unwrap();
+
+    // Consolidation still works via the block chain.
+    let patch = Patch::create(&config, &hash1).unwrap();
+    assert_eq!(patch.head, hash2);
+    let sql = sql::patch_to_sql(&config, &patch, &[]).unwrap().unwrap();
+    assert_eq!(common::count_sql(&sql, "DELETE FROM"), 0);
+    assert_eq!(common::count_sql(&sql, "INSERT INTO"), 1);
+
+    // The next block can't diff against STATE, so its table uses full state.
+    common::write_csv!(work_dir, "users.csv", "1,Alice", "2,Bob", "3,Charlie");
+    let hash3 = Block::create(&config, None).unwrap();
+
+    let patch = Patch::create(&config, &hash2).unwrap();
+    assert_eq!(patch.head, hash3);
+    let sql = sql::patch_to_sql(&config, &patch, &[]).unwrap().unwrap();
+    assert_eq!(common::count_sql(&sql, r#"DELETE FROM "users";"#), 1);
+    assert_eq!(common::count_sql(&sql, "INSERT INTO"), 3);
+
+    common::assert_wire_roundtrip(&config, &patch);
+}
+
 /// A layout change forces a table to full state, which is sourced from the
 /// STATE file. If STATE is also missing, the full state cannot be
 /// reconstructed, so patch creation must fail loudly rather than silently
