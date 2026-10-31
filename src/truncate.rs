@@ -151,7 +151,11 @@ fn truncate_chain(
     };
 
     let max_blocks = config.max_blocks.map(|n| n as usize);
-    let max_age_cutoff = config.max_age.map(|max_age| SystemTime::now() - max_age);
+    // A max age reaching back further than the clock can represent leaves no
+    // cutoff: no block is old enough to remove.
+    let max_age_cutoff = config
+        .max_age
+        .and_then(|max_age| SystemTime::now().checked_sub(max_age));
 
     let mut removed = 0;
     for (i, entry) in chain.iter().enumerate() {
