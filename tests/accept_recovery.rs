@@ -133,6 +133,48 @@ fn test_head_file_deleted() {
     common::assert_wire_roundtrip(&config, &patch);
 }
 
+/// When storing HEAD fails after STATE was stored, STATE no longer belongs to
+/// the block referenced by HEAD. The next block must not diff against it, as it
+/// would use the wrong baseline and silently drop changes. Instead its tables
+/// should fall back to full state.
+#[test]
+fn test_state_does_not_belong_to_head() {
+    let tmp = tempfile::tempdir().unwrap();
+    let work_dir = tmp.path();
+    let config = setup_users(work_dir);
+
+    common::write_csv(work_dir, "users.csv", "1,Alice\n");
+    Block::create(&config, None).unwrap();
+
+    common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n");
+    let hash2 = Block::create(&config, None).unwrap();
+
+    // Store STATE with block 3, then roll HEAD back to block 2 (simulates
+    // storing HEAD failing after STATE was stored).
+    common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n3,Charlie\n");
+    Block::create(&config, None).unwrap();
+    head::store(&config.state_dir(), &hash2, config.file_mode, false).unwrap();
+
+    common::write_csv(work_dir, "users.csv", "1,Alice\n2,Bob\n3,Charlie\n4,Dave\n");
+    let hash4 = Block::create(&config, None).unwrap();
+    assert_eq!(
+        Block::load(&config.state_dir(), &hash4, config.file_mode)
+            .unwrap()
+            .parent,
+        hash2
+    );
+
+    // A delta against block 3's STATE would only insert Dave and lose Charlie.
+    let patch = Patch::create(&config, &hash2).unwrap();
+    assert_eq!(patch.head, hash4);
+
+    let sql = sql::patch_to_sql(&config, &patch, &[]).unwrap().unwrap();
+    assert_eq!(common::count_sql(&sql, r#"DELETE FROM "users";"#), 1);
+    assert_eq!(common::count_sql(&sql, "INSERT INTO"), 4);
+
+    common::assert_wire_roundtrip(&config, &patch);
+}
+
 /// When a block in the middle of the chain is missing, consolidation fails.
 /// Patch creation should fall back to STATE (DELETE + INSERT).
 #[test]
