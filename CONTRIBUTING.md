@@ -309,7 +309,10 @@ or `max-age` limits.
 
 Truncation runs after `Block::create()` advances `HEAD`, before the call
 returns. Concurrent block creation and truncation in the same work directory
-serialize on an exclusive lock on `.chain.lock`.
+serialize on an exclusive lock on `.chain.lock`. Under that lock, block creation
+checks that `HEAD` is still the parent it built the block on. If another block
+was created in the meantime, the block is discarded and the call fails, so of
+two concurrent block creations only one succeeds.
 
 ### Recovery from missing files
 

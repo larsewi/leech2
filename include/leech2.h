@@ -329,6 +329,10 @@ typedef struct {
  * and writes a new block together with updated STATE and HEAD files. History
  * truncation then runs before this call returns.
  *
+ * If another block is created in the same state directory while this call
+ * runs, only one of the two succeeds. The other returns LCH_FAILURE and leaves
+ * the chain unchanged.
+ *
  * The block also stores the new events of every event stream declared under
  * [events.X], pulled through the callback bundle. Treat the events as handed
  * over only when this call returns LCH_SUCCESS; on failure, return them again
