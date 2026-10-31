@@ -334,6 +334,38 @@ source = "flags.csv"
 }
 
 #[test]
+fn test_nul_in_text_rejected() {
+    // SQL text can't hold a NUL character, and the hub could never convert a
+    // patch carrying one, so block creation rejects it at the source.
+    let tmp = tempfile::tempdir().unwrap();
+    let work_dir = tmp.path();
+
+    common::write_file(
+        work_dir,
+        "config.toml",
+        r#"
+[tables.items]
+fields = [
+    { name = "id", type = "NUMBER", primary-key = true },
+    { name = "name", type = "TEXT" },
+]
+
+[tables.items.csv]
+source = "items.csv"
+"#,
+    );
+
+    common::write_csv!(work_dir, "items.csv", "1,a\0b");
+    let config = Config::load(work_dir).unwrap();
+    let err = Block::create(&config, None).unwrap_err();
+    let msg = format!("{:#}", err);
+    assert!(
+        msg.contains("field 'name'") && msg.contains("NUL character"),
+        "got: {msg}"
+    );
+}
+
+#[test]
 fn test_null_pattern_matching_primary_key_value_rejected() {
     // The null pattern is per-table, so a poorly-chosen pattern can match a
     // primary-key cell's value. Loading that row must be rejected -- NULL
