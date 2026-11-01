@@ -338,7 +338,7 @@ source = "users.csv"
 
     let err = format!("{:#}", Config::load(tmp.path()).unwrap_err());
     assert!(
-        err.contains("field name must not be empty"),
+        err.contains("field: name must not be empty"),
         "should report empty field name: {err}"
     );
 }

@@ -14,7 +14,7 @@ use crate::proto::patch::Patch as ProtoPatch;
 use crate::proto::patch::Update as ProtoUpdate;
 use crate::proto::record::Record as ProtoRecord;
 use crate::proto::table::Table as ProtoTable;
-use crate::utils::{format_iso_timestamp, validate_field_name};
+use crate::utils::{format_iso_timestamp, validate_name};
 
 /// Schema information for a single table, derived from the wire-declared
 /// field lists. Column ordering follows the wire (i.e. the agent's
@@ -204,7 +204,7 @@ impl InjectedField {
     /// would render `WHERE <field> = NULL` (matching no rows) and silently
     /// turn a state replacement into an append.
     pub fn new(name: &str, value: Cell) -> Result<Self> {
-        validate_field_name(name).with_context(|| format!("injected field '{}'", name))?;
+        validate_name(name).with_context(|| format!("injected field '{}'", name))?;
         if value == Cell::Null {
             bail!("injected field '{}': NULL values are not supported", name);
         }
@@ -1123,7 +1123,7 @@ mod tests {
     fn test_injected_field_rejects_empty_name() {
         let err = InjectedField::new("", Cell::from("agent-1")).unwrap_err();
         let msg = format!("{:#}", err);
-        assert!(msg.contains("field name must not be empty"), "got: {msg}");
+        assert!(msg.contains("name must not be empty"), "got: {msg}");
     }
 
     #[test]

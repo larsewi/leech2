@@ -10,7 +10,7 @@ use std::time::Duration;
 use anyhow::{Context, Result, bail};
 
 use crate::cell::Kind;
-use crate::utils::{parse_duration, parse_file_mode, validate_field_name};
+use crate::utils::{parse_duration, parse_file_mode, validate_name};
 
 /// Subdirectory of the work directory where state files live when `state-dir`
 /// is not set in the config.
@@ -370,10 +370,10 @@ pub struct LogConfig {
 
 impl LogConfig {
     fn validate(&self, fields: &[FieldConfig]) -> Result<()> {
-        validate_field_name(&self.table).context("log.table")?;
-        validate_field_name(&self.id_field).context("log.id-field")?;
-        validate_field_name(&self.operation_field).context("log.operation-field")?;
-        validate_field_name(&self.timestamp_field).context("log.timestamp-field")?;
+        validate_name(&self.table).context("log.table")?;
+        validate_name(&self.id_field).context("log.id-field")?;
+        validate_name(&self.operation_field).context("log.operation-field")?;
+        validate_name(&self.timestamp_field).context("log.timestamp-field")?;
         let columns = [
             ("id-field", &self.id_field),
             ("operation-field", &self.operation_field),
@@ -460,7 +460,7 @@ pub struct TableConfig {
 
 impl Validate for FieldConfig {
     fn validate(&self) -> Result<()> {
-        validate_field_name(&self.name)
+        validate_name(&self.name).context("field")
     }
 }
 
@@ -496,7 +496,7 @@ impl Validate for TableConfig {
         }
 
         if let Some(column) = &self.change_timestamp {
-            validate_field_name(column).context("change-timestamp")?;
+            validate_name(column).context("change-timestamp")?;
             if seen.contains(column.as_str()) {
                 bail!("change-timestamp '{}' collides with a field", column);
             }
@@ -555,7 +555,7 @@ impl Validate for EventConfig {
             }
         }
 
-        validate_field_name(&self.id_field).context("id-field")?;
+        validate_name(&self.id_field).context("id-field")?;
         if seen.contains(self.id_field.as_str()) {
             bail!("id-field '{}' collides with a field", self.id_field);
         }
@@ -571,6 +571,7 @@ impl Validate for Config {
         }
         let mut log_tables = HashSet::new();
         for (name, table) in &self.tables {
+            validate_name(name).context("table")?;
             table
                 .validate()
                 .with_context(|| format!("table '{}'", name))?;
@@ -593,6 +594,7 @@ impl Validate for Config {
             }
         }
         for (name, event) in &self.events {
+            validate_name(name).context("event stream")?;
             event
                 .validate()
                 .with_context(|| format!("event stream '{}'", name))?;
@@ -1185,6 +1187,46 @@ fields = [
         let config = Config::load(dir.path()).unwrap();
         assert!(config.tables.contains_key("users"));
         assert!(config.tables.contains_key("products"));
+    }
+
+    #[test]
+    fn test_empty_table_name_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = r#"
+[tables.""]
+fields = [
+    { name = "id", type = "NUMBER", primary-key = true },
+]
+"#;
+        fs::write(dir.path().join("config.toml"), config).unwrap();
+
+        let err = Config::load(dir.path()).expect_err("expected empty-name error");
+        let msg = format!("{:#}", err);
+        assert!(
+            msg.contains("table: name must not be empty"),
+            "expected error about the empty table name, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_event_stream_name_with_control_character_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = r#"{
+  "events": {
+    "ale\u0000rts": {
+      "id-field": "eventid",
+      "fields": [{ "name": "message", "type": "TEXT" }]
+    }
+  }
+}"#;
+        fs::write(dir.path().join("config.json"), config).unwrap();
+
+        let err = Config::load(dir.path()).expect_err("expected control-character error");
+        let msg = format!("{:#}", err);
+        assert!(
+            msg.contains("event stream: name") && msg.contains("control character"),
+            "expected error about the event stream name, got: {msg}"
+        );
     }
 
     #[test]
