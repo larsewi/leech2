@@ -96,18 +96,19 @@ pub fn format_iso_timestamp(timestamp: &prost_types::Timestamp) -> Result<String
     Ok(datetime.format("%Y-%m-%dT%H:%M:%SZ").to_string())
 }
 
-/// Validate a column / field name. Rejects the empty string and any control
-/// character (ASCII C0 / DEL plus the C1 range). A NUL would be treated as
-/// a string terminator by some database drivers and tooling; newlines / CR
-/// would corrupt log and audit output; other control characters are pure
-/// visual deception when the identifier appears alongside other text.
-pub fn validate_field_name(name: &str) -> Result<()> {
+/// Validate a name used as a SQL identifier (table, event stream, column or
+/// field). Rejects the empty string and any control character (ASCII C0 / DEL
+/// plus the C1 range). A NUL would be treated as a string terminator by some
+/// database drivers and tooling; newlines / CR would corrupt log and audit
+/// output; other control characters are pure visual deception when the
+/// identifier appears alongside other text.
+pub fn validate_name(name: &str) -> Result<()> {
     if name.is_empty() {
-        bail!("field name must not be empty");
+        bail!("name must not be empty");
     }
     if let Some(c) = name.chars().find(|c| c.is_control()) {
         bail!(
-            "field name {:?} contains a control character (U+{:04X})",
+            "name {:?} contains a control character (U+{:04X})",
             name,
             c as u32
         );
