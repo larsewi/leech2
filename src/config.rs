@@ -696,18 +696,20 @@ fn resolve_includes(
     seen.insert(base_path.to_path_buf());
 
     for pattern in patterns {
+        // Escape the work dir so glob characters in it match literally.
         let joined = if Path::new(pattern).is_absolute() {
-            PathBuf::from(pattern)
+            pattern.clone()
         } else {
-            work_dir.join(pattern)
+            let Some(work_dir) = work_dir.to_str() else {
+                bail!("work directory '{}' is not valid UTF-8", work_dir.display());
+            };
+            let escaped = PathBuf::from(glob::Pattern::escape(work_dir)).join(pattern);
+            escaped.to_string_lossy().into_owned()
         };
-        let joined = joined
-            .to_str()
-            .ok_or_else(|| anyhow::anyhow!("include pattern '{}' is not valid UTF-8", pattern))?;
 
         let mut matches = Vec::new();
         for entry in
-            glob::glob(joined).with_context(|| format!("invalid include pattern '{}'", pattern))?
+            glob::glob(&joined).with_context(|| format!("invalid include pattern '{}'", pattern))?
         {
             matches.push(
                 entry.with_context(|| format!("failed to read match for include '{}'", pattern))?,
@@ -1182,6 +1184,32 @@ fields = [
 
         let config = Config::load(dir.path()).unwrap();
         assert!(config.tables.contains_key("users"));
+        assert!(config.tables.contains_key("products"));
+    }
+
+    #[test]
+    fn test_include_work_dir_with_glob_characters() {
+        let dir = tempfile::tempdir().unwrap();
+        let work_dir = dir.path().join("app[1]");
+        let base = r#"
+include = ["drop-in/*.toml"]
+
+[tables.users]
+fields = [
+    { name = "id", type = "NUMBER", primary-key = true },
+]
+"#;
+        let fragment = r#"
+[tables.products]
+fields = [
+    { name = "sku", type = "TEXT", primary-key = true },
+]
+"#;
+        fs::create_dir_all(work_dir.join("drop-in")).unwrap();
+        fs::write(work_dir.join("config.toml"), base).unwrap();
+        fs::write(work_dir.join("drop-in/extra.toml"), fragment).unwrap();
+
+        let config = Config::load(&work_dir).unwrap();
         assert!(config.tables.contains_key("products"));
     }
 
