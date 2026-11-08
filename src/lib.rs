@@ -20,6 +20,7 @@ mod logger;
 pub mod patch;
 mod proto;
 pub mod record;
+mod recorder;
 pub mod reported;
 pub mod sql;
 pub mod state;

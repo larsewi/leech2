@@ -6,7 +6,7 @@ use prost::Message;
 
 use crate::config::Config;
 use crate::proto::patch::Patch;
-use crate::stats::{self, Stage, StageStats};
+use crate::recorder::{Stage, StageStats, record_stage};
 use crate::utils::is_hex_hash;
 
 /// Zstd frame magic number (little-endian).
@@ -31,7 +31,7 @@ pub fn encode_patch(config: &Config, patch: &Patch) -> Result<Vec<u8>> {
             buf.len()
         );
         if config.stats.enable {
-            stats::record_stage(
+            record_stage(
                 Stage::Compression,
                 StageStats {
                     duration_ms: 0.0,
@@ -73,7 +73,7 @@ pub fn encode_patch(config: &Config, patch: &Patch) -> Result<Vec<u8>> {
     };
 
     if config.stats.enable {
-        stats::record_stage(
+        record_stage(
             Stage::Compression,
             StageStats {
                 duration_ms,

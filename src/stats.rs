@@ -1,4 +1,3 @@
-use std::cell::RefCell;
 use std::fmt;
 
 use anyhow::{Context, Result};
@@ -6,41 +5,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::config::Config;
+use crate::recorder::{StageStats, take_pending};
 use crate::storage;
 
 /// Name of the cumulative stats file in the state directory.
 pub const STATS_FILE: &str = "STATS";
-
-/// Elapsed time and wire sizes for one size-reducing stage (delta merging or
-/// compression). Only the primitive, non-derivable values are stored; the
-/// reader computes bytes saved as `bytes_in - bytes_out`.
-#[derive(Debug, Serialize, Deserialize)]
-pub(crate) struct StageStats {
-    /// Time the stage took, in milliseconds.
-    pub duration_ms: f64,
-    /// Wire size entering the stage.
-    pub bytes_in: u64,
-    /// Wire size leaving the stage.
-    pub bytes_out: u64,
-}
-
-impl StageStats {
-    /// Bytes saved on the wire by this stage. Signed because compression can
-    /// grow a tiny payload.
-    fn saved(&self) -> i64 {
-        self.bytes_in as i64 - self.bytes_out as i64
-    }
-
-    /// Percentage of the input saved by this stage. Zero when there was no
-    /// input; negative when the stage grew the payload.
-    fn percent_saved(&self) -> f64 {
-        if self.bytes_in == 0 {
-            0.0
-        } else {
-            self.saved() as f64 / self.bytes_in as f64 * 100.0
-        }
-    }
-}
 
 /// A single patch-creation run appended to the `STATS` file.
 #[derive(Serialize, Deserialize)]
@@ -84,37 +53,6 @@ impl RunStats {
     }
 }
 
-/// A size-reducing stage whose stats can be recorded into the in-flight run.
-pub(crate) enum Stage {
-    DeltaMerging,
-    Compression,
-}
-
-/// The stages recorded for the patch-creation run currently in flight. The
-/// operations that produce stats ([`crate::patch::Patch::create`],
-/// [`crate::wire::encode_patch`]) record into it as they run, and
-/// [`finalize_patch_create`] drains it into the `STATS` file.
-#[derive(Debug, Default)]
-struct PendingStats {
-    delta_merging: Option<StageStats>,
-    compression: Option<StageStats>,
-}
-
-thread_local! {
-    // A patch-creation run happens entirely on its caller's thread, so
-    // concurrent runs on other threads cannot mix their stats into it.
-    static PENDING_STATS: RefCell<PendingStats> = RefCell::default();
-}
-
-/// Record a stage of the in-flight patch-creation run. Callers should only
-/// invoke this when `config.stats.enable` is set.
-pub(crate) fn record_stage(stage: Stage, stats: StageStats) {
-    PENDING_STATS.with_borrow_mut(|pending| match stage {
-        Stage::DeltaMerging => pending.delta_merging = Some(stats),
-        Stage::Compression => pending.compression = Some(stats),
-    });
-}
-
 /// Append the in-flight patch-creation run to the cumulative `STATS` JSON file
 /// and clear the accumulator. No-op when stats are disabled. Best-effort: any
 /// failure is logged and swallowed so stats collection never breaks patch
@@ -124,7 +62,7 @@ pub fn finalize_patch_create(config: &Config) {
         return;
     }
 
-    let pending = PENDING_STATS.take();
+    let pending = take_pending();
     let (Some(delta_merging), Some(compression)) = (pending.delta_merging, pending.compression)
     else {
         log::warn!("Stats: incomplete patch-create run, nothing recorded");

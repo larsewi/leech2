@@ -18,7 +18,7 @@ use crate::proto::patch::Delta as ProtoDelta;
 use crate::proto::patch::EventBatches as ProtoEventBatches;
 use crate::proto::state::State as ProtoState;
 use crate::proto::table::Table as ProtoTable;
-use crate::stats::{self, Stage, StageStats};
+use crate::recorder::{Stage, StageStats, record_stage};
 use crate::storage;
 use crate::utils;
 use crate::utils::GENESIS_HASH;
@@ -383,7 +383,7 @@ impl Patch {
                 );
                 bytes_out
             });
-            stats::record_stage(
+            record_stage(
                 Stage::DeltaMerging,
                 StageStats {
                     duration_ms,
