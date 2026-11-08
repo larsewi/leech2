@@ -174,3 +174,35 @@ fn test_summarize_returns_none_without_stats_file() {
 
     assert!(stats::summarize(&config).unwrap().is_none());
 }
+
+#[test]
+fn test_summarize_skips_unreadable_entries() {
+    let tmp = tempfile::tempdir().unwrap();
+    let work_dir = tmp.path();
+
+    common::write_file(work_dir, "config.toml", &config_toml(true));
+    common::write_csv!(work_dir, "users.csv", "1,Alice", "2,Bob");
+    let config = Config::load(work_dir).unwrap();
+    Block::create(&config, None).unwrap();
+
+    create_patch_with_stats(&config, GENESIS_HASH);
+
+    // An entry in the format written by v5.4.0, before the stage fields were
+    // renamed to bytes_in and bytes_out.
+    let old_stage = serde_json::json!({
+        "duration_ms": 1.0,
+        "bytes_before": 100,
+        "bytes_after": 50,
+    });
+    let old_entry = serde_json::json!({
+        "timestamp": "2026-07-14T10:32:05.123Z",
+        "delta_merging": old_stage,
+        "compression": old_stage,
+    });
+    let mut entries = read_stats(&config);
+    entries.insert(0, old_entry);
+    std::fs::write(stats_path(&config), serde_json::to_vec(&entries).unwrap()).unwrap();
+
+    let summary = stats::summarize(&config).unwrap().expect("summary");
+    assert_eq!(summary.runs, 1);
+}

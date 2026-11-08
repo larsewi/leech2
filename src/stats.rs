@@ -274,8 +274,21 @@ pub fn summarize(config: &Config) -> Result<Option<Summary>> {
     let Some(bytes) = storage::load(&state_dir, STATS_FILE)? else {
         return Ok(None);
     };
-    let runs: Vec<RunStats> =
+    let entries: Vec<Value> =
         serde_json::from_slice(&bytes).context("failed to parse STATS file")?;
+    // Skip entries that don't parse as a run, such as ones written in an older
+    // format, so they don't hide the readable runs.
+    let mut runs: Vec<RunStats> = Vec::with_capacity(entries.len());
+    let mut skipped = 0;
+    for entry in entries {
+        match serde_json::from_value(entry) {
+            Ok(run) => runs.push(run),
+            Err(_) => skipped += 1,
+        }
+    }
+    if skipped > 0 {
+        log::warn!("Skipped {} unreadable entries in the STATS file", skipped);
+    }
     if runs.is_empty() {
         return Ok(None);
     }
