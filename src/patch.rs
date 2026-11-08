@@ -181,11 +181,15 @@ fn merge_block_deltas(
     }
 }
 
-type ConsolidateResult = (
-    u32,
-    HashMap<String, ProtoDelta>,
-    HashMap<String, ProtoTable>,
-);
+/// Per-table output of consolidating a range of blocks.
+#[derive(Default)]
+struct Consolidated {
+    /// Merged deltas of the tables sent as deltas.
+    deltas: HashMap<String, ProtoDelta>,
+    /// Full state of the tables that cannot be sent as deltas, or whose state
+    /// is smaller than their delta.
+    states: HashMap<String, ProtoTable>,
+}
 
 /// Merge the blocks in `block_hashes` (newest first) into per-table deltas
 /// and states. `events` receives the events of every block that loads, even
@@ -195,9 +199,9 @@ fn try_consolidate(
     block_hashes: &[String],
     table_configs: &HashMap<String, TableConfig>,
     events: &mut HashMap<String, ProtoEventBatches>,
-) -> Result<ConsolidateResult> {
+) -> Result<Consolidated> {
     if block_hashes.is_empty() {
-        return Ok((0, HashMap::new(), HashMap::new()));
+        return Ok(Consolidated::default());
     }
 
     let num_blocks = block_hashes.len() as u32;
@@ -312,7 +316,10 @@ fn try_consolidate(
         result_deltas.insert(table_name, merged_delta);
     }
 
-    Ok((num_blocks, result_deltas, result_states))
+    Ok(Consolidated {
+        deltas: result_deltas,
+        states: result_states,
+    })
 }
 
 /// Encoded protobuf size of a full-state patch for the current HEAD, carrying
@@ -455,9 +462,9 @@ impl Patch {
         };
 
         let mut events = HashMap::new();
-        let (num_blocks, deltas, states) =
+        let consolidated =
             match try_consolidate(&state_dir, &block_hashes, &config.tables, &mut events) {
-                Ok(result) => result,
+                Ok(consolidated) => consolidated,
                 Err(e) => {
                     log::warn!("Consolidation failed, falling back to full state: {}", e);
                     // The reference is known, so the events of the blocks
@@ -472,9 +479,9 @@ impl Patch {
         let patch = Patch {
             head,
             created,
-            num_blocks,
-            deltas,
-            states,
+            num_blocks: block_hashes.len() as u32,
+            deltas: consolidated.deltas,
+            states: consolidated.states,
             events,
         };
 
