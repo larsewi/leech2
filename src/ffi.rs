@@ -6,10 +6,12 @@
 //! declared `mod ffi;` (private) at the crate root.
 
 use std::any::Any;
-use std::ffi::{CStr, c_char, c_int};
+use std::ffi::{CStr, CString, c_char, c_int};
 
 use crate::cell::Cell;
+use crate::proto::patch::Patch;
 use crate::sql::InjectedField;
+use crate::wire::decode_patch;
 
 /// `LCH_SUCCESS` from `leech2.h`.
 pub const SUCCESS: i32 = 0;
@@ -110,6 +112,27 @@ pub unsafe fn cstr_arg(fn_name: &str, arg_name: &str, ptr: *const c_char) -> Opt
     }
 }
 
+/// Hand `value` to C through the out-parameter `out` as a newly allocated C
+/// string, which the receiver frees with `lch_string_free`.
+///
+/// Logs an error and returns `false`, leaving `*out` untouched, if `value`
+/// contains a NUL byte.
+///
+/// # Safety
+/// `out` must be a valid, non-null pointer to a `*mut c_char`.
+pub unsafe fn string_out(fn_name: &str, value: String, out: *mut *mut c_char) -> bool {
+    match CString::new(value) {
+        Ok(cstr) => {
+            unsafe { *out = cstr.into_raw() };
+            true
+        }
+        Err(e) => {
+            log::error!("{}(): Failed to create CString: {:#}", fn_name, e);
+            false
+        }
+    }
+}
+
 /// ABI-compatible mirror of `lch_buffer_t` from `leech2.h`. An owned byte
 /// buffer handed across the FFI boundary; freed with `lch_buffer_free`.
 #[repr(C)]
@@ -124,6 +147,32 @@ impl From<Vec<u8>> for FfiBuffer {
         let len = boxed.len();
         let data = Box::into_raw(boxed) as *mut u8;
         FfiBuffer { data, len }
+    }
+}
+
+/// Decode the patch held by a required `lch_buffer_t` FFI argument.
+///
+/// Logs an error and returns `None` if `ptr` or its `data` is null, or the
+/// bytes are not a valid patch.
+///
+/// # Safety
+/// If `ptr` is non-null, it must point to a valid `lch_buffer_t` whose `data`,
+/// if non-null, points to `len` readable bytes.
+pub unsafe fn patch_arg(fn_name: &str, arg_name: &str, ptr: *const FfiBuffer) -> Option<Patch> {
+    if null_arg(fn_name, arg_name, ptr) {
+        return None;
+    }
+    let buffer = unsafe { &*ptr };
+    if null_arg(fn_name, &format!("{}->data", arg_name), buffer.data) {
+        return None;
+    }
+    let data = unsafe { std::slice::from_raw_parts(buffer.data, buffer.len) };
+    match decode_patch(data) {
+        Ok(patch) => Some(patch),
+        Err(e) => {
+            log::error!("{}(): Failed to decode {}: {:#}", fn_name, arg_name, e);
+            None
+        }
     }
 }
 

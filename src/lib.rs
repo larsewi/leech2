@@ -1,8 +1,9 @@
-use std::ffi::{CStr, CString, c_char, c_void};
+use std::ffi::{CString, c_char, c_void};
 use std::path::PathBuf;
 
 use crate::ffi::{
     FAILURE, FfiBuffer, FfiField, SUCCESS, cstr_arg, ffi_guard, injected_fields_from_ffi, null_arg,
+    patch_arg, string_out,
 };
 
 pub mod block;
@@ -198,13 +199,11 @@ pub unsafe extern "C" fn lch_patch_create(
                 }
             }
         } else {
-            match unsafe { CStr::from_ptr(last_known) }.to_str() {
-                Ok(hash) => hash.to_string(),
-                Err(e) => {
-                    log::error!("lch_patch_create(): Bad argument: {e}");
-                    return FAILURE;
-                }
-            }
+            let Some(hash) = (unsafe { cstr_arg("lch_patch_create", "last_known", last_known) })
+            else {
+                return FAILURE;
+            };
+            hash
         };
 
         let patch = match patch::Patch::create(config, &hash) {
@@ -251,9 +250,6 @@ pub unsafe extern "C" fn lch_patch_to_sql(
         if null_arg("lch_patch_to_sql", "config", config) {
             return FAILURE;
         }
-        if null_arg("lch_patch_to_sql", "patch", patch) {
-            return FAILURE;
-        }
         if null_arg("lch_patch_to_sql", "out", out) {
             return FAILURE;
         }
@@ -265,18 +261,8 @@ pub unsafe extern "C" fn lch_patch_to_sql(
         };
 
         let config = unsafe { &*config };
-        let patch_buf = unsafe { &*patch };
-        if null_arg("lch_patch_to_sql", "patch->data", patch_buf.data) {
+        let Some(patch) = (unsafe { patch_arg("lch_patch_to_sql", "patch", patch) }) else {
             return FAILURE;
-        }
-        let data = unsafe { std::slice::from_raw_parts(patch_buf.data, patch_buf.len) };
-
-        let patch = match wire::decode_patch(data) {
-            Ok(patch) => patch,
-            Err(e) => {
-                log::error!("lch_patch_to_sql(): Failed to decode patch: {:#}", e);
-                return FAILURE;
-            }
         };
 
         let sql = match sql::patch_to_sql(config, &patch, &injected) {
@@ -291,18 +277,9 @@ pub unsafe extern "C" fn lch_patch_to_sql(
             }
         };
 
-        let cstr = match CString::new(sql) {
-            Ok(cstr) => cstr,
-            Err(e) => {
-                log::error!("lch_patch_to_sql(): Failed to create CString: {:#}", e);
-                return FAILURE;
-            }
-        };
-
-        unsafe {
-            *out = cstr.into_raw();
+        if !unsafe { string_out("lch_patch_to_sql", sql, out) } {
+            return FAILURE;
         }
-
         SUCCESS
     })
 }
@@ -331,39 +308,17 @@ pub unsafe extern "C" fn lch_string_free(ptr: *mut c_char) {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn lch_patch_hash(patch: *const FfiBuffer, out: *mut *mut c_char) -> i32 {
     ffi_guard("lch_patch_hash", FAILURE, || {
-        if null_arg("lch_patch_hash", "patch", patch) {
-            return FAILURE;
-        }
         if null_arg("lch_patch_hash", "out", out) {
             return FAILURE;
         }
 
-        let patch_buf = unsafe { &*patch };
-        if null_arg("lch_patch_hash", "patch->data", patch_buf.data) {
+        let Some(patch) = (unsafe { patch_arg("lch_patch_hash", "patch", patch) }) else {
+            return FAILURE;
+        };
+
+        if !unsafe { string_out("lch_patch_hash", patch.head, out) } {
             return FAILURE;
         }
-        let data = unsafe { std::slice::from_raw_parts(patch_buf.data, patch_buf.len) };
-
-        let patch = match wire::decode_patch(data) {
-            Ok(patch) => patch,
-            Err(e) => {
-                log::error!("lch_patch_hash(): Failed to decode patch: {:#}", e);
-                return FAILURE;
-            }
-        };
-
-        let cstr = match CString::new(patch.head) {
-            Ok(cstr) => cstr,
-            Err(e) => {
-                log::error!("lch_patch_hash(): Failed to create CString: {:#}", e);
-                return FAILURE;
-            }
-        };
-
-        unsafe {
-            *out = cstr.into_raw();
-        }
-
         SUCCESS
     })
 }
@@ -382,23 +337,10 @@ pub unsafe extern "C" fn lch_patch_applied(
         if null_arg("lch_patch_applied", "config", config) {
             return FAILURE;
         }
-        if null_arg("lch_patch_applied", "patch", patch) {
-            return FAILURE;
-        }
 
         let config = unsafe { &*config };
-        let patch_buf = unsafe { &*patch };
-        if null_arg("lch_patch_applied", "patch->data", patch_buf.data) {
+        let Some(patch) = (unsafe { patch_arg("lch_patch_applied", "patch", patch) }) else {
             return FAILURE;
-        }
-        let data = unsafe { std::slice::from_raw_parts(patch_buf.data, patch_buf.len) };
-
-        let patch = match wire::decode_patch(data) {
-            Ok(p) => p,
-            Err(e) => {
-                log::error!("lch_patch_applied(): Failed to decode patch: {:#}", e);
-                return FAILURE;
-            }
         };
 
         let state_dir = match config.ensure_state_dir() {
