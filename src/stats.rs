@@ -11,6 +11,9 @@ use crate::storage;
 /// Name of the cumulative stats file in the state directory.
 pub const STATS_FILE: &str = "STATS";
 
+/// Maximum number of runs kept in the `STATS` file; older runs are dropped.
+const MAX_RUNS: usize = 1000;
+
 /// A single patch-creation run appended to the `STATS` file.
 #[derive(Serialize, Deserialize)]
 struct RunStats {
@@ -82,8 +85,9 @@ pub fn finalize_patch_create(config: &Config) {
 
 /// Append `run` to the `STATS` JSON array in the state directory, creating the
 /// file if absent and replacing it wholesale if the existing content is not a
-/// valid JSON array. Holds the exclusive lock across the read and the write,
-/// so concurrent appends cannot drop each other's entries.
+/// valid JSON array. Only the most recent [`MAX_RUNS`] runs are kept. Holds the
+/// exclusive lock across the read and the write, so concurrent appends cannot
+/// drop each other's entries.
 fn append(config: &Config, run: RunStats) -> Result<()> {
     let state_dir = config.ensure_state_dir()?;
     let _lock = storage::lock(&state_dir, true, config.file_mode)?;
@@ -100,6 +104,8 @@ fn append(config: &Config, run: RunStats) -> Result<()> {
     };
 
     entries.push(serde_json::to_value(&run)?);
+    let excess = entries.len().saturating_sub(MAX_RUNS);
+    entries.drain(..excess);
     let bytes = serde_json::to_vec_pretty(&entries)?;
     storage::store(
         &state_dir,
@@ -361,6 +367,28 @@ mod tests {
         append(&config, sample_run()).unwrap();
 
         assert_eq!(load_entries(&config).len(), 2);
+    }
+
+    #[test]
+    fn test_append_drops_oldest_runs_beyond_limit() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = test_config(dir.path());
+        let state_dir = config.ensure_state_dir().unwrap();
+        let mut entries = Vec::new();
+        for index in 0..MAX_RUNS {
+            let mut run = sample_run();
+            run.timestamp = index.to_string();
+            entries.push(serde_json::to_value(&run).unwrap());
+        }
+        let bytes = serde_json::to_vec(&entries).unwrap();
+        storage::store(&state_dir, STATS_FILE, &bytes, config.file_mode, false).unwrap();
+
+        append(&config, sample_run()).unwrap();
+
+        let entries = load_entries(&config);
+        assert_eq!(entries.len(), MAX_RUNS);
+        assert_eq!(entries[0]["timestamp"], "1");
+        assert_eq!(entries[MAX_RUNS - 1]["timestamp"], sample_run().timestamp);
     }
 
     #[test]

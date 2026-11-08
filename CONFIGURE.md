@@ -197,7 +197,8 @@ enable = true  # record stats (default: false)
 ```
 
 Each entry stores performance related information about the different
-compression stages. Run `lch stats show` to print an aggregated summary.
+compression stages. Only the most recent 1000 runs are kept; older runs are
+dropped. Run `lch stats show` to print an aggregated summary.
 
 ## History truncation
 
