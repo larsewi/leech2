@@ -94,3 +94,43 @@ source = "products.csv"
     common::assert_wire_roundtrip(&config, &patch);
     common::assert_wire_roundtrip(&config, &patch_genesis);
 }
+
+#[test]
+fn test_malformed_csv_error_names_table_and_file() {
+    let tmp = tempfile::tempdir().unwrap();
+    let work_dir = tmp.path();
+
+    common::write_file(
+        work_dir,
+        "config.toml",
+        r#"
+[tables.users]
+fields = [
+    { name = "id", type = "NUMBER", primary-key = true },
+    { name = "name", type = "TEXT" },
+]
+
+[tables.users.csv]
+source = "users.csv"
+
+[tables.products]
+fields = [
+    { name = "sku", type = "TEXT", primary-key = true },
+    { name = "price", type = "NUMBER" },
+]
+
+[tables.products.csv]
+source = "products.csv"
+"#,
+    );
+
+    common::write_csv!(work_dir, "users.csv", "1,Alice");
+    // The second row has an extra field
+    common::write_csv!(work_dir, "products.csv", "ABC,100", "DEF,200,extra");
+    let config = Config::load(work_dir).unwrap();
+
+    let err = Block::create(&config, None).unwrap_err();
+    let msg = format!("{:#}", err);
+    assert!(msg.contains("table 'products'"), "got: {msg}");
+    assert!(msg.contains("products.csv"), "got: {msg}");
+}
