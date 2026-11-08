@@ -259,9 +259,11 @@ pub struct Config {
     /// to the `STATS` file. Not deserialized.
     #[serde(skip)]
     pub(crate) pending_stats: Mutex<crate::stats::PendingStats>,
-    /// When true, CLI create/mutate operations skip all disk writes and print
-    /// "Would have ..." messages instead. CLI-only; set by `lch --dry-run`,
-    /// never deserialized.
+    /// When true, CLI create/mutate operations skip disk writes and print
+    /// "Would have ..." messages instead. The state directory and its lock
+    /// file are still created, so that a dry run can take the lock and run in
+    /// parallel with other leech2 processes. CLI-only; set by
+    /// `lch --dry-run`, never deserialized.
     #[serde(skip)]
     pub dry_run: bool,
 }
