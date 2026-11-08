@@ -71,7 +71,9 @@ lch patch failed
 ```
 
 Pass `--dry-run` to any command to compute the changes and print what it `Would
-have ...` done without changing anything on the disk.
+have ...` done without changing anything on the disk. The exception is the state
+directory and its lock file, which may still be created: a dry run takes the
+lock so that it can run in parallel with other leech2 processes.
 
 ## Configuration
 

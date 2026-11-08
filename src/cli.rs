@@ -11,7 +11,8 @@ pub struct Cli {
     #[arg(short = 'C', global = true)]
     pub directory: Option<PathBuf>,
 
-    /// Skip all disk writes; log "Would have ..." instead
+    /// Skip disk writes and log "Would have ..." instead; the state directory
+    /// and its lock file may still be created
     #[arg(long, global = true)]
     pub dry_run: bool,
 
