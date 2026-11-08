@@ -102,6 +102,12 @@ The hub passes them to `lch_patch_to_sql()` or `lch patch sql --inject`.
 lch patch sql --inject hostkey abc123 TEXT --inject count 42 NUMBER
 ```
 
+## Target database
+
+The generated SQL targets PostgreSQL. It quotes strings the standard way, so
+keep `standard_conforming_strings` on (the default); otherwise, a backslash in a
+value can break out of its string literal.
+
 ## C API
 
 See [`include/leech2.h`](include/leech2.h) for the full API reference.
