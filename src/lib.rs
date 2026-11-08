@@ -190,9 +190,8 @@ pub unsafe extern "C" fn lch_patch_create(
                     return FAILURE;
                 }
             };
-            match reported::load(&state_dir) {
-                Ok(Some(hash)) => hash,
-                Ok(None) => utils::GENESIS_HASH.to_string(),
+            match reported::load_or_genesis(&state_dir) {
+                Ok(hash) => hash,
                 Err(e) => {
                     log::error!("lch_patch_create(): Failed to load REPORTED: {:#}", e);
                     return FAILURE;

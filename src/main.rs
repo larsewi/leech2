@@ -138,8 +138,7 @@ fn cmd_patch_create(
     let hash = if reference.is_none() && num_blocks.is_none() {
         let state_dir = config.ensure_state_dir()?;
         let _lock = leech2::storage::lock(&state_dir, false, config.file_mode)?;
-        leech2::reported::load(&state_dir)?
-            .unwrap_or_else(|| leech2::utils::GENESIS_HASH.to_string())
+        leech2::reported::load_or_genesis(&state_dir)?
     } else {
         resolve_ref(config, reference, num_blocks)?
     };
