@@ -41,6 +41,9 @@ type.
 | `NUMBER`  | `42` / `3.14`  | Stored as `f64`; integers above 2^53 lose precision         |
 | `BOOLEAN` | `TRUE`/`FALSE` | Accepts the exact strings `true` / `false` (case-sensitive) |
 
+`NUMBER` values compare by value, so in a primary key `1`, `01` and `1.0` are
+the same key. Use `TEXT` to keep them distinct.
+
 ### CSV parsing
 
 Inside a `[csv]` block, when `header = false` (the default), CSV columns are

@@ -158,7 +158,12 @@ impl Table {
                 RowResult::Row(mut primary_key) => {
                     let subsidiary = primary_key.split_off(num_primary_keys);
                     if records.insert(primary_key.clone(), subsidiary).is_some() {
-                        anyhow::bail!("duplicate primary key {:?}", primary_key);
+                        let key: Vec<String> = primary_key.iter().map(Cell::to_string).collect();
+                        anyhow::bail!(
+                            "row {}: duplicate primary key ({})",
+                            row + 1,
+                            key.join(", ")
+                        );
                     }
                 }
                 RowResult::SkipRecord => {}
@@ -287,7 +292,12 @@ impl Table {
                 .with_context(|| format!("row {}", row_num + 1))?;
 
             if records.insert(primary_key.clone(), subsidiary).is_some() {
-                anyhow::bail!("duplicate primary key {:?}", primary_key);
+                let key: Vec<String> = primary_key.iter().map(Cell::to_string).collect();
+                anyhow::bail!(
+                    "row {}: duplicate primary key ({})",
+                    row_num + 1,
+                    key.join(", ")
+                );
             }
         }
 
@@ -636,6 +646,26 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_csv_duplicate_primary_key_names_row() {
+        let config = make_config(
+            vec![
+                make_typed_field("id", Kind::Number, true),
+                make_typed_field("name", Kind::Text, true),
+                make_typed_field("age", Kind::Number, false),
+            ],
+            true,
+        );
+        // "01" and "1" are the same NUMBER
+        let reader = Table::test_reader("id,name,age\n1,Alice,30\n01,Alice,31\n", true);
+        let err = Table::parse_csv(&config, reader).unwrap_err();
+        let msg = format!("{:#}", err);
+        assert!(
+            msg.contains("row 2: duplicate primary key (1, \"Alice\")"),
+            "got: {msg}"
+        );
+    }
+
+    #[test]
     fn test_parse_csv_respects_null_pattern_on_number() {
         let csv = CsvConfig {
             source: "test.csv".to_string(),
@@ -979,7 +1009,7 @@ mod tests {
 
         let err = load_table("t", &config).unwrap_err();
         assert!(
-            format!("{:#}", err).contains("duplicate primary key"),
+            format!("{:#}", err).contains("row 2: duplicate primary key (1)"),
             "got: {err:#}"
         );
         clear_script();
