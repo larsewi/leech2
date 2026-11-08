@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::fmt;
 
 use anyhow::{Context, Result};
@@ -83,36 +84,35 @@ impl RunStats {
     }
 }
 
-/// A size-reducing stage whose stats can be recorded into a [`Config`]'s
-/// in-flight run.
+/// A size-reducing stage whose stats can be recorded into the in-flight run.
 pub(crate) enum Stage {
     DeltaMerging,
     Compression,
 }
 
-/// The stages recorded for the patch-creation run currently in flight. Lives
-/// behind a `Mutex` on [`Config`]; the operations that produce stats
-/// ([`crate::patch::Patch::create`], [`crate::wire::encode_patch`]) record into
-/// it as they run, and [`finalize_patch_create`] drains it into the `STATS`
-/// file. This keeps the stats out of function return types and lets future
-/// operations (e.g. block pruning) contribute without threading values around.
+/// The stages recorded for the patch-creation run currently in flight. The
+/// operations that produce stats ([`crate::patch::Patch::create`],
+/// [`crate::wire::encode_patch`]) record into it as they run, and
+/// [`finalize_patch_create`] drains it into the `STATS` file.
 #[derive(Debug, Default)]
-pub(crate) struct PendingStats {
+struct PendingStats {
     delta_merging: Option<StageStats>,
     compression: Option<StageStats>,
 }
 
+thread_local! {
+    // A patch-creation run happens entirely on its caller's thread, so
+    // concurrent runs on other threads cannot mix their stats into it.
+    static PENDING_STATS: RefCell<PendingStats> = RefCell::default();
+}
+
 /// Record a stage of the in-flight patch-creation run. Callers should only
 /// invoke this when `config.stats.enable` is set.
-pub(crate) fn record_stage(config: &Config, stage: Stage, stats: StageStats) {
-    let mut pending = config
-        .pending_stats
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
-    match stage {
+pub(crate) fn record_stage(stage: Stage, stats: StageStats) {
+    PENDING_STATS.with_borrow_mut(|pending| match stage {
         Stage::DeltaMerging => pending.delta_merging = Some(stats),
         Stage::Compression => pending.compression = Some(stats),
-    }
+    });
 }
 
 /// Append the in-flight patch-creation run to the cumulative `STATS` JSON file
@@ -124,15 +124,9 @@ pub fn finalize_patch_create(config: &Config) {
         return;
     }
 
-    let (delta_merging, compression) = {
-        let mut pending = config
-            .pending_stats
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        (pending.delta_merging.take(), pending.compression.take())
-    };
-
-    let (Some(delta_merging), Some(compression)) = (delta_merging, compression) else {
+    let pending = PENDING_STATS.take();
+    let (Some(delta_merging), Some(compression)) = (pending.delta_merging, pending.compression)
+    else {
         log::warn!("Stats: incomplete patch-create run, nothing recorded");
         return;
     };

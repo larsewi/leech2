@@ -4,7 +4,6 @@ use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
@@ -254,11 +253,6 @@ pub struct Config {
         deserialize_with = "deserialize_file_mode"
     )]
     pub dir_mode: u32,
-    /// Stage stats for the patch-creation run currently in flight. Operations
-    /// record into this as they run; `stats::finalize_patch_create` drains it
-    /// to the `STATS` file. Not deserialized.
-    #[serde(skip)]
-    pub(crate) pending_stats: Mutex<crate::stats::PendingStats>,
     /// When true, CLI create/mutate operations skip disk writes and print
     /// "Would have ..." messages instead. The state directory and its lock
     /// file are still created, so that a dry run can take the lock and run in
@@ -280,7 +274,6 @@ impl Default for Config {
             truncate: TruncateConfig::default(),
             file_mode: default_file_mode(),
             dir_mode: default_dir_mode(),
-            pending_stats: Default::default(),
             dry_run: false,
         }
     }

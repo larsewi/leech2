@@ -357,7 +357,7 @@ fn unknown_reference_patch(work_dir: &Path, head: &str) -> Result<Patch> {
 impl Patch {
     /// Consolidate the chain from `last_known` to HEAD into a patch. When stats
     /// are enabled, times the consolidation and records the delta-merging stage
-    /// (full-state size vs consolidated size) into the config's in-flight run.
+    /// (full-state size vs consolidated size) into the in-flight run.
     ///
     /// Holds a shared lock on the state directory throughout, so HEAD, the
     /// blocks and STATE are all read from the same chain.
@@ -384,7 +384,6 @@ impl Patch {
                 bytes_out
             });
             stats::record_stage(
-                config,
                 Stage::DeltaMerging,
                 StageStats {
                     duration_ms,
