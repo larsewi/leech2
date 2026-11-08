@@ -2,20 +2,22 @@
  * @file leech2.h
  * @brief C API for the leech2 library.
  *
- * leech2 tracks changes to CSV data sources using a git-like,
- * content-addressable chain of blocks: each block records the delta from the
- * previous snapshot of every configured table. A patch consolidates a range of
- * blocks and converts into the SQL needed to replay those changes on a
+ * leech2 tracks changes to tables, read from CSV files or callbacks, using a
+ * git-like, content-addressable chain of blocks: each block records the delta
+ * from the previous snapshot of every configured table. A patch consolidates a
+ * range of blocks and converts into the SQL needed to replay those changes on a
  * downstream database.
  *
- * The library operates on a work directory that holds the configuration and CSV
- * inputs; its state (the HEAD, STATE, REPORTED, and STATS files, plus the
+ * The library operates on a work directory that holds the configuration; its
+ * state (the HEAD, STATE, REPORTED, and STATS files, plus the
  * content-addressable block files) lives in a separate state directory, by
  * default a `state` subdirectory of the work directory. The configuration
  * format is described in CONFIGURE.md in the project documentation.
  *
  * Concurrency: the library serializes access to its own state files with an
- * advisory lock, so multiple processes may safely share one working directory.
+ * advisory lock, so multiple processes may safely share one work directory.
+ * Within a process, one lch_config_t may be used from several threads at once,
+ * but must not be freed with lch_deinit() while another call is using it.
  */
 
 #ifndef __LEECH2_H__
@@ -184,7 +186,8 @@ typedef struct LchConfig lch_config_t;
  * Parses the configuration found in @p work_dir and returns an opaque handle
  * used by all subsequent API calls.
  *
- * @param work_dir  Path to the leech2 working directory (must not be NULL).
+ * @param work_dir  Path to the leech2 work directory (must not be NULL, and
+ *                  must be valid UTF-8).
  * @return An opaque config handle on success, or NULL on failure.
  *         The caller must free the handle with lch_deinit().
  */
@@ -217,8 +220,9 @@ typedef int (*lch_table_begin_cb_t)(const char *table, void *usr_data);
 /**
  * @brief Per-table teardown hook for callback-backed tables and event streams.
  *
- * Invoked once for every table whose lch_table_begin_cb_t returned
- * LCH_SUCCESS, including on the failure path.
+ * Invoked once for every table, after its last cell callback, including when
+ * reading the table failed. Not invoked for a table whose lch_table_begin_cb_t
+ * returned LCH_FAILURE.
  *
  * @param table     Null-terminated table name. Borrowed; valid only for the
  *                  duration of the call.
@@ -242,8 +246,8 @@ typedef int (*lch_table_end_cb_t)(const char *table, void *usr_data);
  * Iteration contract:
  *   - Rows are requested in ascending order, starting from row == 0.
  *   - The order in which leech2 asks for columns within a row is unspecified
- *     and may vary across rows. The caller must support random access by
- *     @p col or @p field_name.
+ *     and may vary across rows. The callback implementation must support
+ *     random access by @p col or @p field_name.
  *   - A table is fully drained before any other table is processed, and the
  *     callback is invoked exclusively on the thread that called
  *     lch_block_create().
@@ -254,10 +258,10 @@ typedef int (*lch_table_end_cb_t)(const char *table, void *usr_data);
  *
  * @param table       Null-terminated table name. Borrowed.
  * @param row         0-based row index
- * @param col         0-based index of the field in config.toml declaration
- *                    order.
+ * @param col         0-based index of the field in the order the table's
+ *                    fields are declared in the configuration.
  * @param field_name  Null-terminated name of the field at @p col. Borrowed.
- * @param out_cell    On entry, zero-initialised. On LCH_SUCCESS return,
+ * @param out_cell    On entry, zero-initialized. On LCH_SUCCESS return,
  *                    populate with the typed cell value. The kind tag must
  *                    match the field's declared kind. On LCH_END_OF_TABLE,
  *                    LCH_SKIP_RECORD, or LCH_FAILURE, the contents are

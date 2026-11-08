@@ -258,10 +258,10 @@ Patch:
 `patch_to_sql()` converts an encoded patch into SQL statements. For delta tables
 it generates `DELETE`, `INSERT`, and `UPDATE` statements. For full state tables
 it generates `DELETE` followed by `INSERT` statements (`DELETE` rather than
-`TRUNCATE`, since SQLite has no `TRUNCATE`). Column ordering follows
-the wire's `Delta.fields`/`Table.fields` rather than the hub config's
-declaration order, so values land in the columns the agent intended even if the
-hub config declares the same fields in a different order. Schema disagreements
+`TRUNCATE`, since SQLite has no `TRUNCATE`). Column ordering follows the wire's
+`primary_key_names`/`subsidiary_value_names` rather than the hub config, so
+values land in the columns the agent intended even if the hub config declares
+the same fields in a different order. Schema disagreements
 between the wire and the hub config are rejected before any SQL is emitted.
 
 For event streams it generates one `INSERT ... SELECT ... WHERE NOT EXISTS` per

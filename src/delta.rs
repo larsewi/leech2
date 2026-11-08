@@ -44,11 +44,10 @@ impl TryFrom<ProtoBlockDelta> for Delta {
         let updates = decode_proto_updates(proto.updates).context("decoding delta updates")?;
 
         // The three operation maps must be pairwise key-disjoint.
-        // `Delta::compute` produces them this way by construction; this
-        // check rejects a peer that sends a malformed wire delta where the
-        // same key appears in two or more sections (which would otherwise
-        // make the merge result depend on iteration order rather than spec
-        // semantics).
+        // `Delta::compute` produces them this way by construction, so an
+        // overlap means the block is corrupt or was written by a buggy
+        // version; reject it rather than let the merge result depend on
+        // iteration order.
         for key in inserts.keys() {
             if deletes.contains_key(key) {
                 bail!("delta key {:?} appears in both inserts and deletes", key);
@@ -344,7 +343,7 @@ impl Delta {
             for i in 0..merged_old.len() {
                 if merged_new[i] != child_old[i] {
                     bail!(
-                        "rule 15 conflict: parent's update of key {:?} \
+                        "rule 15c conflict: parent's update of key {:?} \
                          leaves column {} at {:?}, but child's update \
                          expects {:?}",
                         key,
@@ -380,9 +379,8 @@ impl Delta {
     ///
     /// Returns `None` for tables missing from the previous state, since the
     /// receiver may already hold rows for them. Also returns `None` for
-    /// tables whose field layout changed (columns added/removed/reordered),
-    /// since positional record values are not comparable across different
-    /// layouts. Callers should treat `None` as "use full state instead of a
+    /// tables whose field layout changed, since positional record values are
+    /// not comparable across different layouts. Callers should treat `None` as "use full state instead of a
     /// delta".
     pub fn compute(
         previous_state: Option<State>,
@@ -1215,7 +1213,7 @@ mod tests {
 
         let err = parent_delta.merge(child_delta, None).unwrap_err();
         let msg = format!("{:#}", err);
-        assert!(msg.contains("rule 15 conflict"), "got: {msg}");
+        assert!(msg.contains("rule 15c conflict"), "got: {msg}");
         assert!(msg.contains("column 0"), "got: {msg}");
     }
 
@@ -1237,7 +1235,7 @@ mod tests {
 
         let err = parent_delta.merge(child_delta, None).unwrap_err();
         let msg = format!("{:#}", err);
-        assert!(msg.contains("rule 15 conflict"), "got: {msg}");
+        assert!(msg.contains("rule 15c conflict"), "got: {msg}");
         assert!(msg.contains("column 1"), "got: {msg}");
     }
 

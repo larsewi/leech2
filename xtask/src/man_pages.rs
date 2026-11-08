@@ -157,7 +157,7 @@ fn leech2_version(repo_root: &Path) -> Result<String> {
     bail!("no version found in {}", manifest.display())
 }
 
-/// The last commit's author date, so the man page date matches the release
+/// The last commit's committer date, so the man page date matches the release
 /// rather than whenever the generator happened to run.
 fn last_commit_date(repo_root: &Path) -> String {
     Command::new("git")

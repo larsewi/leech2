@@ -17,10 +17,10 @@ use crate::proto::table::Table as ProtoTable;
 use crate::utils::{format_iso_timestamp, validate_name};
 
 /// Schema information for a single table, derived from the wire-declared
-/// field lists. Column ordering follows the wire (i.e. the agent's
-/// declaration order). The hub honors that order when generating SQL so
-/// values land in the columns the agent intended, regardless of how the
-/// hub config declares them.
+/// field lists. Column ordering follows the wire, which lists fields in
+/// canonical order (each group sorted by name). The hub honors that order when
+/// generating SQL so values land in the columns the agent intended, regardless
+/// of how the hub config declares them.
 struct TableSchema<'a> {
     /// Primary-key field names, in wire order.
     primary_key_names: &'a [String],
@@ -985,21 +985,20 @@ mod tests {
         assert!(msg.contains("out of range"), "got: {}", msg);
     }
 
-    /// When the agent and hub agree on field set, types, PK assignment, and
-    /// nullability but disagree on subsidiary declaration order, the hub
-    /// honours the wire's `subsidiary_value_names` order so each value
-    /// lands in the column the agent intended.
+    /// When the wire lists subsidiary fields in a different order than the hub
+    /// config, the hub honors the wire's `subsidiary_value_names` order so
+    /// each value lands in the column the agent intended.
     #[test]
     fn test_subsidiary_order_drift_uses_wire_order_for_columns() {
-        // Hub config: subsidiary declaration order is [email, name].
+        // Hub config: subsidiary order is [email, name].
         let hub_config_table = dummy_table(&[("id", true), ("email", false), ("name", false)]);
         let hub_config = Config {
             tables: HashMap::from([("users".to_string(), hub_config_table)]),
             ..Default::default()
         };
 
-        // Wire entry as the agent would have serialized it: subsidiary values
-        // laid out in the agent's declaration order, i.e. [name, email].
+        // Wire entry with the subsidiary values in a different order,
+        // [name, email].
         let mut delta = dummy_delta(&["id"], &["name", "email"]);
         delta.inserts.push(ProtoInsert {
             key: text_proto_cells(&["1"]),
