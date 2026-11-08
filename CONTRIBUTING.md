@@ -389,6 +389,9 @@ src/
   truncate.rs   History truncation (orphan, reported, max-blocks, max-age)
   storage.rs    File I/O and the state directory lock
   wire.rs       Protobuf encode/decode + zstd compression
+  stats.rs      STATS file appending and the `lch stats show` summary
+  recorder.rs   Per-thread recording of an in-flight patch creation's stage
+                stats
   sql.rs        Patch-to-SQL conversion (consumes typed Values directly)
   proto.rs      Generated protobuf code (via build.rs)
   utils.rs      SHA-1 hashing, timestamp formatting
