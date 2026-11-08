@@ -114,7 +114,9 @@ impl From<Vec<u8>> for FfiBuffer {
 pub union FfiCellPayload {
     pub text: *const c_char,
     pub number: f64,
-    pub boolean: bool,
+    /// C `bool`, read as a byte: a Rust `bool` other than 0 or 1 is undefined
+    /// behavior, so any nonzero byte is taken as true, as in C.
+    pub boolean: u8,
 }
 
 #[repr(C)]
@@ -146,7 +148,7 @@ pub unsafe fn cell_from_ffi(fn_name: &str, cell: &FfiCell) -> Option<Cell> {
                 None
             }
         },
-        VALUE_BOOLEAN => Some(Cell::Boolean(unsafe { cell.payload.boolean })),
+        VALUE_BOOLEAN => Some(Cell::Boolean(unsafe { cell.payload.boolean } != 0)),
         other => {
             log::error!(
                 "{}(): Bad argument: cell.kind: unknown kind tag {}",
@@ -199,4 +201,21 @@ pub unsafe fn injected_fields_from_ffi(
         }
     }
     Some(injected)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cell_from_ffi_boolean_nonzero_byte_is_true() {
+        for (byte, expected) in [(0, false), (1, true), (2, true), (0xFF, true)] {
+            let cell = FfiCell {
+                kind: VALUE_BOOLEAN,
+                payload: FfiCellPayload { boolean: byte },
+            };
+            let cell = unsafe { cell_from_ffi("test", &cell) };
+            assert_eq!(cell, Some(Cell::Boolean(expected)), "byte {byte}");
+        }
+    }
 }
