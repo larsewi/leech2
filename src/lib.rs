@@ -234,7 +234,8 @@ pub unsafe extern "C" fn lch_patch_create(
 /// # Safety
 /// `config` must be a valid, non-null pointer returned by `lch_init`.
 /// `patch` must be a valid, non-null pointer to an `lch_buffer_t` whose `data`
-/// field points to `len` bytes previously returned by `lch_patch_create`.
+/// field points to `len` readable bytes. The bytes may hold anything; a
+/// malformed patch is rejected with an error.
 /// `injected` must point to `num_injected` valid `lch_field_t` values, or may
 /// be NULL when `num_injected` is 0.
 /// `out` must be a valid, non-null pointer.
@@ -322,7 +323,8 @@ pub unsafe extern "C" fn lch_string_free(ptr: *mut c_char) {
 
 /// # Safety
 /// `patch` must be a valid, non-null pointer to an `lch_buffer_t` whose `data`
-/// field points to `len` bytes previously returned by `lch_patch_create`.
+/// field points to `len` readable bytes. The bytes may hold anything; a
+/// malformed patch is rejected with an error.
 /// `out` must be a valid, non-null pointer to a `*mut c_char`. On success it
 /// receives a newly allocated, null-terminated string that the caller must
 /// release with `lch_string_free`.
@@ -369,7 +371,8 @@ pub unsafe extern "C" fn lch_patch_hash(patch: *const FfiBuffer, out: *mut *mut 
 /// # Safety
 /// `config` must be a valid, non-null pointer returned by `lch_init`.
 /// `patch` must be a valid, non-null pointer to an `lch_buffer_t` whose `data`
-/// field points to `len` bytes previously returned by `lch_patch_create`.
+/// field points to `len` readable bytes. The bytes may hold anything; a
+/// malformed patch is rejected with an error.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn lch_patch_applied(
     config: *const config::Config,

@@ -236,7 +236,7 @@ pub struct Config {
     /// Block chain truncation policy.
     #[serde(default)]
     pub truncate: TruncateConfig,
-    /// Unix permission bits for files created in the work directory, written
+    /// Unix permission bits for files created in the state directory, written
     /// as an octal string (e.g. `"0600"`). Ignored on non-Unix platforms.
     #[serde(
         default = "default_file_mode",
@@ -286,7 +286,7 @@ pub struct FieldConfig {
     /// Column name. Matches a CSV header when `csv.header = true`; otherwise
     /// only used as the SQL column name.
     pub name: String,
-    /// Cell kind; one of `TEXT`, `NUMBER`, or `BOOLEAN`.
+    /// Cell kind; one of `TEXT` (the default), `NUMBER`, or `BOOLEAN`.
     #[serde(rename = "type", deserialize_with = "deserialize_kind")]
     pub kind: Kind,
     /// When true, this field is part of the table's composite primary key.

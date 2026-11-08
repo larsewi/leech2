@@ -33,7 +33,7 @@ header = true            # CSV has a header row (defaults to false)
 The type field controls how values are quoted in generated SQL string. These are
 not database column types. Your database may use any compatible type. It is your
 responsibility to ensure the quoted literals are valid for your target database
-type.
+type. Fields are `TEXT` by default.
 
 | Type      | SQL literal    | Notes                                                       |
 | --------- | -------------- | ----------------------------------------------------------- |
@@ -174,6 +174,9 @@ operations      = { insert = "INSERT", update = "UPDATE", delete = "DELETE" } # 
   `operation-field` and `timestamp-field`.
 - Inserts and updates record the values after the change. Deletes record them
   before the change.
+- No events are recorded when there is no previous state to compare against:
+  for the first block, or for a block in which the table was added or its
+  fields changed.
 
 ## Compression
 
@@ -232,7 +235,10 @@ file-mode = "0600"  # owner read/write only (default)
 dir-mode = "0700"   # owner read/write/traverse only (default)
 ```
 
-The options are ignored on non-Unix platforms.
+The modes are applied when leech2 creates a file or directory, and the process
+umask can remove bits from them. Changing the options does not affect the state
+directory or lock file if they already exist. The options are ignored on
+non-Unix platforms.
 
 ## State directory
 
