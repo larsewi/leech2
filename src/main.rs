@@ -76,11 +76,12 @@ fn walk_back(work_dir: &std::path::Path, num_blocks: u32) -> Result<String> {
 }
 
 fn cmd_init(work_dir: &std::path::Path) -> Result<()> {
-    if work_dir.join("config.toml").exists() {
-        bail!(
-            "already initialized: {} exists",
-            work_dir.join("config.toml").display()
-        );
+    // Check every file up front, so that init never overwrites or half-writes.
+    for name in ["config.toml", "config.json", "products.csv"] {
+        let path = work_dir.join(name);
+        if path.exists() {
+            bail!("already initialized: {} exists", path.display());
+        }
     }
 
     std::fs::create_dir_all(work_dir)?;
@@ -444,5 +445,30 @@ mod tests {
         assert_eq!(csv.source, "products.csv");
         assert!(csv.header);
         assert!(config.stats.enable, "init template must enable stats");
+    }
+
+    #[test]
+    fn init_refuses_existing_json_config() {
+        let work_dir = tempfile::tempdir().unwrap();
+        std::fs::write(work_dir.path().join("config.json"), "{}").unwrap();
+
+        let err = cmd_init(work_dir.path()).unwrap_err();
+        assert!(err.to_string().contains("config.json exists"), "got: {err}");
+        assert!(!work_dir.path().join("config.toml").exists());
+    }
+
+    #[test]
+    fn init_refuses_existing_csv() {
+        let work_dir = tempfile::tempdir().unwrap();
+        std::fs::write(work_dir.path().join("products.csv"), "mine").unwrap();
+
+        let err = cmd_init(work_dir.path()).unwrap_err();
+        assert!(
+            err.to_string().contains("products.csv exists"),
+            "got: {err}"
+        );
+        assert!(!work_dir.path().join("config.toml").exists());
+        let csv = std::fs::read_to_string(work_dir.path().join("products.csv")).unwrap();
+        assert_eq!(csv, "mine");
     }
 }
