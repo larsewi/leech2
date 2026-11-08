@@ -1,5 +1,5 @@
 use std::io::{ErrorKind, IsTerminal, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command as ProcessCommand, ExitCode, Stdio};
 
 use anyhow::{Context, Result, bail};
@@ -53,9 +53,6 @@ fn resolve_ref(
     reference: Option<&str>,
     num_blocks: Option<u32>,
 ) -> Result<String> {
-    if reference.is_some() && num_blocks.is_some() {
-        bail!("cannot specify both a hash prefix and -n");
-    }
     let state_dir = config.ensure_state_dir()?;
     let _lock = leech2::storage::lock(&state_dir, false, config.file_mode)?;
     match (reference, num_blocks) {
@@ -65,8 +62,8 @@ fn resolve_ref(
     }
 }
 
-fn walk_back(work_dir: &std::path::Path, num_blocks: u32) -> Result<String> {
-    let mut hash = leech2::head::load(work_dir)?;
+fn walk_back(state_dir: &Path, num_blocks: u32) -> Result<String> {
+    let mut hash = leech2::head::load(state_dir)?;
     for i in 0..num_blocks {
         if hash == GENESIS_HASH {
             bail!(
@@ -75,12 +72,12 @@ fn walk_back(work_dir: &std::path::Path, num_blocks: u32) -> Result<String> {
                 i
             );
         }
-        hash = Block::load_header(work_dir, &hash)?.parent;
+        hash = Block::load_header(state_dir, &hash)?.parent;
     }
     Ok(hash)
 }
 
-fn cmd_init(work_dir: &std::path::Path, dry_run: bool) -> Result<()> {
+fn cmd_init(work_dir: &Path, dry_run: bool) -> Result<()> {
     // Check every file up front, so that init never overwrites or half-writes.
     for name in ["config.toml", "config.json", "products.csv"] {
         let path = work_dir.join(name);
