@@ -323,10 +323,21 @@ fn print_stdout(content: &str) -> Result<()> {
 /// to launch. Honors the `PAGER` environment variable, which may include
 /// arguments on Unix. A trailing newline is added only when `content` does not
 /// already end with one.
+/// Count the terminal rows `content` takes up when lines wider than `width`
+/// wrap. Assumes every character is one column wide.
+fn count_rows(content: &str, width: usize) -> usize {
+    let mut rows = 0;
+    for line in content.lines() {
+        let columns = line.chars().count();
+        rows += columns.div_ceil(width.max(1)).max(1);
+    }
+    rows
+}
+
 fn print_with_pager(content: &str) -> Result<()> {
     let is_tty = std::io::stdout().is_terminal();
-    let exceeds_height =
-        terminal_size::terminal_size().is_some_and(|(_, h)| content.lines().count() > h.0 as usize);
+    let exceeds_height = terminal_size::terminal_size()
+        .is_some_and(|(width, height)| count_rows(content, width.0 as usize) > height.0 as usize);
     let use_pager = is_tty && exceeds_height;
 
     if !use_pager {
@@ -472,6 +483,14 @@ mod tests {
         let err = cmd_init(work_dir.path(), false).unwrap_err();
         assert!(err.to_string().contains("config.json exists"), "got: {err}");
         assert!(!work_dir.path().join("config.toml").exists());
+    }
+
+    #[test]
+    fn count_rows_counts_wrapped_lines() {
+        // An empty line takes one row, and a line of 25 columns takes 3 rows
+        // in a terminal 10 columns wide.
+        let content = format!("short\n\n{}\n{}\n", "x".repeat(10), "x".repeat(25));
+        assert_eq!(count_rows(&content, 10), 1 + 1 + 1 + 3);
     }
 
     #[test]
