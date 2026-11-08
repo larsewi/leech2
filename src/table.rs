@@ -103,7 +103,8 @@ impl Table {
             .from_reader(file);
 
         log::debug!("Parsing csv file '{}'...", path.display());
-        let table = Self::parse_csv(config, reader)?;
+        let table = Self::parse_csv(config, reader)
+            .with_context(|| format!("failed to parse '{}'", path.display()))?;
 
         log::debug!(
             "Loaded table '{}' with {} records",

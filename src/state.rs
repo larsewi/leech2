@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::path::Path;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use prost::Message;
 
 use crate::callbacks::Callbacks;
@@ -130,7 +130,8 @@ impl State {
 
         for (name, table_config) in &config.tables {
             let table = if table_config.csv.is_some() {
-                Table::load_from_csv(&config.work_dir, name, table_config)?
+                Table::load_from_csv(&config.work_dir, name, table_config)
+                    .with_context(|| format!("table '{}'", name))?
             } else {
                 let Some(cbs) = callbacks else {
                     anyhow::bail!(
@@ -145,7 +146,8 @@ impl State {
                     .collect();
                 cbs.with_table(name, &field_names, |bound| {
                     Table::load_from_callbacks(name, table_config, bound)
-                })?
+                })
+                .with_context(|| format!("table '{}'", name))?
             };
             tables.insert(name.clone(), table);
         }
