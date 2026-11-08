@@ -309,7 +309,8 @@ or `max-age` limits.
 
 Truncation runs after `Block::create()` advances `HEAD`, before the call
 returns. It also deletes the per-file `.<name>.lock` and `.chain.lock` files
-left by older versions.
+left by older versions, and the `<hash>.tmp` files left by block writes that
+crashed before renaming them into place.
 
 ### Locking
 

@@ -23,11 +23,30 @@ fn is_legacy_lock_file(name: &str) -> bool {
     name != storage::LOCK_FILE && name.starts_with('.') && name.ends_with(".lock")
 }
 
-/// Returns `(block_hashes, legacy_lock_files)` by scanning the work directory.
-/// Block hashes are 40-hex-char filenames.
-fn scan_work_dir(work_dir: &Path) -> Result<(HashSet<String>, Vec<String>)> {
-    let mut blocks = HashSet::new();
-    let mut lock_files = Vec::new();
+/// Returns `true` if `name` is the temp file of a block write (`<hash>.tmp`).
+/// Under the exclusive lock, one can only be left by a writer that crashed
+/// before renaming it into place. Unlike the temp files of HEAD, STATE and the
+/// like, which the next write of that file reuses, it is never written again.
+fn is_block_temp_file(name: &str) -> bool {
+    name.strip_suffix(".tmp").is_some_and(is_hex_hash)
+}
+
+/// Files found by scanning the work directory.
+struct WorkDirScan {
+    /// Block hashes (40-hex-char filenames).
+    blocks: HashSet<String>,
+    /// Lock files left by older versions.
+    legacy_lock_files: Vec<String>,
+    /// Temp files left by crashed block writes.
+    block_temp_files: Vec<String>,
+}
+
+fn scan_work_dir(work_dir: &Path) -> Result<WorkDirScan> {
+    let mut scan = WorkDirScan {
+        blocks: HashSet::new(),
+        legacy_lock_files: Vec::new(),
+        block_temp_files: Vec::new(),
+    };
 
     for entry in std::fs::read_dir(work_dir)? {
         let entry = entry?;
@@ -36,13 +55,15 @@ fn scan_work_dir(work_dir: &Path) -> Result<(HashSet<String>, Vec<String>)> {
             continue;
         };
         if is_hex_hash(name) {
-            blocks.insert(name.to_string());
+            scan.blocks.insert(name.to_string());
         } else if is_legacy_lock_file(name) {
-            lock_files.push(name.to_string());
+            scan.legacy_lock_files.push(name.to_string());
+        } else if is_block_temp_file(name) {
+            scan.block_temp_files.push(name.to_string());
         }
     }
 
-    Ok((blocks, lock_files))
+    Ok(scan)
 }
 
 /// Walk the block chain from HEAD back toward GENESIS, returning an ordered
@@ -86,19 +107,33 @@ fn walk_chain(work_dir: &Path, head_hash: &str) -> (Vec<ChainEntry>, HashSet<Str
     (chain, reachable)
 }
 
-/// Remove orphaned blocks (not reachable from HEAD) and lock files left by
-/// older versions. This also cleans up corrupt blocks, since `walk_chain` stops
-/// before adding them to the reachable set.
+/// Remove a leftover file that is not a block. Failure is logged rather than
+/// returned, since a stray file does no harm.
+fn remove_stray_file(work_dir: &Path, name: &str, kind: &str, dry_run: bool) {
+    if dry_run {
+        eprintln!("Would have removed {} '{}'", kind, name);
+        return;
+    }
+    log::info!("Removing {} '{}'", kind, name);
+    if let Err(error) = std::fs::remove_file(work_dir.join(name)) {
+        log::warn!("Failed to remove {} '{}': {}", kind, name, error);
+    }
+}
+
+/// Remove orphaned blocks (not reachable from HEAD), lock files left by older
+/// versions and temp files left by crashed block writes. This also cleans up
+/// corrupt blocks, since `walk_chain` stops before adding them to the reachable
+/// set.
 fn remove_orphans(
     work_dir: &Path,
     config: &TruncateConfig,
     reachable: &HashSet<String>,
     dry_run: bool,
 ) -> Result<()> {
-    let (on_disk, legacy_locks) = scan_work_dir(work_dir)?;
+    let scan = scan_work_dir(work_dir)?;
 
     if config.remove_orphans {
-        for hash in &on_disk {
+        for hash in &scan.blocks {
             if !reachable.contains(hash) {
                 if !dry_run {
                     log::info!("Removing orphaned block '{:.7}...'", hash);
@@ -108,19 +143,11 @@ fn remove_orphans(
         }
     }
 
-    for lock_file in &legacy_locks {
-        if dry_run {
-            eprintln!("Would have removed legacy lock file '{}'", lock_file);
-            continue;
-        }
-        log::info!("Removing legacy lock file '{}'", lock_file);
-        if let Err(error) = std::fs::remove_file(work_dir.join(lock_file)) {
-            log::warn!(
-                "Failed to remove legacy lock file '{}': {}",
-                lock_file,
-                error
-            );
-        }
+    for lock_file in &scan.legacy_lock_files {
+        remove_stray_file(work_dir, lock_file, "legacy lock file", dry_run);
+    }
+    for temp_file in &scan.block_temp_files {
+        remove_stray_file(work_dir, temp_file, "stale block temp file", dry_run);
     }
 
     Ok(())
@@ -222,5 +249,17 @@ mod tests {
         assert!(!is_legacy_lock_file("HEAD"));
         assert!(!is_legacy_lock_file("HEAD.lock"));
         assert!(!is_legacy_lock_file(".HEAD"));
+    }
+
+    #[test]
+    fn test_is_block_temp_file() {
+        assert!(is_block_temp_file(
+            "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2.tmp"
+        ));
+        assert!(!is_block_temp_file("HEAD.tmp"));
+        assert!(!is_block_temp_file("STATE.tmp"));
+        assert!(!is_block_temp_file(
+            "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
+        ));
     }
 }
