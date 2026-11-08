@@ -38,6 +38,11 @@ name = "price"
 type = "NUMBER"
 "#;
 
+const INIT_CSV_TEMPLATE: &str = "id,name,price\n\
+                                 1,Keyboard,79.99\n\
+                                 2,Mouse,34.50\n\
+                                 3,Monitor,249.95\n";
+
 fn work_dir(cli: &Cli) -> PathBuf {
     let base = cli.directory.clone().unwrap_or_else(|| PathBuf::from("."));
     base.join(LEECH2_DIR)
@@ -75,7 +80,7 @@ fn walk_back(work_dir: &std::path::Path, num_blocks: u32) -> Result<String> {
     Ok(hash)
 }
 
-fn cmd_init(work_dir: &std::path::Path) -> Result<()> {
+fn cmd_init(work_dir: &std::path::Path, dry_run: bool) -> Result<()> {
     // Check every file up front, so that init never overwrites or half-writes.
     for name in ["config.toml", "config.json", "products.csv"] {
         let path = work_dir.join(name);
@@ -84,17 +89,29 @@ fn cmd_init(work_dir: &std::path::Path) -> Result<()> {
         }
     }
 
+    let files = [
+        ("config.toml", INIT_CONFIG_TEMPLATE),
+        ("products.csv", INIT_CSV_TEMPLATE),
+    ];
+
+    if dry_run {
+        if !work_dir.exists() {
+            eprintln!("Would have created directory '{}'", work_dir.display());
+        }
+        for (name, content) in files {
+            eprintln!(
+                "Would have written {} bytes to '{}'",
+                content.len(),
+                work_dir.join(name).display()
+            );
+        }
+        return Ok(());
+    }
+
     std::fs::create_dir_all(work_dir)?;
-
-    std::fs::write(work_dir.join("config.toml"), INIT_CONFIG_TEMPLATE)?;
-
-    std::fs::write(
-        work_dir.join("products.csv"),
-        "id,name,price\n\
-         1,Keyboard,79.99\n\
-         2,Mouse,34.50\n\
-         3,Monitor,249.95\n",
-    )?;
+    for (name, content) in files {
+        std::fs::write(work_dir.join(name), content)?;
+    }
 
     print_stdout(&format!("Initialized {}", work_dir.display()))?;
     Ok(())
@@ -352,7 +369,7 @@ fn run(cli: Cli) -> Result<()> {
     let work_dir = work_dir(&cli);
 
     match &cli.command {
-        Cmd::Init => cmd_init(&work_dir)?,
+        Cmd::Init => cmd_init(&work_dir, cli.dry_run)?,
         Cmd::Block { command } => {
             let mut config = Config::load(&work_dir)?;
             config.dry_run = cli.dry_run;
@@ -452,9 +469,18 @@ mod tests {
         let work_dir = tempfile::tempdir().unwrap();
         std::fs::write(work_dir.path().join("config.json"), "{}").unwrap();
 
-        let err = cmd_init(work_dir.path()).unwrap_err();
+        let err = cmd_init(work_dir.path(), false).unwrap_err();
         assert!(err.to_string().contains("config.json exists"), "got: {err}");
         assert!(!work_dir.path().join("config.toml").exists());
+    }
+
+    #[test]
+    fn init_dry_run_writes_nothing() {
+        let parent = tempfile::tempdir().unwrap();
+        let work_dir = parent.path().join(LEECH2_DIR);
+
+        cmd_init(&work_dir, true).unwrap();
+        assert!(!work_dir.exists());
     }
 
     #[test]
@@ -462,7 +488,7 @@ mod tests {
         let work_dir = tempfile::tempdir().unwrap();
         std::fs::write(work_dir.path().join("products.csv"), "mine").unwrap();
 
-        let err = cmd_init(work_dir.path()).unwrap_err();
+        let err = cmd_init(work_dir.path(), false).unwrap_err();
         assert!(
             err.to_string().contains("products.csv exists"),
             "got: {err}"
