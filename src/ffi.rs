@@ -5,6 +5,7 @@
 //! Nothing in this module is part of leech2's Rust public API; the module is
 //! declared `mod ffi;` (private) at the crate root.
 
+use std::any::Any;
 use std::ffi::{CStr, c_char, c_int};
 
 use crate::cell::Cell;
@@ -48,11 +49,29 @@ pub const LOG_TRACE: i32 = 5;
 pub fn ffi_guard<T>(name: &str, default: T, body: impl FnOnce() -> T) -> T {
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(body)) {
         Ok(value) => value,
-        Err(_) => {
-            log::error!("{}: internal panic, returning failure", name);
+        Err(payload) => {
+            log::error!(
+                "{}: internal panic, returning failure: {}",
+                name,
+                panic_message(payload.as_ref())
+            );
             default
         }
     }
+}
+
+/// Extract the message from a panic payload. `panic!` with a literal carries a
+/// `&str`, and a formatted `panic!` carries a `String`.
+fn panic_message(payload: &(dyn Any + Send)) -> &str {
+    let literal: Option<&&str> = payload.downcast_ref();
+    if let Some(message) = literal {
+        return message;
+    }
+    let formatted: Option<&String> = payload.downcast_ref();
+    if let Some(message) = formatted {
+        return message;
+    }
+    "unknown panic payload"
 }
 
 /// Logs and reports a null pointer FFI argument. Returns `true` if `ptr` is
@@ -217,5 +236,18 @@ mod tests {
             let cell = unsafe { cell_from_ffi("test", &cell) };
             assert_eq!(cell, Some(Cell::Boolean(expected)), "byte {byte}");
         }
+    }
+
+    #[test]
+    fn test_panic_message() {
+        let literal = std::panic::catch_unwind(|| panic!("literal")).unwrap_err();
+        assert_eq!(panic_message(literal.as_ref()), "literal");
+
+        let index = 5;
+        let formatted = std::panic::catch_unwind(|| panic!("index {index}")).unwrap_err();
+        assert_eq!(panic_message(formatted.as_ref()), "index 5");
+
+        let other = std::panic::catch_unwind(|| std::panic::panic_any(42)).unwrap_err();
+        assert_eq!(panic_message(other.as_ref()), "unknown panic payload");
     }
 }
