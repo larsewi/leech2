@@ -315,27 +315,23 @@ fn try_consolidate(
     Ok((num_blocks, result_deltas, result_states))
 }
 
-/// Encoded protobuf size of a full-state patch for the current HEAD, carrying
-/// `num_blocks` so it matches the framing of the actual patch. Used as the
-/// baseline for measuring how many bytes delta merging saved on the wire; when
-/// the actual patch is itself full state, this makes the saving exactly zero.
-fn full_state_size(config: &Config, num_blocks: u32) -> Result<u64> {
-    let state_dir = config.ensure_state_dir()?;
-    let head = head::load(&state_dir)?;
-    let mut patch = if head == GENESIS_HASH {
+/// Encoded protobuf size of a full-state patch with the same head, creation
+/// time and `num_blocks` as `patch`, so it matches the framing of the actual
+/// patch. Used as the baseline for measuring how many bytes delta merging saved
+/// on the wire; when the actual patch is itself full state, this makes the
+/// saving exactly zero.
+fn full_state_size(state_dir: &Path, patch: &Patch) -> Result<u64> {
+    let mut baseline = if patch.head == GENESIS_HASH {
         // No block yet, so there is no STATE file and the full state is empty.
         Patch {
-            head,
+            head: patch.head.clone(),
             ..Default::default()
         }
     } else {
-        let created = Block::load_header(&state_dir, &head)
-            .ok()
-            .and_then(|header| header.created);
-        full_state_patch(&state_dir, &head, created)?
+        full_state_patch(state_dir, &patch.head, patch.created)?
     };
-    patch.num_blocks = num_blocks;
-    Ok(patch.encoded_len() as u64)
+    baseline.num_blocks = patch.num_blocks;
+    Ok(baseline.encoded_len() as u64)
 }
 
 /// Build a full-state patch from the STATE file. `created` is the HEAD
@@ -384,7 +380,7 @@ impl Patch {
             patch.events = events;
             // Baseline is a full-state patch; if it can't be computed (e.g. no
             // STATE file), treat merging as saving nothing rather than failing.
-            let bytes_in = full_state_size(config, patch.num_blocks).unwrap_or_else(|e| {
+            let bytes_in = full_state_size(&state_dir, &patch).unwrap_or_else(|e| {
                 log::warn!(
                     "Stats: could not compute full-state baseline, recording zero delta savings: {:#}",
                     e
@@ -596,15 +592,11 @@ mod tests {
         // Before the first block there is no STATE file; the full state is
         // empty, so the baseline is just the genesis patch.
         let dir = tempfile::tempdir().unwrap();
-        let config = Config {
-            work_dir: dir.path().to_path_buf(),
-            ..Default::default()
-        };
         let genesis = Patch {
             head: GENESIS_HASH.to_string(),
             ..Default::default()
         };
-        let size = full_state_size(&config, 0).unwrap();
+        let size = full_state_size(dir.path(), &genesis).unwrap();
         assert_eq!(size, genesis.encoded_len() as u64);
     }
 }
