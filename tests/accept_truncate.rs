@@ -410,3 +410,42 @@ source = "users.csv"
     assert!(state_dir.join(&hash3).exists());
     assert!(state_dir.join(&hash4).exists());
 }
+
+#[test]
+fn test_stale_block_temp_files_removed() {
+    let tmp = tempfile::tempdir().unwrap();
+    let work_dir = tmp.path();
+
+    common::write_file(
+        work_dir,
+        "config.toml",
+        r#"
+[tables.users]
+fields = [
+    { name = "id", type = "NUMBER", primary-key = true },
+    { name = "name", type = "TEXT" },
+]
+
+[tables.users.csv]
+source = "users.csv"
+"#,
+    );
+
+    common::write_csv!(work_dir, "users.csv", "1,Alice");
+    let config = Config::load(work_dir).unwrap();
+    let state_dir = config.state_dir();
+    Block::create(&config, None).unwrap();
+
+    // A temp file left by a block write that crashed before the rename
+    let stale_temp = "bb00000000000000000000000000000000000000.tmp";
+    std::fs::write(state_dir.join(stale_temp), b"partial").unwrap();
+
+    // Create another block -- truncation runs and should remove the temp file
+    common::write_csv!(work_dir, "users.csv", "1,Alice", "2,Bob");
+    Block::create(&config, None).unwrap();
+
+    assert!(
+        !state_dir.join(stale_temp).exists(),
+        "stale block temp file should be removed"
+    );
+}
