@@ -51,8 +51,8 @@ mapped to config fields by position.
 
 When `header = true`, the first row of the CSV is treated as a header. Each
 config field is matched to a CSV column by name. Hence, columns may appear in
-any order. Every config field name must be present in the header; extra CSV
-columns are ignored.
+any order. Every config field name must be present in the header exactly once;
+extra CSV columns are ignored.
 
 leech2 takes a shared advisory lock on each CSV source while reading it. To keep
 leech2 from reading a half-written file, the producer should either replace the

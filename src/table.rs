@@ -195,10 +195,23 @@ impl Table {
         if config.csv.as_ref().is_some_and(|csv| csv.header) {
             let headers = reader.headers().context("failed to read CSV header")?;
             for name in &field_names {
-                let index = headers
+                let mut matches = headers
                     .iter()
-                    .position(|h| h == name)
-                    .ok_or_else(|| anyhow::anyhow!("field '{}' not found in CSV header", name))?;
+                    .enumerate()
+                    .filter(|(_, header)| header == name)
+                    .map(|(index, _)| index);
+                let Some(index) = matches.next() else {
+                    anyhow::bail!("field '{}' not found in CSV header", name);
+                };
+                // Reading the first match would silently ignore the others.
+                if let Some(other) = matches.next() {
+                    anyhow::bail!(
+                        "field '{}' matches columns {} and {} in CSV header",
+                        name,
+                        index,
+                        other
+                    );
+                }
                 indices.push(index);
             }
         } else {
@@ -607,6 +620,34 @@ mod tests {
             err.to_string().contains("field 'missing' not found"),
             "unexpected error: {err}"
         );
+    }
+
+    #[test]
+    fn test_resolve_field_indices_duplicate_header_for_field() {
+        let config = make_config(
+            vec![make_field("id", true), make_field("name", false)],
+            true,
+        );
+        let mut reader = Table::test_reader("id,name,email,name\n1,Alice,a@x,Bob\n", true);
+
+        let err = Table::resolve_field_indices(&config, &mut reader).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("field 'name' matches columns 1 and 3 in CSV header"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn test_resolve_field_indices_ignores_duplicate_unconfigured_header() {
+        let config = make_config(
+            vec![make_field("id", true), make_field("name", false)],
+            true,
+        );
+        let mut reader = Table::test_reader("id,extra,name,extra\n1,a,Alice,b\n", true);
+
+        let indices = Table::resolve_field_indices(&config, &mut reader).unwrap();
+        assert_eq!(indices, vec![0, 2]);
     }
 
     // -- numeric normalization on load --
