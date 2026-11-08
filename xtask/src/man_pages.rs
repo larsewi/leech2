@@ -9,6 +9,7 @@ use std::process::Command;
 
 use anyhow::{Context, Result, bail};
 use clap::CommandFactory;
+use tempfile::TempDir;
 
 use crate::cli;
 
@@ -39,14 +40,10 @@ fn generate_cli_man_pages(output_dir: &Path, version: &str, date: &str) -> Resul
         .version(version_static)
         .propagate_version(true);
 
-    let temp_dir = output_dir.join(".clap-tmp");
-    if temp_dir.exists() {
-        std::fs::remove_dir_all(&temp_dir)?;
-    }
-    std::fs::create_dir_all(&temp_dir)?;
-    clap_mangen::generate_to(command, &temp_dir).context("failed to render lch man pages")?;
+    let temp_dir = TempDir::new().context("failed to create temp dir")?;
+    clap_mangen::generate_to(command, temp_dir.path()).context("failed to render lch man pages")?;
 
-    let pattern = temp_dir.join("*.1");
+    let pattern = temp_dir.path().join("*.1");
     let pattern = pattern.to_str().context("non-UTF-8 clap output path")?;
     let mut count = 0;
     for entry in glob::glob(pattern)? {
@@ -70,7 +67,6 @@ fn generate_cli_man_pages(output_dir: &Path, version: &str, date: &str) -> Resul
         count += 1;
     }
 
-    std::fs::remove_dir_all(&temp_dir)?;
     println!("Wrote {count} lch man page(s) to {}", output_dir.display());
     Ok(())
 }
@@ -81,16 +77,14 @@ fn generate_cli_man_pages(output_dir: &Path, version: &str, date: &str) -> Resul
 /// documented struct. Its directory-reference page is skipped: it carries no
 /// API documentation and is named after the local build path.
 fn generate_c_api_man_pages(repo_root: &Path, output_dir: &Path, version: &str) -> Result<()> {
-    let temp_dir = output_dir.join(".doxygen-tmp");
-    if temp_dir.exists() {
-        std::fs::remove_dir_all(&temp_dir)?;
-    }
-    std::fs::create_dir_all(&temp_dir)?;
+    // Doxygen runs from the repo root, so its output path must be absolute to
+    // be found again by the glob below; a TempDir path is.
+    let temp_dir = TempDir::new().context("failed to create temp dir")?;
 
     let status = Command::new("doxygen")
         .arg("Doxyfile")
         .current_dir(repo_root)
-        .env("DOXYGEN_OUTPUT_DIR", &temp_dir)
+        .env("DOXYGEN_OUTPUT_DIR", temp_dir.path())
         .env("LEECH2_VERSION", version)
         .status()
         .context("failed to run doxygen; is it installed?")?;
@@ -98,7 +92,7 @@ fn generate_c_api_man_pages(repo_root: &Path, output_dir: &Path, version: &str) 
         bail!("doxygen exited with status {status}");
     }
 
-    let pattern = temp_dir.join("**").join("*.3");
+    let pattern = temp_dir.path().join("**").join("*.3");
     let pattern = pattern.to_str().context("non-UTF-8 doxygen output path")?;
     let mut count = 0;
     for entry in glob::glob(pattern)? {
@@ -124,7 +118,6 @@ fn generate_c_api_man_pages(repo_root: &Path, output_dir: &Path, version: &str) 
         bail!("doxygen produced no man pages");
     }
 
-    std::fs::remove_dir_all(&temp_dir)?;
     println!(
         "Wrote {count} libleech2 man page(s) to {}",
         output_dir.display()
