@@ -56,7 +56,7 @@ pub enum BlockCmd {
         #[arg(name = "REF")]
         reference: Option<String>,
         /// Show the block N steps back from HEAD
-        #[arg(short)]
+        #[arg(short, conflicts_with = "REF")]
         n: Option<u32>,
     },
     /// List all blocks from HEAD to genesis
@@ -71,7 +71,7 @@ pub enum PatchCmd {
         #[arg(name = "REF")]
         reference: Option<String>,
         /// Create a patch covering the last N blocks
-        #[arg(short)]
+        #[arg(short, conflicts_with = "REF")]
         n: Option<u32>,
     },
     /// Show the contents of the PATCH file
