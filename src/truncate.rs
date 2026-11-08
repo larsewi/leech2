@@ -9,16 +9,11 @@ use crate::config::TruncateConfig;
 use crate::head;
 use crate::reported;
 use crate::storage;
-use crate::utils::GENESIS_HASH;
+use crate::utils::{GENESIS_HASH, is_hex_hash};
 
 struct ChainEntry {
     hash: String,
     created: SystemTime,
-}
-
-/// Returns `true` if `s` is a 40-character hexadecimal string (i.e. a SHA-1 hash).
-fn is_hex_hash(s: &str) -> bool {
-    s.len() == 40 && s.chars().all(|c| c.is_ascii_hexdigit())
 }
 
 /// Returns `true` if `name` is a lock file left by an older version, which
@@ -227,31 +222,5 @@ mod tests {
         assert!(!is_legacy_lock_file("HEAD"));
         assert!(!is_legacy_lock_file("HEAD.lock"));
         assert!(!is_legacy_lock_file(".HEAD"));
-    }
-
-    #[test]
-    fn test_is_hex_hash() {
-        assert!(is_hex_hash("a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"));
-        assert!(is_hex_hash("0000000000000000000000000000000000000000"));
-    }
-
-    #[test]
-    fn test_is_hex_hash_too_short() {
-        assert!(!is_hex_hash("a1b2c3"));
-    }
-
-    #[test]
-    fn test_is_hex_hash_too_long() {
-        assert!(!is_hex_hash("a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2a"));
-    }
-
-    #[test]
-    fn test_is_hex_hash_non_hex() {
-        assert!(!is_hex_hash("g1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"));
-    }
-
-    #[test]
-    fn test_is_hex_hash_empty() {
-        assert!(!is_hex_hash(""));
     }
 }

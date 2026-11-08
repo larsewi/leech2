@@ -69,6 +69,11 @@ pub fn compute_hash(data: &[u8]) -> String {
     hash
 }
 
+/// Returns `true` if `s` is a 40-character hexadecimal string (i.e. a SHA-1 hash).
+pub fn is_hex_hash(s: &str) -> bool {
+    s.len() == 40 && s.chars().all(|c| c.is_ascii_hexdigit())
+}
+
 /// Indent all lines after the first by prepending `prefix`.
 ///
 /// The `Display` trait has no way to pass an indentation level, so nested
@@ -133,6 +138,32 @@ mod tests {
     fn test_compute_hash() {
         let hash = compute_hash(b"hello");
         assert_eq!(hash, "aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d");
+    }
+
+    #[test]
+    fn test_is_hex_hash() {
+        assert!(is_hex_hash("a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"));
+        assert!(is_hex_hash("0000000000000000000000000000000000000000"));
+    }
+
+    #[test]
+    fn test_is_hex_hash_too_short() {
+        assert!(!is_hex_hash("a1b2c3"));
+    }
+
+    #[test]
+    fn test_is_hex_hash_too_long() {
+        assert!(!is_hex_hash("a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2a"));
+    }
+
+    #[test]
+    fn test_is_hex_hash_non_hex() {
+        assert!(!is_hex_hash("g1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"));
+    }
+
+    #[test]
+    fn test_is_hex_hash_empty() {
+        assert!(!is_hex_hash(""));
     }
 
     #[test]
