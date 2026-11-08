@@ -322,10 +322,18 @@ fn try_consolidate(
 fn full_state_size(config: &Config, num_blocks: u32) -> Result<u64> {
     let state_dir = config.ensure_state_dir()?;
     let head = head::load(&state_dir)?;
-    let created = Block::load_header(&state_dir, &head)
-        .ok()
-        .and_then(|header| header.created);
-    let mut patch = full_state_patch(&state_dir, &head, created)?;
+    let mut patch = if head == GENESIS_HASH {
+        // No block yet, so there is no STATE file and the full state is empty.
+        Patch {
+            head,
+            ..Default::default()
+        }
+    } else {
+        let created = Block::load_header(&state_dir, &head)
+            .ok()
+            .and_then(|header| header.created);
+        full_state_patch(&state_dir, &head, created)?
+    };
     patch.num_blocks = num_blocks;
     Ok(patch.encoded_len() as u64)
 }
@@ -581,5 +589,22 @@ mod tests {
             untracked.inserts[&vec![Cell::from("1")]],
             (vec![Cell::from("Alicia")], None)
         );
+    }
+
+    #[test]
+    fn test_full_state_size_at_genesis() {
+        // Before the first block there is no STATE file; the full state is
+        // empty, so the baseline is just the genesis patch.
+        let dir = tempfile::tempdir().unwrap();
+        let config = Config {
+            work_dir: dir.path().to_path_buf(),
+            ..Default::default()
+        };
+        let genesis = Patch {
+            head: GENESIS_HASH.to_string(),
+            ..Default::default()
+        };
+        let size = full_state_size(&config, 0).unwrap();
+        assert_eq!(size, genesis.encoded_len() as u64);
     }
 }
