@@ -19,7 +19,7 @@ const ZSTD_MAGIC: [u8; 4] = [0x28, 0xB5, 0x2F, 0xFD];
 const MAX_DECOMPRESSED_PATCH_SIZE: u64 = 1 << 30; // 1 GiB
 
 /// Encode a Patch to protobuf, optionally compressing with zstd. When stats are
-/// enabled, records the compression stage into the config's in-flight run.
+/// enabled, records the compression stage into the in-flight run.
 pub fn encode_patch(config: &Config, patch: &Patch) -> Result<Vec<u8>> {
     let mut buf = Vec::new();
     patch.encode(&mut buf)?;
@@ -32,7 +32,6 @@ pub fn encode_patch(config: &Config, patch: &Patch) -> Result<Vec<u8>> {
         );
         if config.stats.enable {
             stats::record_stage(
-                config,
                 Stage::Compression,
                 StageStats {
                     duration_ms: 0.0,
@@ -75,7 +74,6 @@ pub fn encode_patch(config: &Config, patch: &Patch) -> Result<Vec<u8>> {
 
     if config.stats.enable {
         stats::record_stage(
-            config,
             Stage::Compression,
             StageStats {
                 duration_ms,
