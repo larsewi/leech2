@@ -7,6 +7,7 @@ use prost::Message;
 use crate::config::Config;
 use crate::proto::patch::Patch;
 use crate::stats::{self, Stage, StageStats};
+use crate::utils::is_hex_hash;
 
 /// Zstd frame magic number (little-endian).
 const ZSTD_MAGIC: [u8; 4] = [0x28, 0xB5, 0x2F, 0xFD];
@@ -97,6 +98,10 @@ pub fn decode_patch(data: &[u8]) -> Result<Patch> {
         data.to_vec()
     };
     let patch = Patch::decode(bytes.as_slice())?;
+    // Any bytes may decode as protobuf; a real patch always has a head hash.
+    if !is_hex_hash(&patch.head) {
+        bail!("invalid patch: head '{}' is not a block hash", patch.head);
+    }
     Ok(patch)
 }
 
@@ -140,14 +145,10 @@ mod tests {
 
     #[test]
     fn test_decode_empty_input() {
-        // Empty protobuf decodes to a default Patch (all fields zero/empty)
-        let result = decode_patch(b"");
-        assert!(result.is_ok());
-        let patch = result.unwrap();
-        assert_eq!(patch.head, "");
-        assert_eq!(patch.num_blocks, 0);
-        assert!(patch.deltas.is_empty());
-        assert!(patch.states.is_empty());
+        // Empty input is valid protobuf, but the patch has no head hash.
+        let err = decode_patch(b"").unwrap_err();
+        let msg = format!("{:#}", err);
+        assert!(msg.contains("is not a block hash"), "got: {msg}");
     }
 
     #[test]
