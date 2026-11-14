@@ -14,7 +14,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result, bail};
 
-use crate::utils::GENESIS_HASH;
+use crate::utils::{GENESIS_HASH, is_hex_hash};
 
 /// Create (or truncate) a file at `path` with the given Unix permission
 /// `mode`. Behaves like `File::create` (write + create + truncate) plus an
@@ -189,10 +189,7 @@ pub fn resolve_hash_prefix(work_dir: &Path, prefix: &str) -> Result<String> {
         let Some(name) = name.to_str() else {
             continue;
         };
-        if name.starts_with(prefix)
-            && name.len() == 40
-            && name.chars().all(|c| c.is_ascii_hexdigit())
-        {
+        if name.starts_with(prefix) && is_hex_hash(name) {
             matches.push(name.to_string());
         }
     }
