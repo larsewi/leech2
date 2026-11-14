@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use anyhow::{Context, Result, anyhow, bail};
 use prost_types::Timestamp;
 
-use crate::cell::{Cell, Kind};
+use crate::cell::Cell;
 use crate::config::{Config, EventConfig, FieldConfig};
 use crate::proto::cell::Cell as ProtoCell;
 use crate::proto::patch::Delete as ProtoDelete;
@@ -49,7 +49,7 @@ impl<'a> TableSchema<'a> {
     ///   WHERE clause on UPDATE/DELETE, allowing arbitrary-row targeting.
     ///
     /// Type and nullability drift is caught later, per cell, by
-    /// [`check_value_matches_field`].
+    /// [`FieldConfig::check_cell`].
     fn resolve(
         wire_primary_key_names: &'a [String],
         wire_subsidiary_value_names: &'a [String],
@@ -165,30 +165,6 @@ impl<'a> TableSchema<'a> {
     }
 }
 
-/// Validate that a wire cell's variant agrees with the field's declared
-/// type. `Null` is accepted on any non-primary-key field; a primary-key cell
-/// with the value `NULL` is rejected here, since a patch decoded from an
-/// untrusted peer can carry a NULL key cell that the producing agent's load
-/// path would have rejected.
-fn check_value_matches_field(value: &Cell, field: &FieldConfig) -> Result<()> {
-    if value.kind() == Kind::Null {
-        if field.primary_key {
-            bail!("field '{}': primary-key value must not be NULL", field.name);
-        }
-        return Ok(());
-    }
-
-    if value.kind() != field.kind {
-        bail!(
-            "field '{}': wire value {} does not match declared type {:?}",
-            field.name,
-            value,
-            field.kind
-        );
-    }
-    Ok(())
-}
-
 /// A field the receiver adds to all SQL output, e.g. a `host` column
 /// identifying which agent produced the data.
 #[derive(Debug)]
@@ -277,12 +253,12 @@ fn format_row(key: &[ProtoCell], value: &[ProtoCell], schema: &TableSchema) -> R
     let mut literals = Vec::with_capacity(key.len() + value.len());
     for (proto_value, name) in key.iter().zip(schema.primary_key_names) {
         let v = Cell::try_from(proto_value).with_context(|| format!("field '{}'", name))?;
-        check_value_matches_field(&v, schema.field_config(name)?)?;
+        schema.field_config(name)?.check_cell(&v)?;
         literals.push(quote_literal(&v));
     }
     for (proto_value, name) in value.iter().zip(schema.subsidiary_value_names) {
         let v = Cell::try_from(proto_value).with_context(|| format!("field '{}'", name))?;
-        check_value_matches_field(&v, schema.field_config(name)?)?;
+        schema.field_config(name)?.check_cell(&v)?;
         literals.push(quote_literal(&v));
     }
     Ok(literals)
@@ -425,7 +401,7 @@ fn format_update(
             )
         })?;
         let value = Cell::try_from(proto_value).with_context(|| format!("field '{}'", name))?;
-        check_value_matches_field(&value, schema.field_config(name)?)?;
+        schema.field_config(name)?.check_cell(&value)?;
         set_parts.push(format!(
             "{} = {}",
             quote_identifier(name),
@@ -495,7 +471,7 @@ fn primary_key_where_clause(
     let mut where_parts = Vec::new();
     for (proto_value, name) in key.iter().zip(schema.primary_key_names) {
         let value = Cell::try_from(proto_value).with_context(|| format!("field '{}'", name))?;
-        check_value_matches_field(&value, schema.field_config(name)?)?;
+        schema.field_config(name)?.check_cell(&value)?;
         where_parts.push(format!(
             "{} = {}",
             quote_identifier(name),
@@ -677,7 +653,7 @@ fn events_to_sql(
                 };
                 let value = Cell::try_from(proto_value)
                     .with_context(|| format!("field '{}'", field.name))?;
-                check_value_matches_field(&value, field)?;
+                field.check_cell(&value)?;
                 literals.push(quote_literal(&value));
             }
             let id = quote_literal(&Cell::Text(format!("{}:{}", batch.block, index)));
@@ -752,7 +728,7 @@ pub fn patch_to_sql(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cell::text_proto_cells;
+    use crate::cell::{Kind, text_proto_cells};
     use crate::config::{FieldConfig, LogConfig};
     use crate::proto::event::Event as ProtoEvent;
     use crate::proto::event::Events as ProtoEvents;
@@ -1079,38 +1055,6 @@ mod tests {
         assert!(msg.contains("primary-key set"), "got: {msg}");
     }
 
-    fn make_field(name: &str, kind: Kind) -> FieldConfig {
-        FieldConfig {
-            name: name.to_string(),
-            kind,
-            ..Default::default()
-        }
-    }
-
-    #[test]
-    fn test_check_value_matches_field_accepts_correct_types() {
-        check_value_matches_field(&Cell::Text("hello".into()), &make_field("name", Kind::Text))
-            .unwrap();
-        check_value_matches_field(&Cell::Number(2.5), &make_field("price", Kind::Number)).unwrap();
-        check_value_matches_field(&Cell::Boolean(true), &make_field("flag", Kind::Boolean))
-            .unwrap();
-    }
-
-    #[test]
-    fn test_check_value_matches_field_rejects_type_drift() {
-        // Wire sends a Number into a column the hub config declared TEXT.
-        let err = check_value_matches_field(&Cell::Number(42.0), &make_field("note", Kind::Text))
-            .unwrap_err();
-        let msg = format!("{:#}", err);
-        assert!(msg.contains("does not match declared type"), "got: {msg}");
-    }
-
-    #[test]
-    fn test_check_value_matches_field_accepts_null() {
-        // NULL is allowed on any non-primary-key field.
-        check_value_matches_field(&Cell::Null, &make_field("name", Kind::Text)).unwrap();
-    }
-
     #[test]
     fn test_injected_field_rejects_control_character_name() {
         let err = InjectedField::new("ho\0st", Cell::from("agent-1")).unwrap_err();
@@ -1123,24 +1067,6 @@ mod tests {
         let err = InjectedField::new("", Cell::from("agent-1")).unwrap_err();
         let msg = format!("{:#}", err);
         assert!(msg.contains("name must not be empty"), "got: {msg}");
-    }
-
-    #[test]
-    fn test_check_value_matches_field_rejects_null_primary_key() {
-        // A patch decoded from an untrusted peer can carry a NULL primary-key
-        // cell. Reject it here rather than emitting `... = NULL` SQL.
-        let field = FieldConfig {
-            name: "id".to_string(),
-            kind: Kind::Number,
-            primary_key: true,
-            ..Default::default()
-        };
-        let err = check_value_matches_field(&Cell::Null, &field).unwrap_err();
-        let msg = format!("{:#}", err);
-        assert!(
-            msg.contains("primary-key value must not be NULL"),
-            "got: {msg}"
-        );
     }
 
     #[test]

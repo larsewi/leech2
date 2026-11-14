@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 
-use crate::cell::Kind;
+use crate::cell::{Cell, Kind};
 use crate::utils::{parse_duration, parse_file_mode, validate_name};
 
 /// Subdirectory of the work directory where state files live when `state-dir`
@@ -307,6 +307,29 @@ impl Default for FieldConfig {
             primary_key: false,
             comment: None,
         }
+    }
+}
+
+impl FieldConfig {
+    /// Check that `cell` is a valid value for this field: `NULL` is accepted
+    /// unless the field is part of the primary key, and any other cell must
+    /// be of the field's declared type.
+    pub fn check_cell(&self, cell: &Cell) -> Result<()> {
+        if cell.kind() == Kind::Null {
+            if self.primary_key {
+                bail!("field '{}': primary-key value must not be NULL", self.name);
+            }
+            return Ok(());
+        }
+        if cell.kind() != self.kind {
+            bail!(
+                "field '{}': value {} does not match declared type {:?}",
+                self.name,
+                cell,
+                self.kind
+            );
+        }
+        Ok(())
     }
 }
 
@@ -1741,5 +1764,55 @@ fields = [{ name = "id", type = "NUMBER", primary-key = true }]
 "#;
         let msg = load_events_error("", table);
         assert!(msg.contains("also declared as a table"), "got: {msg}");
+    }
+
+    fn field(name: &str, kind: Kind, primary_key: bool) -> FieldConfig {
+        FieldConfig {
+            name: name.to_string(),
+            kind,
+            primary_key,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn test_check_cell_accepts_matching_type() {
+        let text = field("name", Kind::Text, false);
+        text.check_cell(&Cell::Text("hello".into())).unwrap();
+        let number = field("price", Kind::Number, false);
+        number.check_cell(&Cell::Number(2.5)).unwrap();
+        let boolean = field("flag", Kind::Boolean, false);
+        boolean.check_cell(&Cell::Boolean(true)).unwrap();
+    }
+
+    #[test]
+    fn test_check_cell_rejects_type_mismatch() {
+        let err = field("note", Kind::Text, false)
+            .check_cell(&Cell::Number(42.0))
+            .unwrap_err();
+        let msg = format!("{:#}", err);
+        assert!(
+            msg.contains("field 'note': value 42 does not match declared type Text"),
+            "got: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_check_cell_accepts_null_outside_primary_key() {
+        field("name", Kind::Text, false)
+            .check_cell(&Cell::Null)
+            .unwrap();
+    }
+
+    #[test]
+    fn test_check_cell_rejects_null_primary_key() {
+        let err = field("id", Kind::Number, true)
+            .check_cell(&Cell::Null)
+            .unwrap_err();
+        let msg = format!("{:#}", err);
+        assert!(
+            msg.contains("field 'id': primary-key value must not be NULL"),
+            "got: {msg}"
+        );
     }
 }

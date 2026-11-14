@@ -1111,7 +1111,10 @@ mod tests {
         });
 
         let err = load_table("t", &config).unwrap_err();
-        assert!(format!("{:#}", err).contains("kind"), "got: {err:#}");
+        assert!(
+            format!("{:#}", err).contains("does not match declared type"),
+            "got: {err:#}"
+        );
         clear_script();
     }
 }
