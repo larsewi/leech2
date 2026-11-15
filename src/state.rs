@@ -7,13 +7,12 @@ use prost::Message;
 
 use crate::callbacks::Callbacks;
 use crate::config::Config;
+use crate::proto::table::Table as ProtoTable;
 use crate::storage;
 use crate::table::Table;
 use crate::utils::indent;
 
 pub use crate::proto::state::State as ProtoState;
-
-type ProtoTable = crate::proto::table::Table;
 
 const STATE_FILE: &str = "STATE";
 

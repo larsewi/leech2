@@ -9,9 +9,8 @@ use csv::Position;
 use crate::callbacks::{RowResult, TableCallbacks};
 use crate::cell::{Cell, Kind, display_proto_cells, parse_boolean, parse_typed_cell};
 use crate::config::{CsvConfig, FieldConfig, TableConfig};
+use crate::proto::table::Table as ProtoTable;
 use crate::record::decode_proto_records;
-
-type ProtoTable = crate::proto::table::Table;
 
 /// Tuple positions (column index, field config) for one half of a row,
 /// either the primary-key columns or the subsidiaries. Sorted
