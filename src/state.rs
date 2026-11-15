@@ -160,15 +160,16 @@ impl State {
 
     /// Store this snapshot as the STATE file, recording `block_hash` as the hash of
     /// the block it was stored with.
-    pub fn store(&self, work_dir: &Path, block_hash: &str, mode: u32, dry_run: bool) -> Result<()> {
-        let mut proto_state = ProtoState::from(self.clone());
+    pub fn store(self, work_dir: &Path, block_hash: &str, mode: u32, dry_run: bool) -> Result<()> {
+        let table_count = self.tables.len();
+        let mut proto_state = ProtoState::from(self);
         proto_state.block_hash = block_hash.to_string();
         let mut buf = Vec::new();
         proto_state.encode(&mut buf)?;
         storage::store(work_dir, STATE_FILE, &buf, mode, dry_run)?;
         log::debug!(
             "Updated previous state to current state with {} tables",
-            self.tables.len()
+            table_count
         );
         Ok(())
     }
