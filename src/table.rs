@@ -232,17 +232,17 @@ impl Table {
             .fields
             .iter()
             .zip(field_indices.iter())
-            .map(|(field, &idx)| (field.name.as_str(), idx, field))
+            .map(|(field, &column_index)| (field.name.as_str(), column_index, field))
             .collect();
         entries.sort_by_key(|(name, _, _)| *name);
 
         let mut primary: CanonicalColumns = Vec::new();
         let mut subsidiary: CanonicalColumns = Vec::new();
-        for (_, idx, field) in entries {
+        for (_, column_index, field) in entries {
             if field.primary_key {
-                primary.push((idx, field));
+                primary.push((column_index, field));
             } else {
-                subsidiary.push((idx, field));
+                subsidiary.push((column_index, field));
             }
         }
         CanonicalLayout {
@@ -416,7 +416,7 @@ mod tests {
     fn extract<'a>(columns: &[(usize, &'a FieldConfig)]) -> Vec<(usize, &'a str)> {
         columns
             .iter()
-            .map(|(idx, field)| (*idx, field.name.as_str()))
+            .map(|(column_index, field)| (*column_index, field.name.as_str()))
             .collect()
     }
 
