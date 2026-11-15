@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::path::Path;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use prost::Message;
 
 use crate::callbacks::Callbacks;
@@ -134,7 +134,7 @@ impl State {
                     .with_context(|| format!("table '{}'", name))?
             } else {
                 let Some(callbacks) = callbacks else {
-                    anyhow::bail!(
+                    bail!(
                         "table '{}' is callback-backed but no callbacks were provided",
                         name
                     );
