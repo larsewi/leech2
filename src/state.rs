@@ -133,7 +133,7 @@ impl State {
                 Table::load_from_csv(&config.work_dir, name, table_config)
                     .with_context(|| format!("table '{}'", name))?
             } else {
-                let Some(cbs) = callbacks else {
+                let Some(callbacks) = callbacks else {
                     anyhow::bail!(
                         "table '{}' is callback-backed but no callbacks were provided",
                         name
@@ -144,10 +144,11 @@ impl State {
                     .iter()
                     .map(|f| f.name.as_str())
                     .collect();
-                cbs.with_table(name, &field_names, |bound| {
-                    Table::load_from_callbacks(name, table_config, bound)
-                })
-                .with_context(|| format!("table '{}'", name))?
+                callbacks
+                    .with_table(name, &field_names, |bound| {
+                        Table::load_from_callbacks(name, table_config, bound)
+                    })
+                    .with_context(|| format!("table '{}'", name))?
             };
             tables.insert(name.clone(), table);
         }
