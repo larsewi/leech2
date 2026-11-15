@@ -138,7 +138,7 @@ impl Aggregate {
         };
 
         let mut sorted = values.to_vec();
-        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        sorted.sort_by(f64::total_cmp);
         let n = sorted.len();
         let median = if n == 0 {
             0.0
