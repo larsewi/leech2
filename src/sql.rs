@@ -375,11 +375,11 @@ fn insert_values(
 /// Format a single UPDATE statement for the record matching `where_clause`.
 fn format_update(
     update: &ProtoUpdate,
-    subsidiary_names: &[String],
     schema: &TableSchema,
     quoted_table: &str,
     where_clause: &str,
 ) -> Result<String> {
+    let subsidiary_names = schema.subsidiary_value_names;
     // Sparse updates list changed column indices explicitly; full
     // updates (empty changed_indices) include all subsidiary columns.
     let indices: Vec<u32> = if update.changed_indices.is_empty() {
@@ -440,14 +440,8 @@ fn emit_updates(
     for update in updates {
         let where_clause = primary_key_where_clause(&update.key, schema, injected_fields)
             .with_context(|| format!("key {:?}", update.key))?;
-        let stmt = format_update(
-            update,
-            schema.subsidiary_value_names,
-            schema,
-            quoted_table,
-            &where_clause,
-        )
-        .with_context(|| format!("key {:?}", update.key))?;
+        let stmt = format_update(update, schema, quoted_table, &where_clause)
+            .with_context(|| format!("key {:?}", update.key))?;
         out.push_str(&stmt);
     }
 
