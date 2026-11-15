@@ -196,7 +196,7 @@ impl TableCallbacks<'_> {
                     bail!(
                         "invalid cell from callback for table '{}' row {} field '{}'",
                         self.table_c.to_string_lossy(),
-                        row + 1,
+                        row,
                         field.to_string_lossy(),
                     );
                 };
@@ -207,7 +207,7 @@ impl TableCallbacks<'_> {
             _ => bail!(
                 "read_cell callback returned failure for table '{}' row {} field '{}'",
                 self.table_c.to_string_lossy(),
-                row + 1,
+                row,
                 field.to_string_lossy(),
             ),
         }
@@ -223,14 +223,14 @@ impl TableCallbacks<'_> {
             match self.read_cell(row, col)? {
                 CellResult::Cell(cell) => {
                     validate_cell(&cell, field)
-                        .with_context(|| format!("row {} field '{}'", row + 1, field.name))?;
+                        .with_context(|| format!("row {} field '{}'", row, field.name))?;
                     cells.push(cell);
                 }
                 CellResult::EndOfTable => return Ok(RowResult::EndOfTable),
                 CellResult::SkipRecord => {
                     log::trace!(
                         "Callback skipped row {} of table '{}' at field '{}'",
-                        row + 1,
+                        row,
                         self.table_c.to_string_lossy(),
                         field.name,
                     );
