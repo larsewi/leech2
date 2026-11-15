@@ -252,16 +252,21 @@ fn format_row(key: &[ProtoCell], value: &[ProtoCell], schema: &TableSchema) -> R
 
     let mut literals = Vec::with_capacity(key.len() + value.len());
     for (proto_value, name) in key.iter().zip(schema.primary_key_names) {
-        let v = Cell::try_from(proto_value).with_context(|| format!("field '{}'", name))?;
-        schema.field_config(name)?.check_cell(&v)?;
-        literals.push(quote_literal(&v));
+        literals.push(field_literal(proto_value, schema.field_config(name)?)?);
     }
     for (proto_value, name) in value.iter().zip(schema.subsidiary_value_names) {
-        let v = Cell::try_from(proto_value).with_context(|| format!("field '{}'", name))?;
-        schema.field_config(name)?.check_cell(&v)?;
-        literals.push(quote_literal(&v));
+        literals.push(field_literal(proto_value, schema.field_config(name)?)?);
     }
     Ok(literals)
+}
+
+/// Decode a received cell, check it against `field`, and quote it as an SQL
+/// literal. Every received value goes through here, so none reaches the SQL
+/// unchecked.
+fn field_literal(proto_value: &ProtoCell, field: &FieldConfig) -> Result<String> {
+    let value = Cell::try_from(proto_value).with_context(|| format!("field '{}'", field.name))?;
+    field.check_cell(&value)?;
+    Ok(quote_literal(&value))
 }
 
 /// Generate DELETE statements for a delta's deletes.
@@ -400,13 +405,8 @@ fn format_update(
                 subsidiary_names.len()
             )
         })?;
-        let value = Cell::try_from(proto_value).with_context(|| format!("field '{}'", name))?;
-        schema.field_config(name)?.check_cell(&value)?;
-        set_parts.push(format!(
-            "{} = {}",
-            quote_identifier(name),
-            quote_literal(&value)
-        ));
+        let literal = field_literal(proto_value, schema.field_config(name)?)?;
+        set_parts.push(format!("{} = {}", quote_identifier(name), literal));
     }
 
     if set_parts.is_empty() {
@@ -470,13 +470,8 @@ fn primary_key_where_clause(
 
     let mut where_parts = Vec::new();
     for (proto_value, name) in key.iter().zip(schema.primary_key_names) {
-        let value = Cell::try_from(proto_value).with_context(|| format!("field '{}'", name))?;
-        schema.field_config(name)?.check_cell(&value)?;
-        where_parts.push(format!(
-            "{} = {}",
-            quote_identifier(name),
-            quote_literal(&value)
-        ));
+        let literal = field_literal(proto_value, schema.field_config(name)?)?;
+        where_parts.push(format!("{} = {}", quote_identifier(name), literal));
     }
     for injected in injected_fields {
         where_parts.push(injected.where_clause());
@@ -651,10 +646,7 @@ fn events_to_sql(
                 let Some(field) = field else {
                     continue;
                 };
-                let value = Cell::try_from(proto_value)
-                    .with_context(|| format!("field '{}'", field.name))?;
-                field.check_cell(&value)?;
-                literals.push(quote_literal(&value));
+                literals.push(field_literal(proto_value, field)?);
             }
             let id = quote_literal(&Cell::Text(format!("{}:{}", batch.block, index)));
             literals.push(id.clone());
