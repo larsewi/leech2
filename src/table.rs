@@ -4,6 +4,7 @@ use std::fs::File;
 use std::path::Path;
 
 use anyhow::{Context, Result};
+use csv::Position;
 
 use crate::callbacks::{RowResult, TableCallbacks};
 use crate::cell::{Cell, Kind, display_proto_cells, parse_boolean, parse_typed_cell};
@@ -159,11 +160,7 @@ impl Table {
                     let subsidiary = primary_key.split_off(num_primary_keys);
                     if records.insert(primary_key.clone(), subsidiary).is_some() {
                         let key: Vec<String> = primary_key.iter().map(Cell::to_string).collect();
-                        anyhow::bail!(
-                            "row {}: duplicate primary key ({})",
-                            row + 1,
-                            key.join(", ")
-                        );
+                        anyhow::bail!("row {}: duplicate primary key ({})", row, key.join(", "));
                     }
                 }
                 RowResult::SkipRecord => {}
@@ -287,28 +284,29 @@ impl Table {
 
         let mut records: HashMap<Vec<Cell>, Vec<Cell>> = HashMap::new();
 
-        for (row_num, record) in reader.into_records().enumerate() {
+        for (row, record) in reader.into_records().enumerate() {
             let record = record?;
+            let line = record.position().map(Position::line);
 
             if !csv.header && record.len() != field_names.len() {
                 anyhow::bail!(
-                    "row {}: expected {} fields but got {}",
-                    row_num + 1,
+                    "{}: expected {} fields but got {}",
+                    csv_location(line, row),
                     field_names.len(),
                     record.len()
                 );
             }
 
             let primary_key = parse_columns(&record, &primary_columns, csv)
-                .with_context(|| format!("row {}", row_num + 1))?;
+                .with_context(|| csv_location(line, row))?;
             let subsidiary = parse_columns(&record, &subsidiary_columns, csv)
-                .with_context(|| format!("row {}", row_num + 1))?;
+                .with_context(|| csv_location(line, row))?;
 
             if records.insert(primary_key.clone(), subsidiary).is_some() {
                 let key: Vec<String> = primary_key.iter().map(Cell::to_string).collect();
                 anyhow::bail!(
-                    "row {}: duplicate primary key ({})",
-                    row_num + 1,
+                    "{}: duplicate primary key ({})",
+                    csv_location(line, row),
                     key.join(", ")
                 );
             }
@@ -319,6 +317,15 @@ impl Table {
             subsidiary_value_names,
             records,
         })
+    }
+}
+
+/// Where a CSV record is in its file, for error messages: the line the record
+/// starts on, or its 0-based record index if the reader gave no position.
+fn csv_location(line: Option<u64>, row: usize) -> String {
+    match line {
+        Some(line) => format!("line {}", line),
+        None => format!("record {}", row),
     }
 }
 
@@ -701,7 +708,7 @@ mod tests {
         let err = Table::parse_csv(&config, reader).unwrap_err();
         let msg = format!("{:#}", err);
         assert!(
-            msg.contains("row 2: duplicate primary key (1, \"Alice\")"),
+            msg.contains("line 3: duplicate primary key (1, \"Alice\")"),
             "got: {msg}"
         );
     }
@@ -838,7 +845,7 @@ mod tests {
         let reader = Table::test_reader("id,count\n1,abc\n", true);
         let err = Table::parse_csv(&config, reader).unwrap_err();
         let msg = format!("{:#}", err);
-        assert!(msg.contains("row 1"), "expected row context: {msg}");
+        assert!(msg.contains("line 2"), "expected line context: {msg}");
         assert!(
             msg.contains("field 'count'"),
             "expected field context: {msg}"
@@ -847,6 +854,22 @@ mod tests {
             msg.contains("invalid number"),
             "expected invalid-number cause: {msg}"
         );
+    }
+
+    #[test]
+    fn test_parse_csv_error_names_file_line_after_multiline_field() {
+        let config = make_config(
+            vec![
+                make_typed_field("id", Kind::Number, true),
+                make_typed_field("note", Kind::Text, false),
+            ],
+            true,
+        );
+        // The quoted note spans lines 2-3, so the bad record starts on line 4.
+        let reader = Table::test_reader("id,note\n1,\"a\nb\"\nabc,c\n", true);
+        let err = Table::parse_csv(&config, reader).unwrap_err();
+        let msg = format!("{:#}", err);
+        assert!(msg.contains("line 4"), "got: {msg}");
     }
 
     // -- load_from_callbacks tests --
@@ -1050,7 +1073,7 @@ mod tests {
 
         let err = load_table("t", &config).unwrap_err();
         assert!(
-            format!("{:#}", err).contains("row 2: duplicate primary key (1)"),
+            format!("{:#}", err).contains("row 1: duplicate primary key (1)"),
             "got: {err:#}"
         );
         clear_script();
