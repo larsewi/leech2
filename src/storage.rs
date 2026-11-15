@@ -77,9 +77,6 @@ pub fn store(work_dir: &Path, name: &str, data: &[u8], mode: u32, dry_run: bool)
         return Ok(());
     }
 
-    fs::create_dir_all(work_dir)
-        .with_context(|| format!("failed to create work directory '{}'", work_dir.display()))?;
-
     // Write to temp file, then atomic rename for crash safety.
     let tmp_path = work_dir.join(format!("{}.tmp", name));
     let path = work_dir.join(name);
