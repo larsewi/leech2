@@ -90,12 +90,12 @@ pub fn encode_patch(config: &Config, patch: &Patch) -> Result<Vec<u8>> {
 /// If the data starts with the zstd frame magic number, it is decompressed
 /// first. Otherwise, it is treated as raw protobuf.
 pub fn decode_patch(data: &[u8]) -> Result<Patch> {
-    let bytes = if data.starts_with(&ZSTD_MAGIC) {
-        decompress_bounded(data, MAX_DECOMPRESSED_PATCH_SIZE)?
+    let patch = if data.starts_with(&ZSTD_MAGIC) {
+        let decompressed = decompress_bounded(data, MAX_DECOMPRESSED_PATCH_SIZE)?;
+        Patch::decode(decompressed.as_slice())?
     } else {
-        data.to_vec()
+        Patch::decode(data)?
     };
-    let patch = Patch::decode(bytes.as_slice())?;
     // Any bytes may decode as protobuf; a real patch always has a head hash.
     if !is_hex_hash(&patch.head) {
         bail!("invalid patch: head '{}' is not a block hash", patch.head);
