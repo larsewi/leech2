@@ -63,13 +63,12 @@ pub fn decode_proto_records(protos: Vec<ProtoRecord>) -> Result<HashMap<Vec<Cell
 pub fn decode_proto_records_without_timestamps(
     protos: Vec<ProtoRecord>,
 ) -> Result<TimestampedRecordMap> {
-    protos
-        .into_iter()
-        .map(|proto| {
-            let record = Record::try_from(proto)?;
-            Ok((record.key, (record.value, None)))
-        })
-        .collect()
+    let mut records = HashMap::with_capacity(protos.len());
+    for proto in protos {
+        let record = Record::try_from(proto)?;
+        records.insert(record.key, (record.value, None));
+    }
+    Ok(records)
 }
 
 impl fmt::Display for ProtoRecord {
