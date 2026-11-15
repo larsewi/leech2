@@ -14,7 +14,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result, bail};
 
-use crate::utils::GENESIS_HASH;
+use crate::utils::{GENESIS_HASH, is_hex_hash};
 
 /// Create (or truncate) a file at `path` with the given Unix permission
 /// `mode`. Behaves like `File::create` (write + create + truncate) plus an
@@ -76,9 +76,6 @@ pub fn store(work_dir: &Path, name: &str, data: &[u8], mode: u32, dry_run: bool)
         );
         return Ok(());
     }
-
-    fs::create_dir_all(work_dir)
-        .with_context(|| format!("failed to create work directory '{}'", work_dir.display()))?;
 
     // Write to temp file, then atomic rename for crash safety.
     let tmp_path = work_dir.join(format!("{}.tmp", name));
@@ -189,10 +186,7 @@ pub fn resolve_hash_prefix(work_dir: &Path, prefix: &str) -> Result<String> {
         let Some(name) = name.to_str() else {
             continue;
         };
-        if name.starts_with(prefix)
-            && name.len() == 40
-            && name.chars().all(|c| c.is_ascii_hexdigit())
-        {
+        if name.starts_with(prefix) && is_hex_hash(name) {
             matches.push(name.to_string());
         }
     }

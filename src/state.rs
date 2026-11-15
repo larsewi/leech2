@@ -2,18 +2,17 @@ use std::collections::HashMap;
 use std::fmt;
 use std::path::Path;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use prost::Message;
 
 use crate::callbacks::Callbacks;
 use crate::config::Config;
+use crate::proto::table::Table as ProtoTable;
 use crate::storage;
 use crate::table::Table;
 use crate::utils::indent;
 
 pub use crate::proto::state::State as ProtoState;
-
-type ProtoTable = crate::proto::table::Table;
 
 const STATE_FILE: &str = "STATE";
 
@@ -133,8 +132,8 @@ impl State {
                 Table::load_from_csv(&config.work_dir, name, table_config)
                     .with_context(|| format!("table '{}'", name))?
             } else {
-                let Some(cbs) = callbacks else {
-                    anyhow::bail!(
+                let Some(callbacks) = callbacks else {
+                    bail!(
                         "table '{}' is callback-backed but no callbacks were provided",
                         name
                     );
@@ -144,10 +143,11 @@ impl State {
                     .iter()
                     .map(|f| f.name.as_str())
                     .collect();
-                cbs.with_table(name, &field_names, |bound| {
-                    Table::load_from_callbacks(name, table_config, bound)
-                })
-                .with_context(|| format!("table '{}'", name))?
+                callbacks
+                    .with_table(name, &field_names, |bound| {
+                        Table::load_from_callbacks(name, table_config, bound)
+                    })
+                    .with_context(|| format!("table '{}'", name))?
             };
             tables.insert(name.clone(), table);
         }
@@ -160,15 +160,16 @@ impl State {
 
     /// Store this snapshot as the STATE file, recording `block_hash` as the hash of
     /// the block it was stored with.
-    pub fn store(&self, work_dir: &Path, block_hash: &str, mode: u32, dry_run: bool) -> Result<()> {
-        let mut proto_state = ProtoState::from(self.clone());
+    pub fn store(self, work_dir: &Path, block_hash: &str, mode: u32, dry_run: bool) -> Result<()> {
+        let table_count = self.tables.len();
+        let mut proto_state = ProtoState::from(self);
         proto_state.block_hash = block_hash.to_string();
         let mut buf = Vec::new();
         proto_state.encode(&mut buf)?;
         storage::store(work_dir, STATE_FILE, &buf, mode, dry_run)?;
         log::debug!(
             "Updated previous state to current state with {} tables",
-            self.tables.len()
+            table_count
         );
         Ok(())
     }

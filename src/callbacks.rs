@@ -222,8 +222,9 @@ impl TableCallbacks<'_> {
         for &(col, field) in columns {
             match self.read_cell(row, col)? {
                 CellResult::Cell(cell) => {
-                    validate_cell(&cell, field)
-                        .with_context(|| format!("row {} field '{}'", row, field.name))?;
+                    field
+                        .check_cell(&cell)
+                        .with_context(|| format!("row {}", row))?;
                     cells.push(cell);
                 }
                 CellResult::EndOfTable => return Ok(RowResult::EndOfTable),
@@ -250,35 +251,11 @@ impl TableCallbacks<'_> {
     }
 }
 
-/// Validate a cell pulled from a callback against its field configuration.
-/// Enforces:
-/// - `Cell::Null` is rejected on primary-key fields.
-/// - The cell's kind matches the field's declared kind (TEXT / NUMBER /
-///   BOOLEAN); `Null` is accepted for any non-primary-key field regardless
-///   of the declared kind.
-fn validate_cell(cell: &Cell, field: &FieldConfig) -> Result<()> {
-    if let Cell::Null = cell {
-        if field.primary_key {
-            bail!("primary-key field must not be NULL");
-        }
-        return Ok(());
-    }
-    if cell.kind() != field.kind {
-        bail!(
-            "cell kind {:?} does not match field kind {:?}",
-            cell.kind(),
-            field.kind,
-        );
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use super::*;
-    use crate::cell::Kind;
     use crate::ffi::{FAILURE, VALUE_TEXT};
 
     unsafe extern "C" fn fail_table_begin(_table: *const c_char, _usr_data: *mut c_void) -> i32 {
@@ -456,42 +433,5 @@ mod tests {
             _ => panic!("expected end of table"),
         }
         assert_eq!(DESTROY_COUNT.load(Ordering::SeqCst), 2);
-    }
-
-    // -- validate_cell tests --
-
-    fn make_typed_field(name: &str, kind: Kind, primary_key: bool) -> FieldConfig {
-        FieldConfig {
-            name: name.to_string(),
-            kind,
-            primary_key,
-            ..Default::default()
-        }
-    }
-
-    #[test]
-    fn test_validate_cell_rejects_null_on_primary_key() {
-        let field = make_typed_field("id", Kind::Number, true);
-        let err = validate_cell(&Cell::Null, &field).unwrap_err();
-        assert!(format!("{:#}", err).contains("primary-key"), "got: {err:#}");
-    }
-
-    #[test]
-    fn test_validate_cell_accepts_null_on_subsidiary() {
-        let field = make_typed_field("count", Kind::Number, false);
-        validate_cell(&Cell::Null, &field).unwrap();
-    }
-
-    #[test]
-    fn test_validate_cell_rejects_kind_mismatch() {
-        let field = make_typed_field("count", Kind::Number, false);
-        let err = validate_cell(&Cell::Text("oops".to_string()), &field).unwrap_err();
-        assert!(format!("{:#}", err).contains("kind"), "got: {err:#}");
-    }
-
-    #[test]
-    fn test_validate_cell_accepts_matching_kind() {
-        let field = make_typed_field("name", Kind::Text, true);
-        validate_cell(&Cell::Text("Alice".to_string()), &field).unwrap();
     }
 }

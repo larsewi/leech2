@@ -68,15 +68,20 @@ impl fmt::Display for Block {
     }
 }
 
+/// Read the block file `hash` and decode it as `M`.
+fn load_decoded<M: Message + Default>(work_dir: &Path, hash: &str) -> Result<M> {
+    let Some(data) = storage::load(work_dir, hash)? else {
+        bail!("failed to load block '{:.7}...'", hash);
+    };
+    let message = M::decode(data.as_slice())
+        .with_context(|| format!("failed to decode block '{:.7}...'", hash))?;
+    log::debug!("Loaded block '{:.7}...'", hash);
+    Ok(message)
+}
+
 impl Block {
     pub fn load(work_dir: &Path, hash: &str) -> Result<Block> {
-        let Some(data) = storage::load(work_dir, hash)? else {
-            bail!("failed to load block '{:.7}...'", hash);
-        };
-        let block = Block::decode(data.as_slice())
-            .with_context(|| format!("failed to decode block '{:.7}...'", hash))?;
-        log::debug!("Loaded block '{:.7}...'", hash);
-        Ok(block)
+        load_decoded(work_dir, hash)
     }
 
     /// Load the block header (parent hash + created timestamp) without
@@ -85,13 +90,7 @@ impl Block {
     /// the unknown payload field so only the parent hash and timestamp are
     /// deserialized.
     pub fn load_header(work_dir: &Path, hash: &str) -> Result<BlockHeader> {
-        let Some(data) = storage::load(work_dir, hash)? else {
-            bail!("failed to load block '{:.7}...'", hash);
-        };
-        let header = BlockHeader::decode(data.as_slice())
-            .with_context(|| format!("failed to decode block header '{:.7}...'", hash))?;
-        log::debug!("Loaded block header '{:.7}...'", hash);
-        Ok(header)
+        load_decoded(work_dir, hash)
     }
 
     /// Build a new block from `config`. Callback-backed tables are pulled
@@ -172,7 +171,7 @@ impl Block {
             println!("Would have created block '{:.7}...'\n{}", hash, block);
         }
 
-        commit(config, &block.parent, &hash, &encoded, &current_state)?;
+        commit(config, &block.parent, &hash, &encoded, current_state)?;
 
         // In dry-run this reports what truncation would remove; otherwise it
         // does the real cleanup.
@@ -196,7 +195,7 @@ fn commit(
     parent_hash: &str,
     hash: &str,
     encoded: &[u8],
-    current_state: &state::State,
+    current_state: state::State,
 ) -> Result<()> {
     let state_dir = config.state_dir();
     let file_mode = config.file_mode;
@@ -328,7 +327,7 @@ source = "users.csv"
         let hash = utils::compute_hash(&encoded);
         let current_state = state::State::compute(&config, None).unwrap();
 
-        let error = commit(&config, &hash1, &hash, &encoded, &current_state).unwrap_err();
+        let error = commit(&config, &hash1, &hash, &encoded, current_state).unwrap_err();
         assert!(error.to_string().contains("HEAD moved"));
 
         assert_eq!(head::load(&state_dir).unwrap(), hash2);

@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use anyhow::{Result, bail};
+use anyhow::{Result, anyhow, bail};
 use sha1::{Digest, Sha1};
 
 pub const GENESIS_HASH: &str = "0000000000000000000000000000000000000000";
@@ -28,11 +28,11 @@ pub fn parse_duration(s: &str) -> Result<Duration> {
             }
         } else {
             let start = number_start.take().ok_or_else(|| {
-                anyhow::anyhow!("invalid duration '{}': expected digit before '{}'", s, c)
+                anyhow!("invalid duration '{}': expected digit before '{}'", s, c)
             })?;
             let value: u64 = s[start..i]
                 .parse()
-                .map_err(|_| anyhow::anyhow!("invalid duration '{}'", s))?;
+                .map_err(|_| anyhow!("invalid duration '{}'", s))?;
             let multiplier = match c {
                 's' => 1,
                 'm' => SECONDS_PER_MINUTE,
@@ -45,9 +45,9 @@ pub fn parse_duration(s: &str) -> Result<Duration> {
                 .checked_add(
                     value
                         .checked_mul(multiplier)
-                        .ok_or_else(|| anyhow::anyhow!("duration overflow in '{}'", s))?,
+                        .ok_or_else(|| anyhow!("duration overflow in '{}'", s))?,
                 )
-                .ok_or_else(|| anyhow::anyhow!("duration overflow in '{}'", s))?;
+                .ok_or_else(|| anyhow!("duration overflow in '{}'", s))?;
         }
     }
 
@@ -126,8 +126,7 @@ pub fn validate_name(name: &str) -> Result<()> {
 pub fn parse_file_mode(raw: &str) -> Result<u32> {
     let trimmed = raw.trim();
     let digits = trimmed.strip_prefix("0o").unwrap_or(trimmed);
-    u32::from_str_radix(digits, 8)
-        .map_err(|e| anyhow::anyhow!("invalid octal file-mode '{}': {}", raw, e))
+    u32::from_str_radix(digits, 8).map_err(|e| anyhow!("invalid octal file-mode '{}': {}", raw, e))
 }
 
 #[cfg(test)]

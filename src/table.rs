@@ -3,15 +3,14 @@ use std::fmt;
 use std::fs::File;
 use std::path::Path;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use csv::Position;
 
 use crate::callbacks::{RowResult, TableCallbacks};
 use crate::cell::{Cell, Kind, display_proto_cells, parse_boolean, parse_typed_cell};
 use crate::config::{CsvConfig, FieldConfig, TableConfig};
+use crate::proto::table::Table as ProtoTable;
 use crate::record::decode_proto_records;
-
-type ProtoTable = crate::proto::table::Table;
 
 /// Tuple positions (column index, field config) for one half of a row,
 /// either the primary-key columns or the subsidiaries. Sorted
@@ -86,7 +85,7 @@ impl Table {
     /// dispatching here.
     pub fn load_from_csv(work_dir: &Path, name: &str, config: &TableConfig) -> Result<Self> {
         let Some(csv) = config.csv.as_ref() else {
-            anyhow::bail!(
+            bail!(
                 "table '{}' is callback-backed; load_from_csv does not apply",
                 name
             );
@@ -160,7 +159,7 @@ impl Table {
                     let subsidiary = primary_key.split_off(num_primary_keys);
                     if records.insert(primary_key.clone(), subsidiary).is_some() {
                         let key: Vec<String> = primary_key.iter().map(Cell::to_string).collect();
-                        anyhow::bail!("row {}: duplicate primary key ({})", row, key.join(", "));
+                        bail!("row {}: duplicate primary key ({})", row, key.join(", "));
                     }
                 }
                 RowResult::SkipRecord => {}
@@ -198,11 +197,11 @@ impl Table {
                     .filter(|(_, header)| header == name)
                     .map(|(index, _)| index);
                 let Some(index) = matches.next() else {
-                    anyhow::bail!("field '{}' not found in CSV header", name);
+                    bail!("field '{}' not found in CSV header", name);
                 };
                 // Reading the first match would silently ignore the others.
                 if let Some(other) = matches.next() {
-                    anyhow::bail!(
+                    bail!(
                         "field '{}' matches columns {} and {} in CSV header",
                         name,
                         index,
@@ -232,17 +231,17 @@ impl Table {
             .fields
             .iter()
             .zip(field_indices.iter())
-            .map(|(field, &idx)| (field.name.as_str(), idx, field))
+            .map(|(field, &column_index)| (field.name.as_str(), column_index, field))
             .collect();
         entries.sort_by_key(|(name, _, _)| *name);
 
         let mut primary: CanonicalColumns = Vec::new();
         let mut subsidiary: CanonicalColumns = Vec::new();
-        for (_, idx, field) in entries {
+        for (_, column_index, field) in entries {
             if field.primary_key {
-                primary.push((idx, field));
+                primary.push((column_index, field));
             } else {
-                subsidiary.push((idx, field));
+                subsidiary.push((column_index, field));
             }
         }
         CanonicalLayout {
@@ -264,7 +263,7 @@ impl Table {
 
     fn parse_csv(config: &TableConfig, mut reader: csv::Reader<File>) -> Result<Self> {
         let Some(csv) = config.csv.as_ref() else {
-            anyhow::bail!("parse_csv requires a configured [csv] block");
+            bail!("parse_csv requires a configured [csv] block");
         };
         let field_names = config.field_names();
         let field_indices = Self::resolve_field_indices(config, &mut reader)?;
@@ -289,7 +288,7 @@ impl Table {
             let line = record.position().map(Position::line);
 
             if !csv.header && record.len() != field_names.len() {
-                anyhow::bail!(
+                bail!(
                     "{}: expected {} fields but got {}",
                     csv_location(line, row),
                     field_names.len(),
@@ -304,7 +303,7 @@ impl Table {
 
             if records.insert(primary_key.clone(), subsidiary).is_some() {
                 let key: Vec<String> = primary_key.iter().map(Cell::to_string).collect();
-                anyhow::bail!(
+                bail!(
                     "{}: duplicate primary key ({})",
                     csv_location(line, row),
                     key.join(", ")
@@ -355,7 +354,7 @@ fn parse_field_value(value: &str, field: &FieldConfig, csv: &CsvConfig) -> Resul
         && pattern.is_match(value)
     {
         if field.primary_key {
-            anyhow::bail!(
+            bail!(
                 "primary-key field '{}' value '{}' matches the null pattern",
                 field.name,
                 value,
@@ -416,7 +415,7 @@ mod tests {
     fn extract<'a>(columns: &[(usize, &'a FieldConfig)]) -> Vec<(usize, &'a str)> {
         columns
             .iter()
-            .map(|(idx, field)| (*idx, field.name.as_str()))
+            .map(|(column_index, field)| (*column_index, field.name.as_str()))
             .collect()
     }
 
@@ -1111,7 +1110,10 @@ mod tests {
         });
 
         let err = load_table("t", &config).unwrap_err();
-        assert!(format!("{:#}", err).contains("kind"), "got: {err:#}");
+        assert!(
+            format!("{:#}", err).contains("does not match declared type"),
+            "got: {err:#}"
+        );
         clear_script();
     }
 }
