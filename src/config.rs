@@ -413,11 +413,8 @@ impl LogConfig {
 
         let mut excluded = HashSet::new();
         for name in &self.exclude {
-            let Some(field) = fields.iter().find(|field| &field.name == name) else {
+            if !fields.iter().any(|field| &field.name == name) {
                 bail!("log.exclude references unknown field '{}'", name);
-            };
-            if field.primary_key {
-                bail!("log.exclude must not contain primary-key field '{}'", name);
             }
             if !excluded.insert(name.as_str()) {
                 bail!("log.exclude contains '{}' more than once", name);
@@ -1624,9 +1621,10 @@ exclude = ["email"]
     }
 
     #[test]
-    fn test_log_rejects_primary_key_exclude() {
-        let msg = load_log_error("exclude = [\"id\"]\n");
-        assert!(msg.contains("primary-key field 'id'"), "got: {msg}");
+    fn test_log_accepts_primary_key_exclude() {
+        let config = load_with_log(&format!("{LOG_TABLE}exclude = [\"id\"]\n")).unwrap();
+        let log = config.tables["users"].log.as_ref().unwrap();
+        assert_eq!(log.exclude, vec!["id"]);
     }
 
     #[test]

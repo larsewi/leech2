@@ -16,8 +16,8 @@ use crate::utils::format_iso_timestamp;
 /// update, stamped with the block's creation time. Updates log the values
 /// after the change. Returns `None` when there is nothing to log.
 pub fn events(log: &LogConfig, delta: &Delta, created: &Timestamp) -> Result<Option<ProtoEvents>> {
-    let mut field_names = delta.primary_key_names.clone();
-    for name in &delta.subsidiary_value_names {
+    let mut field_names = Vec::new();
+    for name in field_names_of(delta) {
         if !log.exclude.contains(name) {
             field_names.push(name.clone());
         }
@@ -28,16 +28,16 @@ pub fn events(log: &LogConfig, delta: &Delta, created: &Timestamp) -> Result<Opt
     let timestamp = Cell::Text(format_iso_timestamp(created)?);
     let mut events = Vec::new();
     for (key, (value, _)) in &delta.deletes {
-        let values = logged_values(log, &delta.subsidiary_value_names, value);
-        events.push(event(key, values, &log.operations.delete, &timestamp));
+        let cells = logged_cells(log, delta, key, value);
+        events.push(event(cells, &log.operations.delete, &timestamp));
     }
     for (key, (value, _)) in &delta.inserts {
-        let values = logged_values(log, &delta.subsidiary_value_names, value);
-        events.push(event(key, values, &log.operations.insert, &timestamp));
+        let cells = logged_cells(log, delta, key, value);
+        events.push(event(cells, &log.operations.insert, &timestamp));
     }
     for (key, (_, new_value, _)) in &delta.updates {
-        let values = logged_values(log, &delta.subsidiary_value_names, new_value);
-        events.push(event(key, values, &log.operations.update, &timestamp));
+        let cells = logged_cells(log, delta, key, new_value);
+        events.push(event(cells, &log.operations.update, &timestamp));
     }
 
     if events.is_empty() {
@@ -49,16 +49,25 @@ pub fn events(log: &LogConfig, delta: &Delta, created: &Timestamp) -> Result<Opt
     }))
 }
 
-/// The cells of `value` whose field is not in `log.exclude`.
-/// `subsidiary_value_names` holds the field names, in the same order as
-/// `value`.
-fn logged_values<'a>(
+/// The names of the record's fields: the primary-key fields, then the
+/// subsidiary value fields. This is the order of `key` chained with `value`.
+fn field_names_of(delta: &Delta) -> impl Iterator<Item = &String> {
+    delta
+        .primary_key_names
+        .iter()
+        .chain(&delta.subsidiary_value_names)
+}
+
+/// The cells of the record (`key`, then `value`) whose field is not in
+/// `log.exclude`. Primary-key fields may be excluded too.
+fn logged_cells<'a>(
     log: &LogConfig,
-    subsidiary_value_names: &[String],
+    delta: &Delta,
+    key: &'a [Cell],
     value: &'a [Cell],
 ) -> Vec<&'a Cell> {
     let mut cells = Vec::new();
-    for (name, cell) in subsidiary_value_names.iter().zip(value) {
+    for (name, cell) in field_names_of(delta).zip(key.iter().chain(value)) {
         if !log.exclude.contains(name) {
             cells.push(cell);
         }
@@ -66,16 +75,15 @@ fn logged_values<'a>(
     cells
 }
 
-/// Build one log event: the key, the logged values, the operation and the
-/// timestamp.
-fn event(key: &[Cell], values: Vec<&Cell>, operation: &str, timestamp: &Cell) -> ProtoEvent {
-    let mut cells = Vec::new();
-    for cell in key.iter().chain(values) {
-        cells.push(cell.clone().into());
+/// Build one log event: the logged cells, the operation and the timestamp.
+fn event(cells: Vec<&Cell>, operation: &str, timestamp: &Cell) -> ProtoEvent {
+    let mut values = Vec::new();
+    for cell in cells {
+        values.push(cell.clone().into());
     }
-    cells.push(Cell::Text(operation.to_string()).into());
-    cells.push(timestamp.clone().into());
-    ProtoEvent { values: cells }
+    values.push(Cell::Text(operation.to_string()).into());
+    values.push(timestamp.clone().into());
+    ProtoEvent { values }
 }
 
 #[cfg(test)]
@@ -162,6 +170,25 @@ mod tests {
         assert_eq!(
             events.events[0].values,
             text_proto_cells(&["2", "Bob", "INSERT", "2026-10-09T08:30:00Z"])
+        );
+    }
+
+    #[test]
+    fn test_events_leave_out_excluded_primary_key_fields() {
+        let mut delta = delta();
+        delta.inserts = HashMap::from([(cells(&["2"]), (cells(&["Bob", "b@x"]), None))]);
+
+        let events = events(&log_config(&["id"]), &delta, &CREATED)
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(
+            events.field_names,
+            vec!["name", "email", "operation", "timestamp"]
+        );
+        assert_eq!(
+            events.events[0].values,
+            text_proto_cells(&["Bob", "b@x", "INSERT", "2026-10-09T08:30:00Z"])
         );
     }
 

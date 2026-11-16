@@ -172,6 +172,9 @@ operations      = { insert = "INSERT", update = "UPDATE", delete = "DELETE" } # 
 
 - A change log's record contains the table's fields minus `exclude`, then
   `operation-field` and `timestamp-field`.
+- `exclude` may contain primary-key fields, e.g. a key that is derived from
+  other fields the log table does have. Without the whole key, a log record may
+  not identify the record that changed.
 - Inserts and updates record the values after the change. Deletes record them
   before the change.
 - No events are recorded when there is no previous state to compare against:
