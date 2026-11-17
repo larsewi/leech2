@@ -94,7 +94,14 @@ block is present. Both paths produce the same in-memory table representation;
 everything downstream -- delta computation, layout change detection, block
 storage, truncation -- is identical. Sentinels (`null` / `true` / `false`) apply
 only on the CSV backed tables. Callback-backed tables skip rows by returning
-`LCH_SKIP_RECORD`.
+`LCH_SKIP_RECORD`, and whole tables (or event streams) by returning
+`LCH_SKIP_TABLE` from `table_begin` or `read_cell`, e.g. for a table the caller
+does not implement. A skipped table is not part of the snapshot, just like a
+skipped row is not part of its table: it is left out of STATE, so a full state
+leaves it out too. If it was in the previous STATE, it is treated like a table
+removed from the config, so all its records become deletes. If there is no
+usable previous STATE (missing, undecodable, or not HEAD's), there is nothing
+to compare with, so nothing is deleted and the receiver keeps its rows.
 
 The callback bundle has four hooks:
 

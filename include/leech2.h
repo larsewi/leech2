@@ -216,6 +216,11 @@ extern void lch_deinit(lch_config_t *cfg);
  *                  duration of the call.
  * @param usr_data  Opaque pointer from lch_callbacks_t::usr_data.
  * @return LCH_SUCCESS to proceed to pulling cells from this table.
+ *         LCH_SKIP_TABLE to leave this table or event stream out of the
+ *         snapshot, e.g. a table the caller does not implement. A skipped
+ *         table that was in the previous snapshot is treated like a table
+ *         removed from the configuration: all its records become deletes.
+ *         Neither read_cell nor table_end is invoked for it.
  *         LCH_FAILURE to abort block creation immediately. table_end is NOT
  *         invoked when begin returns failure.
  */
@@ -225,8 +230,9 @@ typedef int (*lch_table_begin_cb_t)(const char *table, void *usr_data);
  * @brief Per-table teardown hook for callback-backed tables and event streams.
  *
  * Invoked once for every table, after its last cell callback, including when
- * reading the table failed. Not invoked for a table whose lch_table_begin_cb_t
- * returned LCH_FAILURE.
+ * reading the table failed or was skipped from lch_read_cell_cb_t. Not invoked
+ * for a table whose lch_table_begin_cb_t returned LCH_FAILURE or
+ * LCH_SKIP_TABLE.
  *
  * @param table     Null-terminated table name. Borrowed; valid only for the
  *                  duration of the call.
@@ -256,9 +262,9 @@ typedef int (*lch_table_end_cb_t)(const char *table, void *usr_data);
  *     callback is invoked exclusively on the thread that called
  *     lch_block_create().
  *
- * LCH_END_OF_TABLE / LCH_SKIP_RECORD on any cell short-circuits the rest
- * of the row: leech2 won't ask for the remaining cells, and any cells
- * already accepted for the row are discarded.
+ * LCH_END_OF_TABLE / LCH_SKIP_RECORD / LCH_SKIP_TABLE on any cell
+ * short-circuits the rest of the row: leech2 won't ask for the remaining
+ * cells, and any cells already accepted for the row are discarded.
  *
  * @param table       Null-terminated table name. Borrowed.
  * @param row         0-based row index
@@ -268,8 +274,8 @@ typedef int (*lch_table_end_cb_t)(const char *table, void *usr_data);
  * @param out_cell    On entry, zero-initialized. On LCH_SUCCESS return,
  *                    populate with the typed cell value. The kind tag must
  *                    match the field's declared kind. On LCH_END_OF_TABLE,
- *                    LCH_SKIP_RECORD, or LCH_FAILURE, the contents are
- *                    ignored.
+ *                    LCH_SKIP_RECORD, LCH_SKIP_TABLE, or LCH_FAILURE, the
+ *                    contents are ignored.
  * @param usr_data    Opaque pointer from lch_callbacks_t::usr_data.
  * @return LCH_SUCCESS         out_cell populated; leech2 will ask for the
  *                             remaining fields of this row and then
@@ -280,6 +286,12 @@ typedef int (*lch_table_end_cb_t)(const char *table, void *usr_data);
  *         LCH_SKIP_RECORD     Drop the current row; leech2 does not ask for
  *                             any remaining fields of this row and advances
  *                             to row + 1. May be returned from any column.
+ *         LCH_SKIP_TABLE      Drop the whole table or event stream,
+ *                             including the rows already read, as if
+ *                             lch_table_begin_cb_t had returned
+ *                             LCH_SKIP_TABLE, except that table_end is
+ *                             still invoked. May be returned from any
+ *                             column.
  *         LCH_FAILURE         Unrecoverable error; block creation aborts.
  */
 typedef int (*lch_read_cell_cb_t)(const char *table, size_t row, size_t col,
@@ -296,8 +308,8 @@ typedef int (*lch_read_cell_cb_t)(const char *table, size_t row, size_t col,
  * pointer) using its own allocator; leech2 never frees that memory itself.
  *
  * Not invoked for read_cell calls that returned LCH_END_OF_TABLE,
- * LCH_SKIP_RECORD, or LCH_FAILURE (out_cell is ignored in those cases, so
- * read_cell must not have allocated).
+ * LCH_SKIP_RECORD, LCH_SKIP_TABLE, or LCH_FAILURE (out_cell is ignored in
+ * those cases, so read_cell must not have allocated).
  *
  * @param cell      The lch_cell_t the read_cell implementation populated. Its
  *                  contents are valid on entry; leech2 does not touch them
