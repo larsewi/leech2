@@ -882,7 +882,8 @@ mod tests {
 
     use crate::callbacks::Callbacks;
     use crate::ffi::{
-        END_OF_TABLE, FfiCell, FfiCellPayload, SKIP_RECORD, SUCCESS as FFI_SUCCESS, VALUE_NULL,
+        END_OF_TABLE, FfiCell, FfiCellPayload, SKIP_RECORD, SKIP_TABLE, SUCCESS as FFI_SUCCESS,
+        VALUE_NULL,
     };
     use std::cell::RefCell;
     use std::collections::HashMap;
@@ -891,6 +892,7 @@ mod tests {
     enum CellAction {
         Cell(CellValue),
         Skip,
+        SkipTable,
     }
 
     enum CellValue {
@@ -942,6 +944,7 @@ mod tests {
             };
             match action {
                 CellAction::Skip => SKIP_RECORD,
+                CellAction::SkipTable => SKIP_TABLE,
                 CellAction::Cell(value) => {
                     let cell = match value {
                         CellValue::Null => FfiCell {
@@ -974,12 +977,16 @@ mod tests {
         }
     }
 
-    fn load_table(name: &str, config: &TableConfig) -> Result<Table> {
+    /// Load the table, or `None` if the script skipped it.
+    fn try_load_table(name: &str, config: &TableConfig) -> Result<Option<Table>> {
         let callbacks = make_callbacks();
         let field_names: Vec<&str> = config.fields.iter().map(|f| f.name.as_str()).collect();
         let bound = callbacks.for_table(name, &field_names).unwrap();
         Table::load_from_callbacks(name, config, &bound)
-            .map(|table| table.expect("table was skipped"))
+    }
+
+    fn load_table(name: &str, config: &TableConfig) -> Result<Table> {
+        try_load_table(name, config).map(|table| table.expect("table was skipped"))
     }
 
     fn typed_config(fields: Vec<FieldConfig>) -> TableConfig {
@@ -1057,6 +1064,26 @@ mod tests {
         assert!(table.records.contains_key(&vec![Cell::Number(1.0)]));
         assert!(table.records.contains_key(&vec![Cell::Number(3.0)]));
         assert!(!table.records.contains_key(&vec![Cell::Number(2.0)]));
+        clear_script();
+    }
+
+    #[test]
+    fn test_load_from_callbacks_skip_table_drops_table() {
+        let config = typed_config(vec![
+            make_typed_field("id", Kind::Number, true),
+            make_typed_field("name", Kind::Text, false),
+        ]);
+        install_script(Script {
+            rows: vec![
+                HashMap::from([("id", cell_number(1.0)), ("name", cell_text("Alice"))]),
+                // Row 2 skips the whole table, after row 1 was already read.
+                HashMap::from([("id", CellAction::SkipTable), ("name", cell_text("Bob"))]),
+            ],
+        });
+
+        let table = try_load_table("t", &config).unwrap();
+
+        assert!(table.is_none());
         clear_script();
     }
 
