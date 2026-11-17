@@ -137,7 +137,8 @@ mod tests {
     use crate::block::Block;
     use crate::cell::{Cell, Kind};
     use crate::ffi::{
-        END_OF_TABLE, FfiCell, FfiCellPayload, SKIP_RECORD, SUCCESS, VALUE_NULL, VALUE_TEXT,
+        END_OF_TABLE, FfiCell, FfiCellPayload, SKIP_RECORD, SKIP_TABLE, SUCCESS, VALUE_NULL,
+        VALUE_TEXT,
     };
     use crate::patch::Patch;
     use crate::utils::GENESIS_HASH;
@@ -147,6 +148,7 @@ mod tests {
         Text(CString),
         Null,
         Skip,
+        SkipTable,
     }
 
     thread_local! {
@@ -180,6 +182,7 @@ mod tests {
                     payload: FfiCellPayload { number: 0.0 },
                 },
                 TestCell::Skip => return SKIP_RECORD,
+                TestCell::SkipTable => return SKIP_TABLE,
             };
             unsafe { *out_cell = cell };
             SUCCESS
@@ -251,6 +254,21 @@ mod tests {
                 ],
             }
         );
+    }
+
+    #[test]
+    fn test_load_leaves_out_skipped_streams() {
+        ROWS.with(|rows| {
+            *rows.borrow_mut() = vec![
+                vec![text("disk full"), text("sda")],
+                // Row 2 skips the whole stream, after row 1 was already read.
+                vec![TestCell::SkipTable, TestCell::Null],
+            ]
+        });
+
+        let events = load(&config(), Some(&callbacks())).unwrap();
+
+        assert!(events.is_empty());
     }
 
     #[test]
