@@ -60,6 +60,10 @@ pub fn load(
         let events = callbacks.with_table(name, &field_names, |bound| {
             load_from_callbacks(name, event_config, bound)
         })?;
+        let Some(events) = events else {
+            log::debug!("Event stream '{}': skipped by callback", name);
+            continue;
+        };
         if !events.events.is_empty() {
             all_events.insert(name.clone(), events);
         }
@@ -68,12 +72,13 @@ pub fn load(
 }
 
 /// Read rows from `callbacks` until the end of the stream. Each row is one
-/// event, with one cell per field in declaration order.
+/// event, with one cell per field in declaration order. Returns `None` when
+/// the callback returns `LCH_SKIP_TABLE`, dropping the events read so far.
 fn load_from_callbacks(
     name: &str,
     config: &EventConfig,
     callbacks: &TableCallbacks<'_>,
-) -> Result<ProtoEvents> {
+) -> Result<Option<ProtoEvents>> {
     let columns: Vec<(usize, &FieldConfig)> = config.fields.iter().enumerate().collect();
     let mut events = Vec::new();
     for row in 0.. {
@@ -83,6 +88,7 @@ fn load_from_callbacks(
             }),
             RowResult::SkipRecord => {}
             RowResult::EndOfTable => break,
+            RowResult::SkipTable => return Ok(None),
         }
     }
 
@@ -92,14 +98,14 @@ fn load_from_callbacks(
         name
     );
 
-    Ok(ProtoEvents {
+    Ok(Some(ProtoEvents {
         field_names: config
             .fields
             .iter()
             .map(|field| field.name.clone())
             .collect(),
         events,
-    })
+    }))
 }
 
 /// Append the events block `hash` stored to `all_batches`, as one batch per

@@ -121,12 +121,13 @@ impl Table {
     /// returns `LCH_END_OF_TABLE`. Within a row, leech2 requests cells in
     /// canonical order (primary keys lex-sorted, then subsidiaries lex-sorted)
     /// and the `col` it passes is the field's 0-based position in
-    /// `config.fields` (declaration order).
+    /// `config.fields` (declaration order). Returns `None` when the callback
+    /// returns `LCH_SKIP_TABLE`.
     pub fn load_from_callbacks(
         name: &str,
         config: &TableConfig,
         callbacks: &TableCallbacks<'_>,
-    ) -> Result<Self> {
+    ) -> Result<Option<Self>> {
         // The "field indices" passed into compute_canonical_columns are the
         // 0-based declaration-order positions in config.fields. That matches
         // the index leech promises to pass to the callback as `col`, so we
@@ -164,6 +165,7 @@ impl Table {
                 }
                 RowResult::SkipRecord => {}
                 RowResult::EndOfTable => break,
+                RowResult::SkipTable => return Ok(None),
             }
         }
 
@@ -173,11 +175,11 @@ impl Table {
             records.len()
         );
 
-        Ok(Table {
+        Ok(Some(Table {
             primary_key_names,
             subsidiary_value_names,
             records,
-        })
+        }))
     }
 
     /// Map each config field to its CSV column index.
@@ -977,6 +979,7 @@ mod tests {
         let field_names: Vec<&str> = config.fields.iter().map(|f| f.name.as_str()).collect();
         let bound = callbacks.for_table(name, &field_names).unwrap();
         Table::load_from_callbacks(name, config, &bound)
+            .map(|table| table.expect("table was skipped"))
     }
 
     fn typed_config(fields: Vec<FieldConfig>) -> TableConfig {

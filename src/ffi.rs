@@ -24,6 +24,10 @@ pub const END_OF_TABLE: i32 = 1;
 /// drop the current row; advance to the next row without consulting any
 /// further fields.
 pub const SKIP_RECORD: i32 = 2;
+/// `LCH_SKIP_TABLE` from `leech2.h`. `lch_table_begin_cb_t` and
+/// `lch_read_cell_cb_t` return code: the table (or event stream) is not part
+/// of the snapshot.
+pub const SKIP_TABLE: i32 = 3;
 
 /// `LCH_VALUE_NULL` from `leech2.h`. Cell kind tag.
 pub const VALUE_NULL: c_int = 0;

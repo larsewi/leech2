@@ -143,11 +143,18 @@ impl State {
                     .iter()
                     .map(|f| f.name.as_str())
                     .collect();
-                callbacks
+                let table = callbacks
                     .with_table(name, &field_names, |bound| {
                         Table::load_from_callbacks(name, table_config, bound)
                     })
-                    .with_context(|| format!("table '{}'", name))?
+                    .with_context(|| format!("table '{}'", name))?;
+                // A skipped table is not part of the snapshot, just like a
+                // skipped record is not part of its table.
+                let Some(table) = table else {
+                    log::info!("Table '{}': skipped by callback", name);
+                    continue;
+                };
+                table
             };
             tables.insert(name.clone(), table);
         }

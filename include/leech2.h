@@ -43,6 +43,10 @@ extern "C" {
 /** Cell-callback return code (see lch_read_cell_cb_t): drop the current row and
  *  advance to the next. */
 #define LCH_SKIP_RECORD 2
+/** Table-begin and cell-callback return code (see lch_table_begin_cb_t and
+ *  lch_read_cell_cb_t): the current table or event stream is not part of the
+ *  snapshot; drop the rows read so far and move on to the next one. */
+#define LCH_SKIP_TABLE 3
 
 /**
  * @brief Log severity levels.

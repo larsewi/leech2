@@ -14,7 +14,8 @@ use anyhow::{Context, Result, bail};
 use crate::cell::Cell;
 use crate::config::FieldConfig;
 use crate::ffi::{
-    END_OF_TABLE, FfiCell, FfiCellPayload, SKIP_RECORD, SUCCESS, VALUE_NULL, cell_from_ffi,
+    END_OF_TABLE, FfiCell, FfiCellPayload, SKIP_RECORD, SKIP_TABLE, SUCCESS, VALUE_NULL,
+    cell_from_ffi,
 };
 
 type TableBeginFn = unsafe extern "C" fn(*const c_char, *mut c_void) -> i32;
@@ -41,6 +42,15 @@ pub struct Callbacks {
     pub usr_data: *mut c_void,
 }
 
+/// Outcome of a `lch_table_begin_cb_t` invocation.
+#[derive(Debug)]
+pub enum BeginResult {
+    /// `LCH_SUCCESS`, or no `table_begin` hook: read the table's rows.
+    Proceed,
+    /// `LCH_SKIP_TABLE`: the table is not part of the snapshot.
+    SkipTable,
+}
+
 /// Outcome of a single `lch_read_cell_cb_t` invocation, after translating
 /// the C-side return code into a Rust enum.
 pub enum CellResult {
@@ -50,6 +60,8 @@ pub enum CellResult {
     EndOfTable,
     /// `LCH_SKIP_RECORD`: drop the current row.
     SkipRecord,
+    /// `LCH_SKIP_TABLE`: drop the whole table, including the rows read so far.
+    SkipTable,
 }
 
 /// Outcome of reading every requested cell of one row.
@@ -60,6 +72,8 @@ pub enum RowResult {
     SkipRecord,
     /// No row exists at this index; iteration stops.
     EndOfTable,
+    /// The callback skipped the whole table.
+    SkipTable,
 }
 
 impl Callbacks {
@@ -89,14 +103,21 @@ impl Callbacks {
     /// call `table_end`. `table_end` always fires when `table_begin`
     /// succeeded, including when `load` fails, so the caller's per-table
     /// resources (a DB cursor, a buffer) can always be released.
+    ///
+    /// Returns `None` when the callbacks skip the table: `table_begin`
+    /// returned `LCH_SKIP_TABLE` (then neither `load` nor `table_end` run),
+    /// or `load` returned `None` because `read_cell` did.
     pub fn with_table<T>(
         &self,
         name: &str,
         field_names: &[&str],
-        load: impl FnOnce(&TableCallbacks<'_>) -> Result<T>,
-    ) -> Result<T> {
+        load: impl FnOnce(&TableCallbacks<'_>) -> Result<Option<T>>,
+    ) -> Result<Option<T>> {
         let bound = self.for_table(name, field_names)?;
-        bound.table_begin()?;
+        if let BeginResult::SkipTable = bound.table_begin()? {
+            log::debug!("Callback skipped table '{}' in table_begin", name);
+            return Ok(None);
+        }
 
         let load_result = load(&bound);
         let end_result = bound.table_end();
@@ -128,18 +149,18 @@ pub struct TableCallbacks<'a> {
 impl TableCallbacks<'_> {
     /// Invoke the optional `table_begin` hook. A `None` hook is a successful
     /// no-op.
-    pub fn table_begin(&self) -> Result<()> {
+    pub fn table_begin(&self) -> Result<BeginResult> {
         let Some(cb) = self.inner.table_begin else {
-            return Ok(());
+            return Ok(BeginResult::Proceed);
         };
         let rc = unsafe { cb(self.table_c.as_ptr(), self.inner.usr_data) };
-        if rc == SUCCESS {
-            Ok(())
-        } else {
-            bail!(
+        match rc {
+            SUCCESS => Ok(BeginResult::Proceed),
+            SKIP_TABLE => Ok(BeginResult::SkipTable),
+            _ => bail!(
                 "table_begin callback returned failure for table '{}'",
                 self.table_c.to_string_lossy()
-            );
+            ),
         }
     }
 
@@ -204,6 +225,7 @@ impl TableCallbacks<'_> {
             }
             END_OF_TABLE => Ok(CellResult::EndOfTable),
             SKIP_RECORD => Ok(CellResult::SkipRecord),
+            SKIP_TABLE => Ok(CellResult::SkipTable),
             _ => bail!(
                 "read_cell callback returned failure for table '{}' row {} field '{}'",
                 self.table_c.to_string_lossy(),
@@ -236,6 +258,15 @@ impl TableCallbacks<'_> {
                         field.name,
                     );
                     return Ok(RowResult::SkipRecord);
+                }
+                CellResult::SkipTable => {
+                    log::debug!(
+                        "Callback skipped table '{}' at row {} field '{}'",
+                        self.table_c.to_string_lossy(),
+                        row,
+                        field.name,
+                    );
+                    return Ok(RowResult::SkipTable);
                 }
             }
         }
@@ -433,5 +464,92 @@ mod tests {
             _ => panic!("expected end of table"),
         }
         assert_eq!(DESTROY_COUNT.load(Ordering::SeqCst), 2);
+    }
+
+    /// Calls counted through `usr_data`, so tests running in parallel do not
+    /// share counters.
+    #[derive(Default)]
+    struct CallCounts {
+        read_cell: AtomicUsize,
+        table_end: AtomicUsize,
+    }
+
+    unsafe extern "C" fn skip_table_begin(_table: *const c_char, _usr_data: *mut c_void) -> i32 {
+        SKIP_TABLE
+    }
+
+    unsafe extern "C" fn skip_read_cell(
+        _table: *const c_char,
+        _row: usize,
+        _col: usize,
+        _field: *const c_char,
+        _out_cell: *mut FfiCell,
+        usr_data: *mut c_void,
+    ) -> i32 {
+        let counts = unsafe { &*(usr_data as *const CallCounts) };
+        counts.read_cell.fetch_add(1, Ordering::SeqCst);
+        SKIP_TABLE
+    }
+
+    unsafe extern "C" fn counting_table_end(_table: *const c_char, usr_data: *mut c_void) -> i32 {
+        let counts = unsafe { &*(usr_data as *const CallCounts) };
+        counts.table_end.fetch_add(1, Ordering::SeqCst);
+        SUCCESS
+    }
+
+    #[test]
+    fn test_skip_table_in_table_begin() {
+        let counts = CallCounts::default();
+        let callbacks = Callbacks {
+            table_begin: Some(skip_table_begin),
+            read_cell: Some(skip_read_cell),
+            destroy_cell: None,
+            table_end: Some(counting_table_end),
+            usr_data: &counts as *const CallCounts as *mut c_void,
+        };
+
+        let mut loaded = false;
+        let result = callbacks
+            .with_table("t", &["id"], |_| {
+                loaded = true;
+                Ok(Some(()))
+            })
+            .unwrap();
+
+        // Skipped before any row is read: no load, no read_cell, no table_end.
+        assert!(result.is_none());
+        assert!(!loaded);
+        assert_eq!(counts.read_cell.load(Ordering::SeqCst), 0);
+        assert_eq!(counts.table_end.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn test_skip_table_in_read_cell() {
+        let counts = CallCounts::default();
+        let callbacks = Callbacks {
+            table_begin: None,
+            read_cell: Some(skip_read_cell),
+            destroy_cell: None,
+            table_end: Some(counting_table_end),
+            usr_data: &counts as *const CallCounts as *mut c_void,
+        };
+        let field = FieldConfig {
+            name: "id".to_string(),
+            ..Default::default()
+        };
+
+        let result = callbacks
+            .with_table("t", &["id"], |bound| {
+                match bound.read_row(0, &[(0, &field)])? {
+                    RowResult::SkipTable => Ok(None),
+                    _ => Ok(Some(())),
+                }
+            })
+            .unwrap();
+
+        // table_begin succeeded, so table_end still fires once.
+        assert!(result.is_none());
+        assert_eq!(counts.read_cell.load(Ordering::SeqCst), 1);
+        assert_eq!(counts.table_end.load(Ordering::SeqCst), 1);
     }
 }
