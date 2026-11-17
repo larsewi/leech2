@@ -160,6 +160,13 @@ fields = [
     { name = \"event\", type = \"TEXT\" },
 ]
 
+# Callback-backed table the C test does not implement: its table_begin
+# returns LCH_SKIP_TABLE, so it is left out of the block.
+[tables.unknown]
+fields = [
+    { name = \"id\", type = \"NUMBER\", primary-key = true },
+]
+
 # Event stream: pulled through the same callback bundle.
 [events.alerts]
 id-field = \"eventid\"

@@ -57,6 +57,7 @@ typedef struct {
   int events_end_count;
   int alerts_begin_count;
   int alerts_end_count;
+  int unknown_begin_count;
   int other_table_calls;
   int read_cell_success_count;
   int destroy_cell_count;
@@ -68,6 +69,11 @@ static int test_table_begin(const char *table, void *usr_data) {
     s->events_begin_count++;
   } else if (strcmp(table, "alerts") == 0) {
     s->alerts_begin_count++;
+  } else if (strcmp(table, "unknown") == 0) {
+    /* A table this caller does not implement: leave it out of the block.
+     * Neither read_cell nor table_end may be called for it. */
+    s->unknown_begin_count++;
+    return LCH_SKIP_TABLE;
   } else {
     s->other_table_calls++;
   }
@@ -208,6 +214,14 @@ int main(int argc, char *argv[]) {
   if (cb_state.alerts_begin_count != 1 || cb_state.alerts_end_count != 1) {
     fprintf(stderr, "expected 1 alerts begin and end, got %d and %d\n",
             cb_state.alerts_begin_count, cb_state.alerts_end_count);
+    lch_deinit(cfg);
+    return EXIT_FAILURE;
+  }
+  /* The skipped table got table_begin only. A read_cell or table_end for it
+   * would have counted as other_table_calls, checked below. */
+  if (cb_state.unknown_begin_count != 1) {
+    fprintf(stderr, "expected 1 unknown begin, got %d\n",
+            cb_state.unknown_begin_count);
     lch_deinit(cfg);
     return EXIT_FAILURE;
   }
