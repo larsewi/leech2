@@ -287,6 +287,15 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_size() {
+        assert_eq!(parse_size("0").unwrap(), 0);
+        assert_eq!(parse_size("512").unwrap(), 512);
+        assert_eq!(parse_size("4K").unwrap(), 4 * 1024);
+        assert_eq!(parse_size("10M").unwrap(), 10 * 1024 * 1024);
+        assert_eq!(parse_size("2G").unwrap(), 2 * 1024 * 1024 * 1024);
+    }
+
+    #[test]
     fn test_parse_file_mode() {
         assert_eq!(parse_file_mode("0600").unwrap(), 0o600);
         assert_eq!(parse_file_mode("0o644").unwrap(), 0o644);
