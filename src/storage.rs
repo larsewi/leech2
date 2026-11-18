@@ -10,6 +10,8 @@
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
+#[cfg(unix)]
+use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
 use std::path::Path;
 
 use anyhow::{Context, Result, bail};
@@ -23,13 +25,23 @@ fn create_file(path: &Path, mode: u32) -> std::io::Result<File> {
     let mut options = OpenOptions::new();
     options.write(true).create(true).truncate(true);
     #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(mode);
-    }
+    options.mode(mode);
     #[cfg(not(unix))]
     let _ = mode;
     options.open(path)
+}
+
+/// Create the directory `path`, and any missing parents, with the Unix
+/// permission bits `mode`. Does nothing if it already exists. The mode is
+/// ignored on non-Unix platforms.
+pub fn create_dir(path: &Path, mode: u32) -> std::io::Result<()> {
+    let mut builder = fs::DirBuilder::new();
+    builder.recursive(true);
+    #[cfg(unix)]
+    builder.mode(mode);
+    #[cfg(not(unix))]
+    let _ = mode;
+    builder.create(path)
 }
 
 /// Name of the lock file in the state directory.

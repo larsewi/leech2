@@ -9,6 +9,7 @@ use std::time::Duration;
 use anyhow::{Context, Result, bail};
 
 use crate::cell::{Cell, Kind};
+use crate::storage;
 use crate::utils::{parse_duration, parse_file_mode, parse_size, validate_name};
 
 /// Subdirectory of the work directory where state files live when `state-dir`
@@ -821,14 +822,7 @@ impl Config {
     /// callers can invoke it before any state I/O without checking first.
     pub fn ensure_state_dir(&self) -> Result<PathBuf> {
         let state_dir = self.state_dir();
-        let mut builder = fs::DirBuilder::new();
-        builder.recursive(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::DirBuilderExt;
-            builder.mode(self.dir_mode);
-        }
-        builder.create(&state_dir).with_context(|| {
+        storage::create_dir(&state_dir, self.dir_mode).with_context(|| {
             format!("failed to create state directory '{}'", state_dir.display())
         })?;
         Ok(state_dir)
