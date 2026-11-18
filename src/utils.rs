@@ -296,6 +296,16 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_size_invalid() {
+        for s in ["", "M", "10X", "1.5M", "-1", "+5", " 5", "10m", "10MB"] {
+            assert!(parse_size(s).is_err(), "accepted '{s}'");
+        }
+        // Too large for u64
+        assert!(parse_size("99999999999999999999").is_err());
+        assert!(parse_size("17179869184G").is_err());
+    }
+
+    #[test]
     fn test_parse_file_mode() {
         assert_eq!(parse_file_mode("0600").unwrap(), 0o600);
         assert_eq!(parse_file_mode("0o644").unwrap(), 0o644);
