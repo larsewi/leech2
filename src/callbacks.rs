@@ -451,4 +451,32 @@ mod tests {
         }
         assert_eq!(DESTROY_COUNT.load(Ordering::SeqCst), 2);
     }
+
+    unsafe extern "C" fn empty_table_begin(_table: *const c_char, _usr_data: *mut c_void) -> i32 {
+        END_OF_TABLE
+    }
+
+    #[test]
+    fn test_table_begin_reports_empty_table() {
+        // read_cell is missing and table_end fails, so with_table() returns an
+        // error if it calls either of them.
+        let callbacks = Callbacks {
+            table_begin: Some(empty_table_begin),
+            read_cell: None,
+            destroy_cell: None,
+            table_end: Some(fail_table_end),
+            usr_data: std::ptr::null_mut(),
+        };
+
+        let mut loaded = false;
+        let result = callbacks
+            .with_table("t", &["id"], |_| {
+                loaded = true;
+                Ok(())
+            })
+            .unwrap();
+
+        assert!(result.is_none());
+        assert!(!loaded);
+    }
 }
