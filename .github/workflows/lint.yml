@@ -35,8 +35,11 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y cppcheck
           FILES=$(find . -path ./target -prune -o \( -name '*.c' -o -name '*.h' \) -print)
+          # leech2.h is the public API. Its struct members are only set by
+          # library users, so cppcheck wrongly reports them as unused.
           if [ -n "$FILES" ]; then
-            echo "$FILES" | xargs cppcheck --error-exitcode=1 --enable=warning,style,performance,portability
+            echo "$FILES" | xargs cppcheck --error-exitcode=1 --enable=warning,style,performance,portability \
+              --check-level=exhaustive --suppress=unusedStructMember:./include/leech2.h
           fi
 
   shell:
