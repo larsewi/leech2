@@ -1004,6 +1004,26 @@ mod tests {
     }
 
     #[test]
+    fn test_empty_table_has_canonical_layout() {
+        // Declared out of order: the layout puts primary keys first, each half
+        // sorted by name, like a loaded table.
+        let config = typed_config(vec![
+            make_typed_field("zeta", Kind::Text, false),
+            make_typed_field("id", Kind::Number, true),
+            make_typed_field("alpha", Kind::Text, false),
+        ]);
+
+        let table = Table::empty(&config);
+
+        assert_eq!(table.primary_key_names, vec!["id".to_string()]);
+        assert_eq!(
+            table.subsidiary_value_names,
+            vec!["alpha".to_string(), "zeta".to_string()]
+        );
+        assert!(table.records.is_empty());
+    }
+
+    #[test]
     fn test_load_from_callbacks_happy_path() {
         let config = typed_config(vec![
             make_typed_field("id", Kind::Number, true),
