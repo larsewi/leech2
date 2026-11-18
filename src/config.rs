@@ -9,7 +9,7 @@ use std::time::Duration;
 use anyhow::{Context, Result, bail};
 
 use crate::cell::{Cell, Kind};
-use crate::utils::{parse_duration, parse_file_mode, validate_name};
+use crate::utils::{parse_duration, parse_file_mode, parse_size, validate_name};
 
 /// Subdirectory of the work directory where state files live when `state-dir`
 /// is not set in the config.
@@ -59,6 +59,16 @@ where
         .transpose()
 }
 
+// Custom deserializer for a size: reads the field as a string and parses it
+// via `parse_size`, so an invalid size fails config loading.
+fn deserialize_size<'de, D>(deserializer: D) -> Result<u64, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let raw = String::deserialize(deserializer)?;
+    parse_size(&raw).map_err(serde::de::Error::custom)
+}
+
 /// Default Unix permission bits for files created in the work directory.
 /// Secure-by-default: only the owner can read or write.
 fn default_file_mode() -> u32 {
@@ -69,6 +79,11 @@ fn default_file_mode() -> u32 {
 /// Secure-by-default: only the owner can read, write, or traverse it.
 fn default_dir_mode() -> u32 {
     0o700
+}
+
+/// Default `spool-max-size` of an event stream: 10 MiB.
+fn default_spool_max_size() -> u64 {
+    10 << 20
 }
 
 /// Serde default for boolean options that are enabled unless turned off.
@@ -442,6 +457,7 @@ impl LogConfig {
         EventConfig {
             fields: event_fields,
             id_field: self.id_field.clone(),
+            ..Default::default()
         }
     }
 }
@@ -551,6 +567,15 @@ pub struct EventConfig {
     /// that stored the event and the event's position in that block.
     #[serde(rename = "id-field")]
     pub id_field: String,
+    /// Largest size in bytes of the stream's spool file (e.g. `"10M"`), where
+    /// recorded events wait for the next block. Above it, the oldest events
+    /// are dropped.
+    #[serde(
+        default = "default_spool_max_size",
+        rename = "spool-max-size",
+        deserialize_with = "deserialize_size"
+    )]
+    pub spool_max_size: u64,
 }
 
 impl Validate for EventConfig {
@@ -575,7 +600,21 @@ impl Validate for EventConfig {
             bail!("id-field '{}' collides with a field", self.id_field);
         }
 
+        if self.spool_max_size == 0 {
+            bail!("spool-max-size must be > 0");
+        }
+
         Ok(())
+    }
+}
+
+impl Default for EventConfig {
+    fn default() -> Self {
+        Self {
+            fields: Vec::new(),
+            id_field: String::new(),
+            spool_max_size: default_spool_max_size(),
+        }
     }
 }
 

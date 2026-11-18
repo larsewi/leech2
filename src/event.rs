@@ -211,6 +211,7 @@ mod tests {
                 EventConfig {
                     fields: vec![field("message"), field("source")],
                     id_field: "eventid".to_string(),
+                    ..Default::default()
                 },
             )]),
             ..Default::default()

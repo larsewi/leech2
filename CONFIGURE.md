@@ -130,7 +130,8 @@ an event stream under `[events.X]`:
 
 ```toml
 [events.alerts]
-id-field = "eventid"  # column that receives each event's ID (required)
+id-field = "eventid"    # column that receives each event's ID (required)
+spool-max-size = "10M"  # largest size of the stream's spool (default: "10M")
 fields = [
     { name = "message",  type = "TEXT" },
     { name = "severity", type = "NUMBER" },
@@ -152,6 +153,11 @@ fields = [
   reported; see [History truncation](#history-truncation)).
 - Retention on the receiver is up to you.
 - Event streams cannot be CSV-backed.
+- Events recorded with `lch_events_record()` wait in the stream's spool until
+  the next block. When the spool grows past `spool-max-size`, the oldest events
+  are dropped. Events returned by the callbacks of `lch_block_create()` go
+  straight into the block and are not limited. Sizes are a number of bytes, with
+  an optional `K`, `M` or `G` suffix in powers of 1024.
 
 ## Change logs
 
