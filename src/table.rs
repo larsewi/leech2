@@ -27,6 +27,14 @@ struct CanonicalLayout<'a> {
     subsidiary: CanonicalColumns<'a>,
 }
 
+/// The field names of `columns`, in their canonical order.
+fn column_names(columns: &CanonicalColumns<'_>) -> Vec<String> {
+    columns
+        .iter()
+        .map(|(_, field)| field.name.clone())
+        .collect()
+}
+
 /// A table with records stored in a hash map for efficient lookup.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Table {
@@ -137,14 +145,8 @@ impl Table {
             subsidiary: subsidiary_columns,
         } = Self::compute_canonical_columns(config, &positions);
 
-        let primary_key_names: Vec<String> = primary_columns
-            .iter()
-            .map(|(_, field)| field.name.clone())
-            .collect();
-        let subsidiary_value_names: Vec<String> = subsidiary_columns
-            .iter()
-            .map(|(_, field)| field.name.clone())
-            .collect();
+        let primary_key_names = column_names(&primary_columns);
+        let subsidiary_value_names = column_names(&subsidiary_columns);
 
         // Primary-key columns first, so each row splits at the primary-key
         // count.
@@ -272,14 +274,8 @@ impl Table {
             subsidiary: subsidiary_columns,
         } = Self::compute_canonical_columns(config, &field_indices);
 
-        let primary_key_names: Vec<String> = primary_columns
-            .iter()
-            .map(|(_, field)| field.name.clone())
-            .collect();
-        let subsidiary_value_names: Vec<String> = subsidiary_columns
-            .iter()
-            .map(|(_, field)| field.name.clone())
-            .collect();
+        let primary_key_names = column_names(&primary_columns);
+        let subsidiary_value_names = column_names(&subsidiary_columns);
 
         let mut records: HashMap<Vec<Cell>, Vec<Cell>> = HashMap::new();
 
