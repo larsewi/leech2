@@ -156,7 +156,7 @@ static void test_destroy_cell(lch_cell_t *cell, void *usr_data) {
   }
 }
 
-int main(int argc, char *argv[]) {
+int main(int argc, const char *argv[]) {
   if (argc < 2) {
     fprintf(stderr, "Usage: %s <work_dir>\n", argv[0]);
     return EXIT_FAILURE;
