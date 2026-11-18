@@ -160,6 +160,12 @@ fields = [
     { name = \"event\", type = \"TEXT\" },
 ]
 
+# Callback-backed table that table_begin reports as empty.
+[tables.unknown]
+fields = [
+    { name = \"id\", type = \"NUMBER\", primary-key = true },
+]
+
 # Event stream: pulled through the same callback bundle.
 [events.alerts]
 id-field = \"eventid\"

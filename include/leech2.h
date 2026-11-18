@@ -38,7 +38,8 @@ extern "C" {
 #define LCH_FAILURE -1
 
 /** Cell-callback return code (see lch_read_cell_cb_t): no row exists at the
- *  requested index; stop iterating the current table. */
+ *  requested index; stop iterating the current table. Also returned by
+ *  lch_table_begin_cb_t to report an empty table. */
 #define LCH_END_OF_TABLE 1
 /** Cell-callback return code (see lch_read_cell_cb_t): drop the current row and
  *  advance to the next. */
@@ -212,6 +213,8 @@ extern void lch_deinit(lch_config_t *cfg);
  *                  duration of the call.
  * @param usr_data  Opaque pointer from lch_callbacks_t::usr_data.
  * @return LCH_SUCCESS to proceed to pulling cells from this table.
+ *         LCH_END_OF_TABLE to report the table as empty. No cells are pulled,
+ *         and table_end is NOT invoked.
  *         LCH_FAILURE to abort block creation immediately. table_end is NOT
  *         invoked when begin returns failure.
  */
@@ -222,7 +225,7 @@ typedef int (*lch_table_begin_cb_t)(const char *table, void *usr_data);
  *
  * Invoked once for every table, after its last cell callback, including when
  * reading the table failed. Not invoked for a table whose lch_table_begin_cb_t
- * returned LCH_FAILURE.
+ * returned LCH_END_OF_TABLE or LCH_FAILURE.
  *
  * @param table     Null-terminated table name. Borrowed; valid only for the
  *                  duration of the call.

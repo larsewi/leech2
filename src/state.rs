@@ -143,11 +143,16 @@ impl State {
                     .iter()
                     .map(|f| f.name.as_str())
                     .collect();
-                callbacks
+                let table = callbacks
                     .with_table(name, &field_names, |bound| {
                         Table::load_from_callbacks(name, table_config, bound)
                     })
-                    .with_context(|| format!("table '{}'", name))?
+                    .with_context(|| format!("table '{}'", name))?;
+                match table {
+                    Some(table) => table,
+                    // table_begin reported the table empty
+                    None => Table::empty(table_config),
+                }
             };
             tables.insert(name.clone(), table);
         }

@@ -57,6 +57,7 @@ typedef struct {
   int events_end_count;
   int alerts_begin_count;
   int alerts_end_count;
+  int unknown_begin_count;
   int other_table_calls;
   int read_cell_success_count;
   int destroy_cell_count;
@@ -68,6 +69,10 @@ static int test_table_begin(const char *table, void *usr_data) {
     s->events_begin_count++;
   } else if (strcmp(table, "alerts") == 0) {
     s->alerts_begin_count++;
+  } else if (strcmp(table, "unknown") == 0) {
+    /* Report the table as empty. No other hook may run for it. */
+    s->unknown_begin_count++;
+    return LCH_END_OF_TABLE;
   } else {
     s->other_table_calls++;
   }
@@ -151,7 +156,7 @@ static void test_destroy_cell(lch_cell_t *cell, void *usr_data) {
   }
 }
 
-int main(int argc, char *argv[]) {
+int main(int argc, const char *argv[]) {
   if (argc < 2) {
     fprintf(stderr, "Usage: %s <work_dir>\n", argv[0]);
     return EXIT_FAILURE;
@@ -208,6 +213,14 @@ int main(int argc, char *argv[]) {
   if (cb_state.alerts_begin_count != 1 || cb_state.alerts_end_count != 1) {
     fprintf(stderr, "expected 1 alerts begin and end, got %d and %d\n",
             cb_state.alerts_begin_count, cb_state.alerts_end_count);
+    lch_deinit(cfg);
+    return EXIT_FAILURE;
+  }
+  /* The empty table only got table_begin. A read_cell or table_end call for
+   * it counts as an other_table_calls below. */
+  if (cb_state.unknown_begin_count != 1) {
+    fprintf(stderr, "expected 1 unknown begin, got %d\n",
+            cb_state.unknown_begin_count);
     lch_deinit(cfg);
     return EXIT_FAILURE;
   }

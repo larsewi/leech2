@@ -27,6 +27,14 @@ struct CanonicalLayout<'a> {
     subsidiary: CanonicalColumns<'a>,
 }
 
+/// The field names of `columns`, in their canonical order.
+fn column_names(columns: &CanonicalColumns<'_>) -> Vec<String> {
+    columns
+        .iter()
+        .map(|(_, field)| field.name.clone())
+        .collect()
+}
+
 /// A table with records stored in a hash map for efficient lookup.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Table {
@@ -115,6 +123,19 @@ impl Table {
         Ok(table)
     }
 
+    /// A table without records, in the canonical layout of `config`.
+    pub fn empty(config: &TableConfig) -> Self {
+        // The field indices only say where to read each field from. There is
+        // nothing to read, so any will do.
+        let positions: Vec<usize> = (0..config.fields.len()).collect();
+        let layout = Self::compute_canonical_columns(config, &positions);
+        Table {
+            primary_key_names: column_names(&layout.primary),
+            subsidiary_value_names: column_names(&layout.subsidiary),
+            records: HashMap::new(),
+        }
+    }
+
     /// Loads a table by pulling rows from a caller-supplied cell callback.
     ///
     /// Rows are requested in ascending order from `row = 0` until the callback
@@ -137,14 +158,8 @@ impl Table {
             subsidiary: subsidiary_columns,
         } = Self::compute_canonical_columns(config, &positions);
 
-        let primary_key_names: Vec<String> = primary_columns
-            .iter()
-            .map(|(_, field)| field.name.clone())
-            .collect();
-        let subsidiary_value_names: Vec<String> = subsidiary_columns
-            .iter()
-            .map(|(_, field)| field.name.clone())
-            .collect();
+        let primary_key_names = column_names(&primary_columns);
+        let subsidiary_value_names = column_names(&subsidiary_columns);
 
         // Primary-key columns first, so each row splits at the primary-key
         // count.
@@ -272,14 +287,8 @@ impl Table {
             subsidiary: subsidiary_columns,
         } = Self::compute_canonical_columns(config, &field_indices);
 
-        let primary_key_names: Vec<String> = primary_columns
-            .iter()
-            .map(|(_, field)| field.name.clone())
-            .collect();
-        let subsidiary_value_names: Vec<String> = subsidiary_columns
-            .iter()
-            .map(|(_, field)| field.name.clone())
-            .collect();
+        let primary_key_names = column_names(&primary_columns);
+        let subsidiary_value_names = column_names(&subsidiary_columns);
 
         let mut records: HashMap<Vec<Cell>, Vec<Cell>> = HashMap::new();
 
@@ -992,6 +1001,26 @@ mod tests {
 
     fn cell_number(n: f64) -> CellAction {
         CellAction::Cell(CellValue::Number(n))
+    }
+
+    #[test]
+    fn test_empty_table_has_canonical_layout() {
+        // Declared out of order: the layout puts primary keys first, each half
+        // sorted by name, like a loaded table.
+        let config = typed_config(vec![
+            make_typed_field("zeta", Kind::Text, false),
+            make_typed_field("id", Kind::Number, true),
+            make_typed_field("alpha", Kind::Text, false),
+        ]);
+
+        let table = Table::empty(&config);
+
+        assert_eq!(table.primary_key_names, vec!["id".to_string()]);
+        assert_eq!(
+            table.subsidiary_value_names,
+            vec!["alpha".to_string(), "zeta".to_string()]
+        );
+        assert!(table.records.is_empty());
     }
 
     #[test]
