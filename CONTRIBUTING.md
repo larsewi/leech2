@@ -72,6 +72,13 @@ Arguments are parsed with clap, so `cargo xtask --help` lists the tasks and
 
 See [TERMINOLOGY.md](TERMINOLOGY.md) for the project's vocabulary.
 
+## Design guidelines
+
+When adding a feature, restrict its inputs (config values, names, API
+arguments) as much as the use cases allow. Loosening a restriction later is
+backward compatible. Tightening one breaks configs and callers that already
+rely on it.
+
 ## Core architecture
 
 leech2 is a Rust `cdylib` that exposes a C-compatible API for tracking changes
