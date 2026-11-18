@@ -123,6 +123,19 @@ impl Table {
         Ok(table)
     }
 
+    /// A table without records, in the canonical layout of `config`.
+    pub fn empty(config: &TableConfig) -> Self {
+        // The field indices only say where to read each field from. There is
+        // nothing to read, so any will do.
+        let positions: Vec<usize> = (0..config.fields.len()).collect();
+        let layout = Self::compute_canonical_columns(config, &positions);
+        Table {
+            primary_key_names: column_names(&layout.primary),
+            subsidiary_value_names: column_names(&layout.subsidiary),
+            records: HashMap::new(),
+        }
+    }
+
     /// Loads a table by pulling rows from a caller-supplied cell callback.
     ///
     /// Rows are requested in ascending order from `row = 0` until the callback

@@ -60,8 +60,12 @@ pub fn load(
         let events = callbacks.with_table(name, &field_names, |bound| {
             load_from_callbacks(name, event_config, bound)
         })?;
-        if !events.events.is_empty() {
-            all_events.insert(name.clone(), events);
+        match events {
+            Some(events) if !events.events.is_empty() => {
+                all_events.insert(name.clone(), events);
+            }
+            // No events, or table_begin reported the stream empty
+            _ => {}
         }
     }
     Ok(all_events)

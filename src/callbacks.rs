@@ -41,6 +41,17 @@ pub struct Callbacks {
     pub usr_data: *mut c_void,
 }
 
+/// Outcome of a `lch_table_begin_cb_t` invocation.
+#[derive(Debug, PartialEq)]
+pub enum BeginResult {
+    /// Read the table's rows. `table_begin` returned `LCH_SUCCESS`, or no
+    /// `table_begin` hook was provided.
+    Proceed,
+    /// The table is empty, so no rows are read. `table_begin` returned
+    /// `LCH_END_OF_TABLE`.
+    EndOfTable,
+}
+
 /// Outcome of a single `lch_read_cell_cb_t` invocation, after translating
 /// the C-side return code into a Rust enum.
 pub enum CellResult {
@@ -89,14 +100,20 @@ impl Callbacks {
     /// call `table_end`. `table_end` always fires when `table_begin`
     /// succeeded, including when `load` fails, so the caller's per-table
     /// resources (a DB cursor, a buffer) can always be released.
+    ///
+    /// Returns `None` when `table_begin` reports that the table is empty
+    /// (`LCH_END_OF_TABLE`). Then neither `load` nor `table_end` runs.
     pub fn with_table<T>(
         &self,
         name: &str,
         field_names: &[&str],
         load: impl FnOnce(&TableCallbacks<'_>) -> Result<T>,
-    ) -> Result<T> {
+    ) -> Result<Option<T>> {
         let bound = self.for_table(name, field_names)?;
-        bound.table_begin()?;
+        if bound.table_begin()? == BeginResult::EndOfTable {
+            log::debug!("Table '{}' reported empty by table_begin", name);
+            return Ok(None);
+        }
 
         let load_result = load(&bound);
         let end_result = bound.table_end();
@@ -112,7 +129,7 @@ impl Callbacks {
         }
         let value = load_result?;
         end_result?;
-        Ok(value)
+        Ok(Some(value))
     }
 }
 
@@ -128,18 +145,18 @@ pub struct TableCallbacks<'a> {
 impl TableCallbacks<'_> {
     /// Invoke the optional `table_begin` hook. A `None` hook is a successful
     /// no-op.
-    pub fn table_begin(&self) -> Result<()> {
-        let Some(cb) = self.inner.table_begin else {
-            return Ok(());
+    pub fn table_begin(&self) -> Result<BeginResult> {
+        let Some(callback) = self.inner.table_begin else {
+            return Ok(BeginResult::Proceed);
         };
-        let rc = unsafe { cb(self.table_c.as_ptr(), self.inner.usr_data) };
-        if rc == SUCCESS {
-            Ok(())
-        } else {
-            bail!(
+        let rc = unsafe { callback(self.table_c.as_ptr(), self.inner.usr_data) };
+        match rc {
+            SUCCESS => Ok(BeginResult::Proceed),
+            END_OF_TABLE => Ok(BeginResult::EndOfTable),
+            _ => bail!(
                 "table_begin callback returned failure for table '{}'",
                 self.table_c.to_string_lossy()
-            );
+            ),
         }
     }
 
