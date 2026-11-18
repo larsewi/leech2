@@ -1803,6 +1803,15 @@ fields = [{ name = "id", type = "NUMBER", primary-key = true }]
         assert!(msg.contains("also declared as a table"), "got: {msg}");
     }
 
+    #[test]
+    fn test_events_spool_max_size() {
+        let config = load_with_events("", "").unwrap();
+        assert_eq!(config.events["alerts"].spool_max_size, 10 * 1024 * 1024);
+
+        let config = load_with_events("spool-max-size = \"512K\"", "").unwrap();
+        assert_eq!(config.events["alerts"].spool_max_size, 512 * 1024);
+    }
+
     fn field(name: &str, kind: Kind, primary_key: bool) -> FieldConfig {
         FieldConfig {
             name: name.to_string(),
