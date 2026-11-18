@@ -1812,6 +1812,15 @@ fields = [{ name = "id", type = "NUMBER", primary-key = true }]
         assert_eq!(config.events["alerts"].spool_max_size, 512 * 1024);
     }
 
+    #[test]
+    fn test_events_reject_invalid_spool_max_size() {
+        let msg = load_events_error("spool-max-size = \"0\"", "");
+        assert!(msg.contains("spool-max-size must be > 0"), "got: {msg}");
+
+        let msg = load_events_error("spool-max-size = \"10X\"", "");
+        assert!(msg.contains("invalid size '10X'"), "got: {msg}");
+    }
+
     fn field(name: &str, kind: Kind, primary_key: bool) -> FieldConfig {
         FieldConfig {
             name: name.to_string(),
