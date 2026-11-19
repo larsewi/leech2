@@ -157,21 +157,7 @@ impl Block {
             payload,
             events,
         };
-        let mut encoded = Vec::new();
-        block
-            .encode(&mut encoded)
-            .context("failed to encode block")?;
-        let hash = utils::compute_hash(&encoded);
-
-        if !config.dry_run {
-            log::info!("Created block '{:.7}...': {}", hash, block);
-        } else {
-            // `dry_run` is only ever set by the CLI, so this stdout print never
-            // reaches FFI consumers. Show the block that would have been created.
-            println!("Would have created block '{:.7}...'\n{}", hash, block);
-        }
-
-        commit(config, &block.parent, &hash, &encoded, current_state)?;
+        let hash = commit(config, block, current_state)?;
 
         // In dry-run this reports what truncation would remove; otherwise it
         // does the real cleanup.
@@ -183,44 +169,52 @@ impl Block {
     }
 }
 
-/// Store the block file, STATE and HEAD under an exclusive lock on the state
-/// directory, so a concurrent truncation cannot see the block file before HEAD
-/// points at it (which would orphan-mark and delete it).
+/// Encode `block` and store the block file, STATE and HEAD under an exclusive
+/// lock on the state directory, so a concurrent truncation cannot see the
+/// block file before HEAD points at it (which would orphan-mark and delete
+/// it). Returns the hash of the block.
 ///
-/// If HEAD is no longer `parent_hash`, another block was created since the
-/// chain was read. Only one of two concurrent block creations may succeed, so
-/// this one is discarded before anything is written.
-fn commit(
-    config: &Config,
-    parent_hash: &str,
-    hash: &str,
-    encoded: &[u8],
-    current_state: state::State,
-) -> Result<()> {
+/// If HEAD is no longer the block's parent, another block was created since
+/// the chain was read. Only one of two concurrent block creations may
+/// succeed, so this one is discarded before anything is written.
+fn commit(config: &Config, block: Block, current_state: state::State) -> Result<String> {
     let state_dir = config.state_dir();
     let file_mode = config.file_mode;
     let lock = storage::lock(&state_dir, true, file_mode)?;
 
     let head_hash = head::load(&state_dir).context("failed to load head of chain")?;
-    if head_hash != parent_hash {
+    if head_hash != block.parent {
         bail!(
-            "HEAD moved from '{:.7}...' to '{:.7}...' during block creation, discarding block '{:.7}...'",
-            parent_hash,
-            head_hash,
-            hash
+            "HEAD moved from '{:.7}...' to '{:.7}...' during block creation, discarding block",
+            block.parent,
+            head_hash
         );
     }
 
-    storage::store(&state_dir, hash, encoded, file_mode, config.dry_run)
+    let mut encoded = Vec::new();
+    block
+        .encode(&mut encoded)
+        .context("failed to encode block")?;
+    let hash = utils::compute_hash(&encoded);
+
+    if config.dry_run {
+        // `dry_run` is only ever set by the CLI, so this stdout print never
+        // reaches FFI consumers. Show the block that would have been created.
+        println!("Would have created block '{:.7}...'\n{}", hash, block);
+    } else {
+        log::info!("Created block '{:.7}...': {}", hash, block);
+    }
+
+    storage::store(&state_dir, &hash, &encoded, file_mode, config.dry_run)
         .with_context(|| format!("failed to store block {:.7}", hash))?;
     current_state
-        .store(&state_dir, hash, file_mode, config.dry_run)
+        .store(&state_dir, &hash, file_mode, config.dry_run)
         .context("failed to store current state")?;
-    head::store(&state_dir, hash, file_mode, config.dry_run)
+    head::store(&state_dir, &hash, file_mode, config.dry_run)
         .context("failed to update head of state")?;
 
     drop(lock);
-    Ok(())
+    Ok(hash)
 }
 
 #[cfg(test)]
@@ -322,12 +316,10 @@ source = "users.csv"
             parent: hash1.clone(),
             ..dummy_block()
         };
-        let mut encoded = Vec::new();
-        block.encode(&mut encoded).unwrap();
-        let hash = utils::compute_hash(&encoded);
+        let hash = utils::compute_hash(&block.encode_to_vec());
         let current_state = state::State::compute(&config, None).unwrap();
 
-        let error = commit(&config, &hash1, &hash, &encoded, current_state).unwrap_err();
+        let error = commit(&config, block, current_state).unwrap_err();
         assert!(error.to_string().contains("HEAD moved"));
 
         assert_eq!(head::load(&state_dir).unwrap(), hash2);
