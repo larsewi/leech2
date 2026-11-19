@@ -338,7 +338,8 @@ which is renamed over the spool file. Compacting first means a failed
 compaction spools nothing. Shrinking to half keeps the rewrite rare.
 
 Truncation only looks at the top level of the state directory, so it leaves the
-spool alone.
+spool alone. Instead, block creation removes the temp files that compactions
+left in the spool by crashing before renaming them into place.
 
 ### Locking
 
