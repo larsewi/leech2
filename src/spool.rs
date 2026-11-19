@@ -8,6 +8,7 @@
 //! Access is serialized by the lock on `spool/.lock`, taken with [`lock`].
 //! The other functions do not lock themselves, so call them with it held.
 
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 
 use anyhow::{Context, Result, bail};
@@ -18,7 +19,7 @@ use crate::config::Config;
 use crate::event;
 use crate::proto::event::Events as ProtoEvents;
 use crate::storage;
-use crate::utils::compute_hash;
+use crate::utils::{compute_hash, is_hex_hash};
 
 /// The name of the spool file of event stream `stream`.
 fn file_name(stream: &str) -> String {
@@ -128,6 +129,75 @@ pub fn read(config: &Config, stream: &str) -> Result<Vec<ProtoEvents>> {
 /// not exist.
 pub fn remove(config: &Config, stream: &str) -> Result<()> {
     storage::remove(&config.spool_dir(), &file_name(stream), config.dry_run)
+}
+
+/// Read the spool of every event stream in `config`, merged into one batch
+/// per stream, oldest first. Records with other field names than the stream
+/// has now are dropped. Streams without spooled events are left out. The
+/// spool is not removed, see [`clear`].
+pub fn take(config: &Config) -> Result<HashMap<String, ProtoEvents>> {
+    let mut all_events = HashMap::new();
+    for (stream, event_config) in &config.events {
+        let mut merged = ProtoEvents {
+            field_names: event_config
+                .fields
+                .iter()
+                .map(|field| field.name.clone())
+                .collect(),
+            events: Vec::new(),
+        };
+        let mut dropped = 0;
+        for record in read(config, stream)? {
+            if record.field_names == merged.field_names {
+                merged.events.extend(record.events);
+            } else {
+                dropped += record.events.len();
+            }
+        }
+
+        if dropped > 0 {
+            log::warn!(
+                "Dropped {} spooled events of event stream '{}' due to a layout change",
+                dropped,
+                stream
+            );
+        }
+        if !merged.events.is_empty() {
+            all_events.insert(stream.clone(), merged);
+        }
+    }
+    Ok(all_events)
+}
+
+/// Remove the spool files of all event streams, including the streams that
+/// are no longer declared.
+pub fn clear(config: &Config) -> Result<()> {
+    let dir = config.spool_dir();
+    let declared: HashSet<String> = config
+        .events
+        .keys()
+        .map(|stream| file_name(stream))
+        .collect();
+
+    for entry in std::fs::read_dir(&dir)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else {
+            continue;
+        };
+        if !is_hex_hash(name) {
+            // Not a spool file, e.g. the lock file
+            continue;
+        }
+        if !declared.contains(name) {
+            log::warn!(
+                "Removed spool file '{:.7}...' of an event stream that is no longer declared in the config",
+                name
+            );
+        }
+        storage::remove(&dir, name, config.dry_run)?;
+    }
+    Ok(())
 }
 
 /// Rewrite the spool of event stream `stream` with its newest events, as many

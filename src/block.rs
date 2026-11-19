@@ -15,6 +15,7 @@ use crate::event;
 use crate::head;
 use crate::proto::block::Delta as ProtoBlockDelta;
 use crate::proto::block::{BlockHeader, TableChange};
+use crate::spool;
 use crate::state;
 use crate::storage;
 use crate::truncate;
@@ -177,7 +178,12 @@ impl Block {
 /// If HEAD is no longer the block's parent, another block was created since
 /// the chain was read. Only one of two concurrent block creations may
 /// succeed, so this one is discarded before anything is written.
-fn commit(config: &Config, block: Block, current_state: state::State) -> Result<String> {
+///
+/// The spooled events go into the block before the events from the
+/// callbacks, since they were recorded earlier. The spool is removed before
+/// HEAD moves. So a crash in between loses the spooled events instead of
+/// adding them to two blocks.
+fn commit(config: &Config, mut block: Block, current_state: state::State) -> Result<String> {
     let state_dir = config.state_dir();
     let file_mode = config.file_mode;
     let lock = storage::lock(&state_dir, true, file_mode)?;
@@ -189,6 +195,21 @@ fn commit(config: &Config, block: Block, current_state: state::State) -> Result<
             block.parent,
             head_hash
         );
+    }
+
+    // Without a spool directory, no events were ever spooled
+    let spool_lock = if config.spool_dir().exists() {
+        Some(spool::lock(config)?)
+    } else {
+        None
+    };
+    if spool_lock.is_some() {
+        for (stream, mut spooled) in spool::take(config).context("failed to read the spool")? {
+            if let Some(events) = block.events.remove(&stream) {
+                spooled.events.extend(events.events);
+            }
+            block.events.insert(stream, spooled);
+        }
     }
 
     let mut encoded = Vec::new();
@@ -210,6 +231,9 @@ fn commit(config: &Config, block: Block, current_state: state::State) -> Result<
     current_state
         .store(&state_dir, &hash, file_mode, config.dry_run)
         .context("failed to store current state")?;
+    if spool_lock.is_some() {
+        spool::clear(config).context("failed to clear the spool")?;
+    }
     head::store(&state_dir, &hash, file_mode, config.dry_run)
         .context("failed to update head of chain")?;
 
