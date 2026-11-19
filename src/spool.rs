@@ -239,4 +239,19 @@ mod tests {
             vec![events(&["disk full", "out of memory"])]
         );
     }
+
+    #[test]
+    fn test_read_keeps_the_order_of_appends() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = config(dir.path());
+        let _lock = lock(&config).unwrap();
+
+        append(&config, "alerts", &events(&["one"])).unwrap();
+        append(&config, "alerts", &events(&["two", "three"])).unwrap();
+
+        assert_eq!(
+            read(&config, "alerts").unwrap(),
+            vec![events(&["one"]), events(&["two", "three"])]
+        );
+    }
 }
