@@ -262,6 +262,7 @@ mod tests {
     use std::ffi::{c_char, c_void};
     use std::path::Path;
 
+    use crate::block::Block;
     use crate::cell::{Cell, Kind};
     use crate::config::{EventConfig, FieldConfig};
     use crate::ffi::{END_OF_TABLE, FfiCell, FfiCellPayload, SUCCESS, VALUE_TEXT};
@@ -443,23 +444,42 @@ mod tests {
         SUCCESS
     }
 
-    #[test]
-    fn test_record_spools_events() {
-        let dir = tempfile::tempdir().unwrap();
-        let config = config(dir.path());
-        let callbacks = Callbacks {
+    /// Callbacks that serve one event, "disk full", for every stream.
+    fn callbacks() -> Callbacks {
+        Callbacks {
             table_begin: None,
             read_cell: Some(read_one_event),
             destroy_cell: None,
             table_end: None,
             usr_data: std::ptr::null_mut(),
-        };
+        }
+    }
 
-        record(&config, "alerts", &callbacks).unwrap();
+    #[test]
+    fn test_record_spools_events() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = config(dir.path());
+
+        record(&config, "alerts", &callbacks()).unwrap();
 
         assert_eq!(
             read(&config, "alerts").unwrap(),
             vec![events(&["disk full"])]
         );
+    }
+
+    #[test]
+    fn test_block_has_spooled_events_first() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = config(dir.path());
+        {
+            let _lock = lock(&config).unwrap();
+            append(&config, "alerts", &events(&["spooled"])).unwrap();
+        }
+
+        let hash = Block::create(&config, Some(&callbacks())).unwrap();
+
+        let block = Block::load(&config.state_dir(), &hash).unwrap();
+        assert_eq!(block.events["alerts"], events(&["spooled", "disk full"]));
     }
 }
