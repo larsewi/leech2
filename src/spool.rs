@@ -180,7 +180,7 @@ pub fn remove(config: &Config, stream: &str) -> Result<()> {
 /// per stream, oldest first. Batches with other field names than the stream
 /// has now are dropped. Streams without spooled events are left out. The
 /// spool is not removed, see [`clear`].
-pub fn take(config: &Config) -> Result<HashMap<String, ProtoEvents>> {
+pub fn load(config: &Config) -> Result<HashMap<String, ProtoEvents>> {
     let mut all_events = HashMap::new();
     for (stream, event_config) in &config.events {
         let mut merged = ProtoEvents {
@@ -251,7 +251,7 @@ pub fn clear(config: &Config) -> Result<()> {
 }
 
 /// The spooled events of every event stream, as the next block would get
-/// them. See [`take`].
+/// them. See [`load`].
 pub struct Spool(pub HashMap<String, ProtoEvents>);
 
 impl fmt::Display for Spool {

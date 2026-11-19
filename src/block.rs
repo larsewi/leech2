@@ -204,7 +204,7 @@ fn commit(config: &Config, mut block: Block, current_state: state::State) -> Res
         None
     };
     if spool_lock.is_some() {
-        for (stream, mut spooled) in spool::take(config).context("failed to read the spool")? {
+        for (stream, mut spooled) in spool::load(config).context("failed to read the spool")? {
             if let Some(events) = block.events.remove(&stream) {
                 spooled.events.extend(events.events);
             }

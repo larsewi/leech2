@@ -284,7 +284,7 @@ fn cmd_spool_show(config: &Config) -> Result<String> {
         return Ok(Spool(Default::default()).to_string());
     }
     let _lock = spool::lock(config)?;
-    Ok(Spool(spool::take(config)?).to_string())
+    Ok(Spool(spool::load(config)?).to_string())
 }
 
 fn cmd_stats_show(config: &Config) -> Result<()> {
