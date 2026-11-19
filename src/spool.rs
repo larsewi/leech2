@@ -334,4 +334,18 @@ mod tests {
         assert!(!config.spool_dir().join(file_name("alerts")).exists());
         assert!(read(&config, "alerts").unwrap().is_empty());
     }
+
+    #[test]
+    fn test_remove() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = config(dir.path());
+        let _lock = lock(&config).unwrap();
+        append(&config, "alerts", &events(&["disk full"])).unwrap();
+
+        remove(&config, "alerts").unwrap();
+        assert!(read(&config, "alerts").unwrap().is_empty());
+
+        // Removing a spool that does not exist is not an error
+        remove(&config, "alerts").unwrap();
+    }
 }
