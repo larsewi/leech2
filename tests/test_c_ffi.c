@@ -190,9 +190,9 @@ int main(int argc, const char *argv[]) {
 
   /* Spool the events of the event stream. The next block holds them before
    * the events it pulls itself. */
-  int ret = lch_events_record(cfg, "alerts", &callbacks);
+  int ret = lch_events_spool(cfg, "alerts", &callbacks);
   if (ret == LCH_FAILURE) {
-    fprintf(stderr, "lch_events_record failed\n");
+    fprintf(stderr, "lch_events_spool failed\n");
     lch_deinit(cfg);
     return EXIT_FAILURE;
   }

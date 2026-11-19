@@ -103,7 +103,7 @@ instead.
 ### Batch
 
 The events of one event stream that were added together. In the **spool**, a
-batch is the events of one `lch_events_record()` call. In a patch, it is the
+batch is the events of one `lch_events_spool()` call. In a patch, it is the
 events of the stream that one block stored. Use **batch** rather than record
 for a group of events: a **record** is a row of a table.
 
@@ -187,9 +187,9 @@ state lives and **work directory** for where the config lives.
 
 ### Spool
 
-The events recorded with `lch_events_record()` that wait for the next block, one
-file per event stream in the `spool` subdirectory of the **state directory**.
-Each file holds the **batches** recorded for its stream. Use **spool** for
+The events handed over with `lch_events_spool()` that wait for the next block,
+one file per event stream in the `spool` subdirectory of the **state
+directory**. Each file holds the **batches** of its stream. Use **spool** for
 events waiting for a block.
 
 ### Fragment

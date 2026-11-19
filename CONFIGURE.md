@@ -153,7 +153,7 @@ fields = [
   reported; see [History truncation](#history-truncation)).
 - Retention on the receiver is up to you.
 - Event streams cannot be CSV-backed.
-- Events recorded with `lch_events_record()` wait in the stream's spool until
+- Events spooled with `lch_events_spool()` wait in the stream's spool until
   the next block. When the spool grows past `spool-max-size`, the oldest events
   are dropped. Events returned by the callbacks of `lch_block_create()` go
   straight into the block and are not limited. Sizes are a number of bytes, with

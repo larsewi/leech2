@@ -161,19 +161,19 @@ pub unsafe extern "C" fn lch_block_create(
 /// whose function pointers (if non-NULL) are valid `extern "C"` functions
 /// and whose `usr_data` pointer remains valid for the duration of the call.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn lch_events_record(
+pub unsafe extern "C" fn lch_events_spool(
     config: *const config::Config,
     stream: *const c_char,
     callbacks: *const callbacks::Callbacks,
 ) -> i32 {
-    ffi_guard("lch_events_record", FAILURE, || {
-        if null_arg("lch_events_record", "config", config) {
+    ffi_guard("lch_events_spool", FAILURE, || {
+        if null_arg("lch_events_spool", "config", config) {
             return FAILURE;
         }
-        let Some(stream) = (unsafe { cstr_arg("lch_events_record", "stream", stream) }) else {
+        let Some(stream) = (unsafe { cstr_arg("lch_events_spool", "stream", stream) }) else {
             return FAILURE;
         };
-        if null_arg("lch_events_record", "callbacks", callbacks) {
+        if null_arg("lch_events_spool", "callbacks", callbacks) {
             return FAILURE;
         }
 
@@ -182,7 +182,7 @@ pub unsafe extern "C" fn lch_events_record(
         match spool::record(config, &stream, callbacks) {
             Ok(()) => SUCCESS,
             Err(e) => {
-                log::error!("lch_events_record(): {:#}", e);
+                log::error!("lch_events_spool(): {:#}", e);
                 FAILURE
             }
         }
@@ -465,7 +465,7 @@ pub unsafe extern "C" fn lch_buffer_free(buf: *mut FfiBuffer) {
 
 #[cfg(test)]
 mod tests {
-    use super::{FAILURE, ffi_guard, lch_events_record, lch_log_init};
+    use super::{FAILURE, ffi_guard, lch_events_spool, lch_log_init};
     use crate::callbacks::Callbacks;
     use crate::config::Config;
 
@@ -487,7 +487,7 @@ mod tests {
     }
 
     #[test]
-    fn lch_events_record_rejects_null_arguments() {
+    fn lch_events_spool_rejects_null_arguments() {
         let config = Config::default();
         let stream = c"alerts".as_ptr();
         let callbacks = Callbacks {
@@ -501,9 +501,9 @@ mod tests {
         // Each argument is NULL in turn, with the others valid
         let results = unsafe {
             [
-                lch_events_record(std::ptr::null(), stream, &callbacks),
-                lch_events_record(&config, std::ptr::null(), &callbacks),
-                lch_events_record(&config, stream, std::ptr::null()),
+                lch_events_spool(std::ptr::null(), stream, &callbacks),
+                lch_events_spool(&config, std::ptr::null(), &callbacks),
+                lch_events_spool(&config, stream, std::ptr::null()),
             ]
         };
         assert_eq!(results, [FAILURE; 3]);
