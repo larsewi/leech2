@@ -254,4 +254,21 @@ mod tests {
             vec![events(&["one"]), events(&["two", "three"])]
         );
     }
+
+    #[test]
+    fn test_read_drops_an_incomplete_last_record() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = config(dir.path());
+        let _lock = lock(&config).unwrap();
+        append(&config, "alerts", &events(&["one"])).unwrap();
+        append(&config, "alerts", &events(&["two"])).unwrap();
+
+        // Cut off the last byte, like a crash during the second append
+        let path = config.spool_dir().join(file_name("alerts"));
+        let file = std::fs::OpenOptions::new().write(true).open(&path).unwrap();
+        let size = file.metadata().unwrap().len();
+        file.set_len(size - 1).unwrap();
+
+        assert_eq!(read(&config, "alerts").unwrap(), vec![events(&["one"])]);
+    }
 }
