@@ -23,6 +23,7 @@ mod proto;
 pub mod record;
 mod recorder;
 pub mod reported;
+pub mod spool;
 pub mod sql;
 pub mod state;
 pub mod stats;

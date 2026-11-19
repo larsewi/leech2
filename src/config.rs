@@ -16,6 +16,9 @@ use crate::utils::{parse_duration, parse_file_mode, parse_size, validate_name};
 /// is not set in the config.
 const STATE_SUBDIR: &str = "state";
 
+/// Subdirectory of the state directory where the spool files live.
+const SPOOL_SUBDIR: &str = "spool";
+
 /// Post-deserialize semantic checks for config structs (cross-field
 /// invariants, value ranges, etc.) that serde can't express on its own.
 /// Implementors `bail!` on failure.
@@ -817,6 +820,11 @@ impl Config {
         }
     }
 
+    /// Directory holding the spool files.
+    pub fn spool_dir(&self) -> PathBuf {
+        self.state_dir().join(SPOOL_SUBDIR)
+    }
+
     /// Resolve the state directory (see [`Config::state_dir`]) and create it,
     /// and any missing parents, with the configured `dir-mode`. Idempotent, so
     /// callers can invoke it before any state I/O without checking first.
@@ -826,6 +834,17 @@ impl Config {
             format!("failed to create state directory '{}'", state_dir.display())
         })?;
         Ok(state_dir)
+    }
+
+    /// Resolve the spool directory (see [`Config::spool_dir`]) and create it,
+    /// and any missing parents, with the configured `dir-mode`. Idempotent,
+    /// like [`Config::ensure_state_dir`].
+    pub fn ensure_spool_dir(&self) -> Result<PathBuf> {
+        let spool_dir = self.spool_dir();
+        storage::create_dir(&spool_dir, self.dir_mode).with_context(|| {
+            format!("failed to create spool directory '{}'", spool_dir.display())
+        })?;
+        Ok(spool_dir)
     }
 
     pub fn load(work_dir: &Path) -> Result<Config> {
