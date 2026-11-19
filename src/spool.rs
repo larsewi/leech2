@@ -482,4 +482,18 @@ mod tests {
         let block = Block::load(&config.state_dir(), &hash).unwrap();
         assert_eq!(block.events["alerts"], events(&["spooled", "disk full"]));
     }
+
+    #[test]
+    fn test_block_creation_removes_the_spool() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = config(dir.path());
+        {
+            let _lock = lock(&config).unwrap();
+            append(&config, "alerts", &events(&["spooled"])).unwrap();
+        }
+
+        Block::create(&config, Some(&callbacks())).unwrap();
+
+        assert!(!config.spool_dir().join(file_name("alerts")).exists());
+    }
 }
