@@ -9,7 +9,9 @@
 //! The other functions do not lock themselves, so call them with it held.
 
 use std::collections::{HashMap, HashSet};
-use std::fs::File;
+use std::fs::{File, OpenOptions};
+use std::io::{Read, Seek, SeekFrom};
+use std::path::Path;
 
 use anyhow::{Context, Result, bail};
 use prost::Message;
@@ -36,7 +38,8 @@ pub fn lock(config: &Config) -> Result<File> {
 /// Append `events` to the spool of event stream `stream`. If that would make
 /// the spool exceed the stream's `spool-max-size`, the spool is first
 /// compacted to half of it. Compacting first means a failed compaction
-/// spools nothing.
+/// spools nothing. A torn record at the end of the spool is cut off first, so
+/// the new record does not follow it.
 fn append(config: &Config, stream: &str, events: &ProtoEvents) -> Result<()> {
     let Some(event_config) = config.events.get(stream) else {
         bail!("event stream '{}' is not declared", stream);
@@ -47,15 +50,7 @@ fn append(config: &Config, stream: &str, events: &ProtoEvents) -> Result<()> {
         .encode_length_delimited(&mut record)
         .context("failed to encode events")?;
 
-    let path = config.spool_dir().join(file_name(stream));
-    let size = match std::fs::metadata(&path) {
-        Ok(metadata) => metadata.len(),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => 0,
-        Err(e) => {
-            return Err(e)
-                .with_context(|| format!("failed to read the size of '{}'", path.display()));
-        }
-    };
+    let size = repair(&config.spool_dir().join(file_name(stream)))?;
     // An empty spool has nothing to compact
     if size > 0 && size + record.len() as u64 > event_config.spool_max_size {
         compact(config, stream, event_config.spool_max_size / 2)?;
@@ -68,6 +63,55 @@ fn append(config: &Config, stream: &str, events: &ProtoEvents) -> Result<()> {
         config.file_mode,
     )
     .with_context(|| format!("failed to spool events of event stream '{}'", stream))
+}
+
+/// Cut off a torn record at the end of the spool file `path`, left by a crash
+/// or a failed write during an append. Returns the size of the file after
+/// that, or 0 if it does not exist.
+///
+/// Only the length prefixes are read: a record that reaches past the end of
+/// the file is torn.
+fn repair(path: &Path) -> Result<u64> {
+    let file = match OpenOptions::new().read(true).write(true).open(path) {
+        Ok(file) => file,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(0),
+        Err(e) => return Err(e).with_context(|| format!("failed to open '{}'", path.display())),
+    };
+    let size = file
+        .metadata()
+        .with_context(|| format!("failed to read the size of '{}'", path.display()))?
+        .len();
+
+    // Jump from record to record by their length prefixes
+    let mut pos = 0;
+    while pos < size {
+        // A length prefix is a varint of at most 10 bytes
+        let mut prefix = Vec::new();
+        (&file)
+            .seek(SeekFrom::Start(pos))
+            .and_then(|_| (&file).take(10).read_to_end(&mut prefix))
+            .with_context(|| format!("failed to read '{}'", path.display()))?;
+        let mut buf = prefix.as_slice();
+        let Ok(len) = prost::encoding::decode_varint(&mut buf) else {
+            break;
+        };
+        let prefix_len = (prefix.len() - buf.len()) as u64;
+        match pos.checked_add(prefix_len).and_then(|p| p.checked_add(len)) {
+            Some(next) if next <= size => pos = next,
+            _ => break,
+        }
+    }
+
+    if pos < size {
+        log::warn!(
+            "Cut off a torn record of {} bytes at the end of '{}'",
+            size - pos,
+            path.display()
+        );
+        file.set_len(pos)
+            .with_context(|| format!("failed to truncate '{}'", path.display()))?;
+    }
+    Ok(pos)
 }
 
 /// Pull the new events of event stream `stream` through `callbacks` and
