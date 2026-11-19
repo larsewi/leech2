@@ -3,7 +3,7 @@
 //! Each event stream has its own spool file in the `spool` subdirectory of the
 //! state directory. The file is named by the hash of the stream name, since
 //! stream names may contain characters that file names cannot. A spool file
-//! holds length-delimited `event.Events` records, oldest first.
+//! holds length-delimited `event.Events` batches, oldest first.
 //!
 //! Access is serialized by the lock on `spool/.lock`, taken with [`lock`].
 //! The other functions do not lock themselves, so call them with it held.
@@ -39,38 +39,38 @@ pub fn lock(config: &Config) -> Result<File> {
 /// Append `events` to the spool of event stream `stream`. If that would make
 /// the spool exceed the stream's `spool-max-size`, the spool is first
 /// compacted to half of it. Compacting first means a failed compaction
-/// spools nothing. A torn record at the end of the spool is cut off first, so
-/// the new record does not follow it.
+/// spools nothing. A torn batch at the end of the spool is cut off first, so
+/// the new batch does not follow it.
 fn append(config: &Config, stream: &str, events: &ProtoEvents) -> Result<()> {
     let Some(event_config) = config.events.get(stream) else {
         bail!("event stream '{}' is not declared", stream);
     };
 
-    let mut record = Vec::new();
+    let mut batch = Vec::new();
     events
-        .encode_length_delimited(&mut record)
+        .encode_length_delimited(&mut batch)
         .context("failed to encode events")?;
 
     let size = repair(&config.spool_dir().join(file_name(stream)))?;
     // An empty spool has nothing to compact
-    if size > 0 && size + record.len() as u64 > event_config.spool_max_size {
+    if size > 0 && size + batch.len() as u64 > event_config.spool_max_size {
         compact(config, stream, event_config.spool_max_size / 2)?;
     }
 
     storage::append(
         &config.spool_dir(),
         &file_name(stream),
-        &record,
+        &batch,
         config.file_mode,
     )
     .with_context(|| format!("failed to spool events of event stream '{}'", stream))
 }
 
-/// Cut off a torn record at the end of the spool file `path`, left by a crash
+/// Cut off a torn batch at the end of the spool file `path`, left by a crash
 /// or a failed write during an append. Returns the size of the file after
 /// that, or 0 if it does not exist.
 ///
-/// Only the length prefixes are read: a record that reaches past the end of
+/// Only the length prefixes are read: a batch that reaches past the end of
 /// the file is torn.
 fn repair(path: &Path) -> Result<u64> {
     let file = match OpenOptions::new().read(true).write(true).open(path) {
@@ -83,7 +83,7 @@ fn repair(path: &Path) -> Result<u64> {
         .with_context(|| format!("failed to read the size of '{}'", path.display()))?
         .len();
 
-    // Jump from record to record by their length prefixes
+    // Jump from batch to batch by their length prefixes
     let mut pos = 0;
     while pos < size {
         // A length prefix is a varint of at most 10 bytes
@@ -105,7 +105,7 @@ fn repair(path: &Path) -> Result<u64> {
 
     if pos < size {
         log::warn!(
-            "Cut off a torn record of {} bytes at the end of '{}'",
+            "Cut off a torn batch of {} bytes at the end of '{}'",
             size - pos,
             path.display()
         );
@@ -141,22 +141,22 @@ pub fn record(config: &Config, stream: &str, callbacks: &Callbacks) -> Result<()
     Ok(())
 }
 
-/// Read the spool of event stream `stream`, oldest record first. Returns no
-/// records if the stream has no spool file.
+/// Read the spool of event stream `stream`, oldest batch first. Returns no
+/// batches if the stream has no spool file.
 pub fn read(config: &Config, stream: &str) -> Result<Vec<ProtoEvents>> {
     let Some(data) = storage::load(&config.spool_dir(), &file_name(stream))? else {
         return Ok(Vec::new());
     };
 
     let mut buf = data.as_slice();
-    let mut records = Vec::new();
+    let mut batches = Vec::new();
     while !buf.is_empty() {
         let remaining = buf.len();
         match ProtoEvents::decode_length_delimited(&mut buf) {
-            Ok(record) => records.push(record),
+            Ok(batch) => batches.push(batch),
             Err(e) => {
-                // A crash during an append can leave an incomplete record at
-                // the end. Keep the complete records before it.
+                // A crash during an append can leave an incomplete batch at
+                // the end. Keep the complete batches before it.
                 log::warn!(
                     "Dropped the last {} bytes of the spool of event stream '{}', which could not be decoded: {}",
                     remaining,
@@ -167,7 +167,7 @@ pub fn read(config: &Config, stream: &str) -> Result<Vec<ProtoEvents>> {
             }
         }
     }
-    Ok(records)
+    Ok(batches)
 }
 
 /// Remove the spool file of event stream `stream`. Does nothing if it does
@@ -177,7 +177,7 @@ pub fn remove(config: &Config, stream: &str) -> Result<()> {
 }
 
 /// Read the spool of every event stream in `config`, merged into one batch
-/// per stream, oldest first. Records with other field names than the stream
+/// per stream, oldest first. Batches with other field names than the stream
 /// has now are dropped. Streams without spooled events are left out. The
 /// spool is not removed, see [`clear`].
 pub fn take(config: &Config) -> Result<HashMap<String, ProtoEvents>> {
@@ -192,11 +192,11 @@ pub fn take(config: &Config) -> Result<HashMap<String, ProtoEvents>> {
             events: Vec::new(),
         };
         let mut dropped = 0;
-        for record in read(config, stream)? {
-            if record.field_names == merged.field_names {
-                merged.events.extend(record.events);
+        for batch in read(config, stream)? {
+            if batch.field_names == merged.field_names {
+                merged.events.extend(batch.events);
             } else {
-                dropped += record.events.len();
+                dropped += batch.events.len();
             }
         }
 
@@ -265,13 +265,13 @@ impl fmt::Display for Spool {
 /// Rewrite the spool of event stream `stream` with its newest events, as many
 /// as fit in about `budget` bytes.
 fn compact(config: &Config, stream: &str, budget: u64) -> Result<()> {
-    let mut records = read(config, stream)?;
+    let mut batches = read(config, stream)?;
 
-    // All events across the records, newest first
-    let newest_first = records
+    // All events across the batches, newest first
+    let newest_first = batches
         .iter()
         .rev()
-        .flat_map(|record| record.events.iter().rev());
+        .flat_map(|batch| batch.events.iter().rev());
 
     // Count the newest events that fit in the budget
     let mut size = 0;
@@ -285,16 +285,16 @@ fn compact(config: &Config, stream: &str, budget: u64) -> Result<()> {
     }
 
     // Drop the other events, oldest first.
-    let total: usize = records.iter().map(|record| record.events.len()).sum();
+    let total: usize = batches.iter().map(|batch| batch.events.len()).sum();
     let mut to_drop = total - keep;
-    for record in &mut records {
-        let n = to_drop.min(record.events.len());
-        record.events.drain(..n);
+    for batch in &mut batches {
+        let n = to_drop.min(batch.events.len());
+        batch.events.drain(..n);
         to_drop -= n;
     }
 
-    // Drop empty records as a result of dropping their events.
-    records.retain(|record| !record.events.is_empty());
+    // Drop empty batches as a result of dropping their events.
+    batches.retain(|batch| !batch.events.is_empty());
 
     log::warn!(
         "Spool of event stream '{}' exceeded spool-max-size, dropped the {} oldest events",
@@ -304,12 +304,12 @@ fn compact(config: &Config, stream: &str, budget: u64) -> Result<()> {
 
     let dir = config.spool_dir();
     let name = file_name(stream);
-    if records.is_empty() {
+    if batches.is_empty() {
         return storage::remove(&dir, &name, false);
     }
     let mut data = Vec::new();
-    for record in &records {
-        record
+    for batch in &batches {
+        batch
             .encode_length_delimited(&mut data)
             .context("failed to encode events")?;
     }
@@ -348,7 +348,7 @@ mod tests {
         }
     }
 
-    /// A record of `alerts` events, one per message.
+    /// A batch of `alerts` events, one per message.
     fn events(messages: &[&str]) -> ProtoEvents {
         ProtoEvents {
             field_names: vec!["message".to_string()],
@@ -391,7 +391,7 @@ mod tests {
     }
 
     #[test]
-    fn test_read_drops_an_incomplete_last_record() {
+    fn test_read_drops_an_incomplete_last_batch() {
         let dir = tempfile::tempdir().unwrap();
         let config = config(dir.path());
         let _lock = lock(&config).unwrap();
@@ -408,7 +408,7 @@ mod tests {
     }
 
     #[test]
-    fn test_append_cuts_off_a_torn_record() {
+    fn test_append_cuts_off_a_torn_batch() {
         let dir = tempfile::tempdir().unwrap();
         let config = config(dir.path());
         let _lock = lock(&config).unwrap();
@@ -466,7 +466,7 @@ mod tests {
         let first = ["event 0", "event 1", "event 2", "event 3", "event 4"];
         append(&config, "alerts", &events(&first)).unwrap();
 
-        // Seven events with their record overhead do not fit, so the spool is
+        // Seven events with their batch overhead do not fit, so the spool is
         // compacted before this append
         append(&config, "alerts", &events(&["event 5", "event 6"])).unwrap();
 

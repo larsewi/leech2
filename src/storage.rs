@@ -161,7 +161,7 @@ pub fn append(work_dir: &Path, name: &str, data: &[u8], mode: u32) -> Result<()>
 
     if let Err(e) = file.write_all(data) {
         // Remove the part that was written, so the next append does not
-        // follow an incomplete record.
+        // follow the partial write.
         if let Err(truncate_error) = file.set_len(previous_size) {
             log::warn!(
                 "Failed to truncate '{}' back to {} bytes: {}",
