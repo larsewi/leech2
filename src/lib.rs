@@ -465,7 +465,9 @@ pub unsafe extern "C" fn lch_buffer_free(buf: *mut FfiBuffer) {
 
 #[cfg(test)]
 mod tests {
-    use super::{FAILURE, ffi_guard, lch_log_init};
+    use super::{FAILURE, ffi_guard, lch_events_record, lch_log_init};
+    use crate::callbacks::Callbacks;
+    use crate::config::Config;
 
     #[test]
     fn ffi_guard_passes_through_normal_returns() {
@@ -482,5 +484,28 @@ mod tests {
     fn lch_log_init_rejects_null_callback() {
         let result = unsafe { lch_log_init(None, std::ptr::null_mut()) };
         assert_eq!(result, FAILURE);
+    }
+
+    #[test]
+    fn lch_events_record_rejects_null_arguments() {
+        let config = Config::default();
+        let stream = c"alerts".as_ptr();
+        let callbacks = Callbacks {
+            table_begin: None,
+            read_cell: None,
+            destroy_cell: None,
+            table_end: None,
+            usr_data: std::ptr::null_mut(),
+        };
+
+        // Each argument is NULL in turn, with the others valid
+        let results = unsafe {
+            [
+                lch_events_record(std::ptr::null(), stream, &callbacks),
+                lch_events_record(&config, std::ptr::null(), &callbacks),
+                lch_events_record(&config, stream, std::ptr::null()),
+            ]
+        };
+        assert_eq!(results, [FAILURE; 3]);
     }
 }
