@@ -11,7 +11,7 @@ use anyhow::{Context, Result, bail};
 use clap::CommandFactory;
 use tempfile::TempDir;
 
-use crate::cli;
+use crate::{cli, leech2_version};
 
 /// Regenerate every man page into `output_dir`, which is created if missing.
 pub fn generate(repo_root: &Path, output_dir: &Path) -> Result<()> {
@@ -138,23 +138,6 @@ fn set_title(roff: &str, title: &str) -> String {
         out.push('\n');
     }
     out
-}
-
-/// Read the `leech2` package version from the workspace `Cargo.toml`. xtask's
-/// own `CARGO_PKG_VERSION` is a placeholder, so the shipped version has to come
-/// from the root manifest.
-fn leech2_version(repo_root: &Path) -> Result<String> {
-    let manifest = repo_root.join("Cargo.toml");
-    let text = std::fs::read_to_string(&manifest)
-        .with_context(|| format!("failed to read '{}'", manifest.display()))?;
-    for line in text.lines() {
-        if let Some(rest) = line.strip_prefix("version = \"")
-            && let Some(version) = rest.strip_suffix('"')
-        {
-            return Ok(version.to_string());
-        }
-    }
-    bail!("no version found in {}", manifest.display())
 }
 
 /// The last commit's committer date, so the man page date matches the release

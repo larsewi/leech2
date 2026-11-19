@@ -82,6 +82,8 @@ a major other than the one declared.
      - macOS aarch64
      - Windows x86_64
      - Windows aarch64
+   - Generate the pkg-config files (`cargo xtask generate-pkg-config`) for the
+     `.deb` and `.rpm` packages
    - Package `.deb`, `.rpm` and `.msi` files for Linux and Windows targets
    - Create `.tar.gz` or `.zip` archives for all targets
    - Create a source tarball (`cargo package`, with the man pages added under

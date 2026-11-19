@@ -443,7 +443,7 @@ src/
 
 proto/          Protobuf definitions (compiled at build time by prost-build)
 include/        C header (leech2.h)
-leech2.pc.in    pkg-config template (version and libdir filled in by build.rs)
+leech2.pc.in    pkg-config template (version and libdir filled in by xtask)
 Doxyfile        Doxygen config for the libleech2 man pages (run via xtask)
 xtask/          Release-only tooling; `cargo xtask generate-man-pages <dir>`
                 renders lch.1 (+ a page per subcommand) from the clap CLI and
