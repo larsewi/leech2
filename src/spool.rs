@@ -9,6 +9,7 @@
 //! The other functions do not lock themselves, so call them with it held.
 
 use std::collections::{HashMap, HashSet};
+use std::fmt;
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
@@ -21,7 +22,7 @@ use crate::config::Config;
 use crate::event;
 use crate::proto::event::Events as ProtoEvents;
 use crate::storage;
-use crate::utils::{compute_hash, is_hex_hash};
+use crate::utils::{compute_hash, indent, is_hex_hash};
 
 /// The name of the spool file of event stream `stream`.
 fn file_name(stream: &str) -> String {
@@ -242,6 +243,23 @@ pub fn clear(config: &Config) -> Result<()> {
         storage::remove(&dir, name, config.dry_run)?;
     }
     Ok(())
+}
+
+/// The spooled events of every event stream, as the next block would get
+/// them. See [`take`].
+pub struct Spool(pub HashMap<String, ProtoEvents>);
+
+impl fmt::Display for Spool {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Spool ({} streams)", self.0.len())?;
+        if !self.0.is_empty() {
+            write!(f, ":")?;
+        }
+        for (stream, events) in &self.0 {
+            write!(f, "\n  '{}' {}", stream, indent(&events.to_string(), "  "))?;
+        }
+        Ok(())
+    }
 }
 
 /// Rewrite the spool of event stream `stream` with its newest events, as many

@@ -44,6 +44,11 @@ pub enum Cmd {
         #[command(subcommand)]
         command: StatsCmd,
     },
+    /// Operate on the spool
+    Spool {
+        #[command(subcommand)]
+        command: SpoolCmd,
+    },
 }
 
 #[derive(Subcommand)]
@@ -98,5 +103,11 @@ pub enum StateCmd {
 #[derive(Subcommand)]
 pub enum StatsCmd {
     /// Summarize the stats file
+    Show,
+}
+
+#[derive(Subcommand)]
+pub enum SpoolCmd {
+    /// Show the events spooled for the next block
     Show,
 }
