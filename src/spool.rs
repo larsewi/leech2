@@ -271,4 +271,30 @@ mod tests {
 
         assert_eq!(read(&config, "alerts").unwrap(), vec![events(&["one"])]);
     }
+
+    #[test]
+    fn test_compact_keeps_the_newest_events() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = config(dir.path());
+        let _lock = lock(&config).unwrap();
+        append(&config, "alerts", &events(&["event 0", "event 1"])).unwrap();
+        append(
+            &config,
+            "alerts",
+            &events(&["event 2", "event 3", "event 4"]),
+        )
+        .unwrap();
+
+        // All events have the same size, so the budget fits exactly four
+        let event_size = events(&["event 0"]).events[0].encoded_len() as u64;
+        compact(&config, "alerts", 4 * event_size).unwrap();
+
+        assert_eq!(
+            read(&config, "alerts").unwrap(),
+            vec![
+                events(&["event 1"]),
+                events(&["event 2", "event 3", "event 4"])
+            ]
+        );
+    }
 }
