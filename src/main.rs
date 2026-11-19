@@ -7,12 +7,13 @@ use clap::Parser;
 use leech2::block::Block;
 use leech2::cell::{Kind, parse_typed_cell};
 use leech2::config::Config;
+use leech2::spool::{self, Spool};
 use leech2::sql::InjectedField;
 use leech2::state::ProtoState;
 use leech2::utils::{GENESIS_HASH, format_timestamp};
 
 mod cli;
-use cli::{BlockCmd, Cli, Cmd, PatchCmd, StateCmd, StatsCmd};
+use cli::{BlockCmd, Cli, Cmd, PatchCmd, SpoolCmd, StateCmd, StatsCmd};
 
 const LEECH2_DIR: &str = ".leech2";
 const PATCH_FILE: &str = "PATCH";
@@ -277,6 +278,15 @@ fn cmd_state_show(config: &Config) -> Result<String> {
     Ok(state.to_string())
 }
 
+fn cmd_spool_show(config: &Config) -> Result<String> {
+    // Without a spool directory, no events were ever spooled. Do not create it.
+    if !config.spool_dir().exists() {
+        return Ok(Spool(Default::default()).to_string());
+    }
+    let _lock = spool::lock(config)?;
+    Ok(Spool(spool::load(config)?).to_string())
+}
+
 fn cmd_stats_show(config: &Config) -> Result<()> {
     match leech2::stats::summarize(config)? {
         Some(summary) => print_stdout(&summary.to_string()),
@@ -428,6 +438,15 @@ fn run(cli: Cli) -> Result<()> {
             let config = Config::load(&work_dir)?;
             match command {
                 StatsCmd::Show => cmd_stats_show(&config)?,
+            }
+        }
+        Cmd::Spool { command } => {
+            let config = Config::load(&work_dir)?;
+            match command {
+                SpoolCmd::Show => {
+                    let output = cmd_spool_show(&config)?;
+                    print_with_pager(&output)?;
+                }
             }
         }
     }

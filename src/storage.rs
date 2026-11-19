@@ -10,6 +10,8 @@
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
+#[cfg(unix)]
+use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
 use std::path::Path;
 
 use anyhow::{Context, Result, bail};
@@ -23,13 +25,23 @@ fn create_file(path: &Path, mode: u32) -> std::io::Result<File> {
     let mut options = OpenOptions::new();
     options.write(true).create(true).truncate(true);
     #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(mode);
-    }
+    options.mode(mode);
     #[cfg(not(unix))]
     let _ = mode;
     options.open(path)
+}
+
+/// Create the directory `path`, and any missing parents, with the Unix
+/// permission bits `mode`. Does nothing if it already exists. The mode is
+/// ignored on non-Unix platforms.
+pub fn create_dir(path: &Path, mode: u32) -> std::io::Result<()> {
+    let mut builder = fs::DirBuilder::new();
+    builder.recursive(true);
+    #[cfg(unix)]
+    builder.mode(mode);
+    #[cfg(not(unix))]
+    let _ = mode;
+    builder.create(path)
 }
 
 /// Name of the lock file in the state directory.
@@ -121,6 +133,47 @@ pub fn store(work_dir: &Path, name: &str, data: &[u8], mode: u32, dry_run: bool)
     }
 
     log::trace!("Stored {} bytes to '{}'", data.len(), path.display());
+    Ok(())
+}
+
+/// Appends data to a file in the work directory. If the file does not exist,
+/// it is created with the Unix permission bits `mode`. The mode is ignored on
+/// non-Unix platforms.
+///
+/// On a failed write (e.g. a full disk), the file is truncated back to its
+/// previous size. A crash during the write can still leave part of `data` at
+/// the end of the file.
+pub fn append(work_dir: &Path, name: &str, data: &[u8], mode: u32) -> Result<()> {
+    let path = work_dir.join(name);
+    let mut options = OpenOptions::new();
+    options.append(true).create(true);
+    #[cfg(unix)]
+    options.mode(mode);
+    #[cfg(not(unix))]
+    let _ = mode;
+    let mut file = options
+        .open(&path)
+        .with_context(|| format!("failed to open '{}' for appending", path.display()))?;
+    let previous_size = file
+        .metadata()
+        .with_context(|| format!("failed to read the size of '{}'", path.display()))?
+        .len();
+
+    if let Err(e) = file.write_all(data) {
+        // Remove the part that was written, so the next append does not
+        // follow the partial write.
+        if let Err(truncate_error) = file.set_len(previous_size) {
+            log::warn!(
+                "Failed to truncate '{}' back to {} bytes: {}",
+                path.display(),
+                previous_size,
+                truncate_error
+            );
+        }
+        return Err(e).with_context(|| format!("failed to append to '{}'", path.display()));
+    }
+
+    log::trace!("Appended {} bytes to '{}'", data.len(), path.display());
     Ok(())
 }
 

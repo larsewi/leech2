@@ -130,16 +130,18 @@ an event stream under `[events.X]`:
 
 ```toml
 [events.alerts]
-id-field = "eventid"  # column that receives each event's ID (required)
+id-field = "eventid"    # column that receives each event's ID (required)
+spool-max-size = "10M"  # largest size of the stream's spool (default: "10M")
 fields = [
     { name = "message",  type = "TEXT" },
     { name = "severity", type = "NUMBER" },
 ]
 ```
 
-- Events are pulled through the callbacks of `lch_block_create()` The callback
-  must only return events it has not returned before. Only mark events as
-  recorded once `lch_block_create()` succeeds.
+- Events are pulled through the callbacks of `lch_block_create()`, or ahead of
+  time by `lch_events_spool()` (see [Spool](#spool)). The callback must only
+  return events it has not returned before. Only mark events as handed over
+  once the call succeeds.
 - Each block stores the events supplied since the previous block. Events have
   no primary key and are never updated or deleted.
 - A patch carries the events of the blocks it covers. The receiver only inserts
@@ -152,6 +154,26 @@ fields = [
   reported; see [History truncation](#history-truncation)).
 - Retention on the receiver is up to you.
 - Event streams cannot be CSV-backed.
+
+### Spool
+
+`lch_events_spool()` pulls the new events of one event stream through the
+callbacks, so they can be handed over as they happen. They wait in the stream's
+spool, and the next `lch_block_create()` puts them into its block before the
+events its own callbacks return.
+
+- If `lch_events_spool()` fails, nothing was spooled.
+- Before the spool would grow past `spool-max-size`, its oldest events are
+  dropped down to half that size, with a warning. Events returned by the
+  callbacks of `lch_block_create()` are not limited.
+- Sizes are a number of bytes, with an optional `K`, `M` or `G` suffix in powers
+  of 1024.
+- Spooled events are dropped with a warning at the next block if their stream's
+  fields have changed in the config since, or the stream is no longer declared.
+- A crash during block creation can lose that block's spooled events, but never
+  ships them twice. Spooling does not sync to disk, so a power loss can lose the
+  latest events.
+- `lch spool show` prints what the next block would get from the spool.
 
 ## Change logs
 

@@ -1469,6 +1469,7 @@ mod tests {
                         },
                     ],
                     id_field: "eventid".to_string(),
+                    ..Default::default()
                 },
             )]),
             ..Default::default()

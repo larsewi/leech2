@@ -58,6 +58,35 @@ pub fn parse_duration(s: &str) -> Result<Duration> {
     Ok(Duration::from_secs(total_seconds))
 }
 
+/// Parse a size string into a number of bytes (e.g. `"10M"`). A number
+/// without a suffix is bytes. Supported suffixes: `K`, `M`, `G`, in powers
+/// of 1024.
+pub fn parse_size(s: &str) -> Result<u64> {
+    let multiplier: u64 = match s.chars().last() {
+        Some('K') => 1 << 10,
+        Some('M') => 1 << 20,
+        Some('G') => 1 << 30,
+        _ => 1,
+    };
+    let digits = if multiplier == 1 {
+        s
+    } else {
+        &s[..s.len() - 1]
+    };
+    if digits.is_empty() || !digits.chars().all(|c| c.is_ascii_digit()) {
+        bail!(
+            "invalid size '{}': expected digits with an optional K, M or G suffix",
+            s
+        );
+    }
+    let value: u64 = digits
+        .parse()
+        .map_err(|_| anyhow!("invalid size '{}'", s))?;
+    value
+        .checked_mul(multiplier)
+        .ok_or_else(|| anyhow!("size overflow in '{}'", s))
+}
+
 pub fn compute_hash(data: &[u8]) -> String {
     let mut hasher = Sha1::new();
     hasher.update(data);
@@ -255,6 +284,25 @@ mod tests {
     #[test]
     fn test_parse_duration_trailing_digits() {
         assert!(parse_duration("30").is_err());
+    }
+
+    #[test]
+    fn test_parse_size() {
+        assert_eq!(parse_size("0").unwrap(), 0);
+        assert_eq!(parse_size("512").unwrap(), 512);
+        assert_eq!(parse_size("4K").unwrap(), 4 * 1024);
+        assert_eq!(parse_size("10M").unwrap(), 10 * 1024 * 1024);
+        assert_eq!(parse_size("2G").unwrap(), 2 * 1024 * 1024 * 1024);
+    }
+
+    #[test]
+    fn test_parse_size_invalid() {
+        for s in ["", "M", "10X", "1.5M", "-1", "+5", " 5", "10m", "10MB"] {
+            assert!(parse_size(s).is_err(), "accepted '{s}'");
+        }
+        // Too large for u64
+        assert!(parse_size("99999999999999999999").is_err());
+        assert!(parse_size("17179869184G").is_err());
     }
 
     #[test]

@@ -9,11 +9,15 @@ use std::time::Duration;
 use anyhow::{Context, Result, bail};
 
 use crate::cell::{Cell, Kind};
-use crate::utils::{parse_duration, parse_file_mode, validate_name};
+use crate::storage;
+use crate::utils::{parse_duration, parse_file_mode, parse_size, validate_name};
 
 /// Subdirectory of the work directory where state files live when `state-dir`
 /// is not set in the config.
 const STATE_SUBDIR: &str = "state";
+
+/// Subdirectory of the state directory where the spool files live.
+const SPOOL_SUBDIR: &str = "spool";
 
 /// Post-deserialize semantic checks for config structs (cross-field
 /// invariants, value ranges, etc.) that serde can't express on its own.
@@ -59,6 +63,16 @@ where
         .transpose()
 }
 
+// Custom deserializer for a size: reads the field as a string and parses it
+// via `parse_size`, so an invalid size fails config loading.
+fn deserialize_size<'de, D>(deserializer: D) -> Result<u64, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let raw = String::deserialize(deserializer)?;
+    parse_size(&raw).map_err(serde::de::Error::custom)
+}
+
 /// Default Unix permission bits for files created in the work directory.
 /// Secure-by-default: only the owner can read or write.
 fn default_file_mode() -> u32 {
@@ -69,6 +83,11 @@ fn default_file_mode() -> u32 {
 /// Secure-by-default: only the owner can read, write, or traverse it.
 fn default_dir_mode() -> u32 {
     0o700
+}
+
+/// Default `spool-max-size` of an event stream: 10 MiB.
+fn default_spool_max_size() -> u64 {
+    10 << 20
 }
 
 /// Serde default for boolean options that are enabled unless turned off.
@@ -442,6 +461,7 @@ impl LogConfig {
         EventConfig {
             fields: event_fields,
             id_field: self.id_field.clone(),
+            ..Default::default()
         }
     }
 }
@@ -551,6 +571,15 @@ pub struct EventConfig {
     /// that stored the event and the event's position in that block.
     #[serde(rename = "id-field")]
     pub id_field: String,
+    /// Largest size in bytes of the stream's spool file (e.g. `"10M"`), where
+    /// recorded events wait for the next block. Above it, the oldest events
+    /// are dropped.
+    #[serde(
+        default = "default_spool_max_size",
+        rename = "spool-max-size",
+        deserialize_with = "deserialize_size"
+    )]
+    pub spool_max_size: u64,
 }
 
 impl Validate for EventConfig {
@@ -575,7 +604,21 @@ impl Validate for EventConfig {
             bail!("id-field '{}' collides with a field", self.id_field);
         }
 
+        if self.spool_max_size == 0 {
+            bail!("spool-max-size must be > 0");
+        }
+
         Ok(())
+    }
+}
+
+impl Default for EventConfig {
+    fn default() -> Self {
+        Self {
+            fields: Vec::new(),
+            id_field: String::new(),
+            spool_max_size: default_spool_max_size(),
+        }
     }
 }
 
@@ -777,22 +820,31 @@ impl Config {
         }
     }
 
+    /// Directory holding the spool files.
+    pub fn spool_dir(&self) -> PathBuf {
+        self.state_dir().join(SPOOL_SUBDIR)
+    }
+
     /// Resolve the state directory (see [`Config::state_dir`]) and create it,
     /// and any missing parents, with the configured `dir-mode`. Idempotent, so
     /// callers can invoke it before any state I/O without checking first.
     pub fn ensure_state_dir(&self) -> Result<PathBuf> {
         let state_dir = self.state_dir();
-        let mut builder = fs::DirBuilder::new();
-        builder.recursive(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::DirBuilderExt;
-            builder.mode(self.dir_mode);
-        }
-        builder.create(&state_dir).with_context(|| {
+        storage::create_dir(&state_dir, self.dir_mode).with_context(|| {
             format!("failed to create state directory '{}'", state_dir.display())
         })?;
         Ok(state_dir)
+    }
+
+    /// Resolve the spool directory (see [`Config::spool_dir`]) and create it,
+    /// and any missing parents, with the configured `dir-mode`. Idempotent,
+    /// like [`Config::ensure_state_dir`].
+    pub fn ensure_spool_dir(&self) -> Result<PathBuf> {
+        let spool_dir = self.spool_dir();
+        storage::create_dir(&spool_dir, self.dir_mode).with_context(|| {
+            format!("failed to create spool directory '{}'", spool_dir.display())
+        })?;
+        Ok(spool_dir)
     }
 
     pub fn load(work_dir: &Path) -> Result<Config> {
@@ -1762,6 +1814,24 @@ fields = [{ name = "id", type = "NUMBER", primary-key = true }]
 "#;
         let msg = load_events_error("", table);
         assert!(msg.contains("also declared as a table"), "got: {msg}");
+    }
+
+    #[test]
+    fn test_events_spool_max_size() {
+        let config = load_with_events("", "").unwrap();
+        assert_eq!(config.events["alerts"].spool_max_size, 10 * 1024 * 1024);
+
+        let config = load_with_events("spool-max-size = \"512K\"", "").unwrap();
+        assert_eq!(config.events["alerts"].spool_max_size, 512 * 1024);
+    }
+
+    #[test]
+    fn test_events_reject_invalid_spool_max_size() {
+        let msg = load_events_error("spool-max-size = \"0\"", "");
+        assert!(msg.contains("spool-max-size must be > 0"), "got: {msg}");
+
+        let msg = load_events_error("spool-max-size = \"10X\"", "");
+        assert!(msg.contains("invalid size '10X'"), "got: {msg}");
     }
 
     fn field(name: &str, kind: Kind, primary_key: bool) -> FieldConfig {
