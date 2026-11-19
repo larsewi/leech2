@@ -496,4 +496,24 @@ mod tests {
 
         assert!(!config.spool_dir().join(file_name("alerts")).exists());
     }
+
+    #[test]
+    fn test_block_creation_drops_events_after_a_layout_change() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = config(dir.path());
+        // Recorded when the stream had another field
+        let old_layout = ProtoEvents {
+            field_names: vec!["text".to_string()],
+            ..events(&["spooled"])
+        };
+        {
+            let _lock = lock(&config).unwrap();
+            append(&config, "alerts", &old_layout).unwrap();
+        }
+
+        let hash = Block::create(&config, Some(&callbacks())).unwrap();
+
+        let block = Block::load(&config.state_dir(), &hash).unwrap();
+        assert_eq!(block.events["alerts"], events(&["disk full"]));
+    }
 }
