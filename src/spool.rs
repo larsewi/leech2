@@ -189,10 +189,12 @@ mod tests {
     use super::*;
 
     use std::collections::HashMap;
+    use std::ffi::{c_char, c_void};
     use std::path::Path;
 
     use crate::cell::{Cell, Kind};
     use crate::config::{EventConfig, FieldConfig};
+    use crate::ffi::{END_OF_TABLE, FfiCell, FfiCellPayload, SUCCESS, VALUE_TEXT};
     use crate::proto::event::Event as ProtoEvent;
 
     /// A config in `dir` with an `alerts` event stream of one TEXT field.
@@ -347,5 +349,47 @@ mod tests {
 
         // Removing a spool that does not exist is not an error
         remove(&config, "alerts").unwrap();
+    }
+
+    /// Serves one event, "disk full", then ends the stream.
+    unsafe extern "C" fn read_one_event(
+        _table: *const c_char,
+        row: usize,
+        _col: usize,
+        _field: *const c_char,
+        out_cell: *mut FfiCell,
+        _usr_data: *mut c_void,
+    ) -> i32 {
+        if row > 0 {
+            return END_OF_TABLE;
+        }
+        let cell = FfiCell {
+            kind: VALUE_TEXT,
+            payload: FfiCellPayload {
+                text: c"disk full".as_ptr(),
+            },
+        };
+        unsafe { *out_cell = cell };
+        SUCCESS
+    }
+
+    #[test]
+    fn test_record_spools_events() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = config(dir.path());
+        let callbacks = Callbacks {
+            table_begin: None,
+            read_cell: Some(read_one_event),
+            destroy_cell: None,
+            table_end: None,
+            usr_data: std::ptr::null_mut(),
+        };
+
+        record(&config, "alerts", &callbacks).unwrap();
+
+        assert_eq!(
+            read(&config, "alerts").unwrap(),
+            vec![events(&["disk full"])]
+        );
     }
 }
