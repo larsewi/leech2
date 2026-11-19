@@ -52,23 +52,33 @@ pub fn load(
                 name
             );
         };
-        let field_names: Vec<&str> = event_config
-            .fields
-            .iter()
-            .map(|field| field.name.as_str())
-            .collect();
-        let events = callbacks.with_table(name, &field_names, |bound| {
-            load_from_callbacks(name, event_config, bound)
-        })?;
-        match events {
-            Some(events) if !events.events.is_empty() => {
-                all_events.insert(name.clone(), events);
-            }
-            // No events, or table_begin reported the stream empty
-            _ => {}
+        if let Some(events) = load_stream(name, event_config, callbacks)? {
+            all_events.insert(name.clone(), events);
         }
     }
     Ok(all_events)
+}
+
+/// Pull the new events of event stream `name` through `callbacks`. Returns
+/// `None` if the stream has no new events.
+pub fn load_stream(
+    name: &str,
+    config: &EventConfig,
+    callbacks: &Callbacks,
+) -> Result<Option<ProtoEvents>> {
+    let field_names: Vec<&str> = config
+        .fields
+        .iter()
+        .map(|field| field.name.as_str())
+        .collect();
+    let events = callbacks.with_table(name, &field_names, |bound| {
+        load_from_callbacks(name, config, bound)
+    })?;
+    match events {
+        Some(events) if !events.events.is_empty() => Ok(Some(events)),
+        // No events, or table_begin reported the stream empty
+        _ => Ok(None),
+    }
 }
 
 /// Read rows from `callbacks` until the end of the stream. Each row is one
