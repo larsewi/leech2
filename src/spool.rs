@@ -183,3 +183,60 @@ fn compact(config: &Config, stream: &str, budget: u64) -> Result<()> {
     }
     storage::store(&dir, &name, &data, config.file_mode, false)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use std::collections::HashMap;
+    use std::path::Path;
+
+    use crate::cell::{Cell, Kind};
+    use crate::config::{EventConfig, FieldConfig};
+    use crate::proto::event::Event as ProtoEvent;
+
+    /// A config in `dir` with an `alerts` event stream of one TEXT field.
+    fn config(dir: &Path) -> Config {
+        let event_config = EventConfig {
+            fields: vec![FieldConfig {
+                name: "message".to_string(),
+                kind: Kind::Text,
+                ..Default::default()
+            }],
+            id_field: "eventid".to_string(),
+            ..Default::default()
+        };
+        Config {
+            work_dir: dir.to_path_buf(),
+            events: HashMap::from([("alerts".to_string(), event_config)]),
+            ..Default::default()
+        }
+    }
+
+    /// A record of `alerts` events, one per message.
+    fn events(messages: &[&str]) -> ProtoEvents {
+        ProtoEvents {
+            field_names: vec!["message".to_string()],
+            events: messages
+                .iter()
+                .map(|message| ProtoEvent {
+                    values: vec![Cell::Text(message.to_string()).into()],
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn test_read_returns_appended_events() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = config(dir.path());
+        let _lock = lock(&config).unwrap();
+
+        append(&config, "alerts", &events(&["disk full", "out of memory"])).unwrap();
+
+        assert_eq!(
+            read(&config, "alerts").unwrap(),
+            vec![events(&["disk full", "out of memory"])]
+        );
+    }
+}
