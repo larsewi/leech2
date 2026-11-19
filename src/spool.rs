@@ -297,4 +297,28 @@ mod tests {
             ]
         );
     }
+
+    #[test]
+    fn test_append_compacts_past_spool_max_size() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut config = config(dir.path());
+        // Room for eight events, so compaction keeps four
+        let event_size = events(&["event 0"]).events[0].encoded_len() as u64;
+        config.events.get_mut("alerts").unwrap().spool_max_size = 8 * event_size;
+        let _lock = lock(&config).unwrap();
+        let first = ["event 0", "event 1", "event 2", "event 3", "event 4"];
+        append(&config, "alerts", &events(&first)).unwrap();
+
+        // Seven events with their record overhead do not fit, so the spool is
+        // compacted before this append
+        append(&config, "alerts", &events(&["event 5", "event 6"])).unwrap();
+
+        assert_eq!(
+            read(&config, "alerts").unwrap(),
+            vec![
+                events(&["event 1", "event 2", "event 3", "event 4"]),
+                events(&["event 5", "event 6"])
+            ]
+        );
+    }
 }
