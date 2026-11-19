@@ -215,8 +215,8 @@ extern void lch_deinit(lch_config_t *cfg);
  * @return LCH_SUCCESS to proceed to pulling cells from this table.
  *         LCH_END_OF_TABLE to report the table as empty. No cells are pulled,
  *         and table_end is NOT invoked.
- *         LCH_FAILURE to abort block creation immediately. table_end is NOT
- *         invoked when begin returns failure.
+ *         LCH_FAILURE to abort lch_block_create() or lch_events_record()
+ *         immediately. table_end is NOT invoked when begin returns failure.
  */
 typedef int (*lch_table_begin_cb_t)(const char *table, void *usr_data);
 
@@ -234,8 +234,8 @@ typedef int (*lch_table_begin_cb_t)(const char *table, void *usr_data);
  *                  the callback implementation must track that state itself
  *                  via this pointer (for example by setting a flag).
  * @return LCH_SUCCESS to indicate teardown completed.
- *         LCH_FAILURE makes lch_block_create return LCH_FAILURE even if
- *         iteration up to this point succeeded.
+ *         LCH_FAILURE makes lch_block_create() or lch_events_record() return
+ *         LCH_FAILURE even if iteration up to this point succeeded.
  */
 typedef int (*lch_table_end_cb_t)(const char *table, void *usr_data);
 
@@ -244,7 +244,8 @@ typedef int (*lch_table_end_cb_t)(const char *table, void *usr_data);
  *
  * For a table, the rows are the table's current contents. For an event
  * stream, each row is one event, and the rows must only be events that no
- * earlier successful lch_block_create() call has received.
+ * earlier successful lch_block_create() or lch_events_record() call has
+ * received.
  *
  * Iteration contract:
  *   - Rows are requested in ascending order, starting from row == 0.
@@ -253,7 +254,7 @@ typedef int (*lch_table_end_cb_t)(const char *table, void *usr_data);
  *     random access by @p col or @p field_name.
  *   - A table is fully drained before any other table is processed, and the
  *     callback is invoked exclusively on the thread that called
- *     lch_block_create().
+ *     lch_block_create() or lch_events_record().
  *
  * LCH_END_OF_TABLE / LCH_SKIP_RECORD on any cell short-circuits the rest
  * of the row: leech2 won't ask for the remaining cells, and any cells
@@ -279,7 +280,8 @@ typedef int (*lch_table_end_cb_t)(const char *table, void *usr_data);
  *         LCH_SKIP_RECORD     Drop the current row; leech2 does not ask for
  *                             any remaining fields of this row and advances
  *                             to row + 1. May be returned from any column.
- *         LCH_FAILURE         Unrecoverable error; block creation aborts.
+ *         LCH_FAILURE         Unrecoverable error; lch_block_create() or
+ *                             lch_events_record() aborts.
  */
 typedef int (*lch_read_cell_cb_t)(const char *table, size_t row, size_t col,
                                   const char *field_name, lch_cell_t *out_cell,
@@ -306,8 +308,8 @@ typedef int (*lch_read_cell_cb_t)(const char *table, size_t row, size_t col,
 typedef void (*lch_destroy_cell_cb_t)(lch_cell_t *cell, void *usr_data);
 
 /**
- * @brief Callback bundle passed to lch_block_create() for callback-backed
- * tables and event streams.
+ * @brief Callback bundle passed to lch_block_create() and lch_events_record()
+ * for callback-backed tables and event streams.
  *
  * Initialize with designated initializers (e.g. `.read_cell = my_read_cell`)
  * rather than positional ones, so optional fields added in future releases
@@ -346,7 +348,8 @@ typedef struct {
  * The block also stores the new events of every event stream declared under
  * [events.X], pulled through the callback bundle. Treat the events as handed
  * over only when this call returns LCH_SUCCESS; on failure, return them again
- * on the next call.
+ * on the next call. Events recorded with lch_events_record() since the
+ * previous block go in before them.
  *
  * @param cfg        Valid config handle (must not be NULL).
  * @param callbacks  Optional callback bundle. May be NULL when every table
@@ -356,6 +359,27 @@ typedef struct {
  */
 extern int lch_block_create(const lch_config_t *cfg,
                             const lch_callbacks_t *callbacks);
+
+/**
+ * @brief Record the new events of an event stream, without creating a block.
+ *
+ * Pulls the new events of event stream @p stream through the callback bundle,
+ * like lch_block_create() does, and spools them in the state directory. The
+ * next lch_block_create() call puts them in its block. Treat the events as
+ * handed over only when this call returns LCH_SUCCESS; on failure, nothing
+ * was spooled, so return them again on the next call.
+ *
+ * Each event stream's spool is bounded by its spool-max-size setting. When
+ * it grows past that, the oldest events are dropped.
+ *
+ * @param cfg        Valid config handle (must not be NULL).
+ * @param stream     Null-terminated name of an event stream declared under
+ *                   [events.X] (must not be NULL).
+ * @param callbacks  Callback bundle (must not be NULL).
+ * @return LCH_SUCCESS on success, LCH_FAILURE on error.
+ */
+extern int lch_events_record(const lch_config_t *cfg, const char *stream,
+                             const lch_callbacks_t *callbacks);
 
 /**
  * @brief Create a patch from HEAD back to a known hash.

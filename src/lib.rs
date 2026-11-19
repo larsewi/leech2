@@ -156,6 +156,41 @@ pub unsafe extern "C" fn lch_block_create(
 
 /// # Safety
 /// `config` must be a valid, non-null pointer returned by `lch_init`.
+/// `stream` must be a valid, non-null, null-terminated C string.
+/// `callbacks` must be a valid, non-null pointer to an `lch_callbacks_t`
+/// whose function pointers (if non-NULL) are valid `extern "C"` functions
+/// and whose `usr_data` pointer remains valid for the duration of the call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn lch_events_record(
+    config: *const config::Config,
+    stream: *const c_char,
+    callbacks: *const callbacks::Callbacks,
+) -> i32 {
+    ffi_guard("lch_events_record", FAILURE, || {
+        if null_arg("lch_events_record", "config", config) {
+            return FAILURE;
+        }
+        let Some(stream) = (unsafe { cstr_arg("lch_events_record", "stream", stream) }) else {
+            return FAILURE;
+        };
+        if null_arg("lch_events_record", "callbacks", callbacks) {
+            return FAILURE;
+        }
+
+        let config = unsafe { &*config };
+        let callbacks = unsafe { &*callbacks };
+        match spool::record(config, &stream, callbacks) {
+            Ok(()) => SUCCESS,
+            Err(e) => {
+                log::error!("lch_events_record(): {:#}", e);
+                FAILURE
+            }
+        }
+    })
+}
+
+/// # Safety
+/// `config` must be a valid, non-null pointer returned by `lch_init`.
 /// `last_known` must be a valid, null-terminated C string, or NULL.
 /// If NULL, the REPORTED hash is used; if REPORTED does not exist, genesis is used.
 /// `out` must be a valid, non-null pointer to an `lch_buffer_t`.
