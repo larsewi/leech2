@@ -321,4 +321,17 @@ mod tests {
             ]
         );
     }
+
+    #[test]
+    fn test_compact_removes_the_file_when_nothing_fits() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = config(dir.path());
+        let _lock = lock(&config).unwrap();
+        append(&config, "alerts", &events(&["disk full"])).unwrap();
+
+        compact(&config, "alerts", 1).unwrap();
+
+        assert!(!config.spool_dir().join(file_name("alerts")).exists());
+        assert!(read(&config, "alerts").unwrap().is_empty());
+    }
 }
