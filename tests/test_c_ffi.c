@@ -188,7 +188,16 @@ int main(int argc, const char *argv[]) {
       .usr_data = &cb_state,
   };
 
-  int ret = lch_block_create(cfg, &callbacks);
+  /* Spool the events of the event stream. The next block holds them before
+   * the events it pulls itself. */
+  int ret = lch_events_record(cfg, "alerts", &callbacks);
+  if (ret == LCH_FAILURE) {
+    fprintf(stderr, "lch_events_record failed\n");
+    lch_deinit(cfg);
+    return EXIT_FAILURE;
+  }
+
+  ret = lch_block_create(cfg, &callbacks);
   if (ret == LCH_FAILURE) {
     fprintf(stderr, "lch_block_create failed\n");
     lch_deinit(cfg);
@@ -209,9 +218,10 @@ int main(int argc, const char *argv[]) {
     lch_deinit(cfg);
     return EXIT_FAILURE;
   }
-  /* The event stream went through the same begin/end lifecycle. */
-  if (cb_state.alerts_begin_count != 1 || cb_state.alerts_end_count != 1) {
-    fprintf(stderr, "expected 1 alerts begin and end, got %d and %d\n",
+  /* The event stream went through the same begin/end lifecycle, once when
+   * recorded and once during block creation. */
+  if (cb_state.alerts_begin_count != 2 || cb_state.alerts_end_count != 2) {
+    fprintf(stderr, "expected 2 alerts begin and end, got %d and %d\n",
             cb_state.alerts_begin_count, cb_state.alerts_end_count);
     lch_deinit(cfg);
     return EXIT_FAILURE;

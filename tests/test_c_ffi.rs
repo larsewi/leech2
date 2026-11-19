@@ -2,6 +2,10 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::OnceLock;
 
+use leech2::block::Block;
+use leech2::config::Config;
+use leech2::head;
+
 fn project_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
@@ -195,6 +199,14 @@ fn test_c_ffi() {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr),
     );
+
+    // The C test recorded two events and then created a block, which pulled
+    // the same two events again. So the block holds four.
+    let config = Config::load(tmp.path()).unwrap();
+    let state_dir = config.state_dir();
+    let hash = head::load(&state_dir).unwrap();
+    let block = Block::load(&state_dir, &hash).unwrap();
+    assert_eq!(block.events["alerts"].events.len(), 4);
 }
 
 #[test]
