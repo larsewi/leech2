@@ -187,10 +187,9 @@ state lives and **work directory** for where the config lives.
 
 ### Spool
 
-The events handed over with `lch_events_spool()` that wait for the next block,
-one file per event stream in the `spool` subdirectory of the **state
-directory**. Each file holds the **batches** of its stream. Use **spool** for
-events waiting for a block.
+Events handed over with `lch_events_spool()` that wait for the next block. Each
+event stream has one file of **batches** in the `spool` subdirectory of the
+**state directory**.
 
 ### Fragment
 

@@ -158,25 +158,22 @@ fields = [
 ### Spool
 
 `lch_events_spool()` pulls the new events of one event stream through the
-callbacks and keeps them in the stream's spool until the next block. Use it to
-hand over events as they happen, instead of holding them until the next block.
+callbacks, so they can be handed over as they happen. They wait in the stream's
+spool, and the next `lch_block_create()` puts them into its block before the
+events its own callbacks return.
 
-- The next `lch_block_create()` puts the spooled events into its block, before
-  the events its own callbacks return.
 - If `lch_events_spool()` fails, nothing was spooled.
-- When spooling would grow the spool past `spool-max-size`, the oldest events
-  are dropped first, until the spool is at half of `spool-max-size`. A warning
-  says how many were dropped. Events returned by the callbacks of
-  `lch_block_create()` go straight into the block and are not limited.
+- Before the spool would grow past `spool-max-size`, its oldest events are
+  dropped down to half that size, with a warning. Events returned by the
+  callbacks of `lch_block_create()` are not limited.
 - Sizes are a number of bytes, with an optional `K`, `M` or `G` suffix in powers
   of 1024.
-- If the stream's fields in the config have changed since its events were
-  spooled, those events are dropped at the next block, with a warning. So are
-  the spooled events of a stream that is no longer declared in the config.
-- A crash during block creation can lose the spooled events of that block, but
-  never ships them twice. Spooling does not sync to disk, so a power loss can
-  lose recently spooled events.
-- `lch spool show` prints the events the next block would get from the spool.
+- Spooled events are dropped with a warning at the next block if their stream's
+  fields have changed in the config since, or the stream is no longer declared.
+- A crash during block creation can lose that block's spooled events, but never
+  ships them twice. Spooling does not sync to disk, so a power loss can lose the
+  latest events.
+- `lch spool show` prints what the next block would get from the spool.
 
 ## Change logs
 

@@ -120,13 +120,13 @@ Each block stores the events supplied since the previous block as they are,
 including the first block of a chain: events are new data rather than a diff,
 and they never go into the STATE file.
 
-Events spooled with `lch_events_spool()` since the previous block go into the
-block before the events from the callbacks (see [Spool](#spool)). `commit()`
-adds them under the locks, so no event can be spooled between reading the spool
-and removing it. Batches spooled with other fields than the stream has now are
-dropped, and so are the spool files of streams that are no longer declared. The
-spool is removed after the block and STATE are stored, but before HEAD moves. A
-crash in between loses the spooled events instead of shipping them twice.
+Events spooled since the previous block go in before the events from the
+callbacks (see [Spool](#spool)). `commit()` reads the spool under the locks, so
+nothing can be spooled between reading and removing it. Batches with other
+fields than the stream has now are dropped, and so are the spool files of
+undeclared streams. The spool is removed after the block and STATE are stored,
+but before HEAD moves, so a crash in between loses the spooled events instead of
+shipping them twice.
 
 Before computing deltas, the library detects field layout changes by comparing
 each table's stored fields in the STATE file against the current config's
@@ -333,13 +333,12 @@ Before appending, `spool::append()` walks the length prefixes and cuts off a
 torn batch at the end, left by a crash or a failed write. Otherwise the new
 batch would follow it, and reading would drop both. If the new batch would make
 the file larger than `spool-max-size`, the file is compacted first: the newest
-events that fit in half of `spool-max-size` are written to a temporary file,
-which is renamed over the spool file. Compacting first means a failed
-compaction spools nothing. Shrinking to half keeps the rewrite rare.
+events that fit in half of that size are written to a temporary file, which is
+renamed over the spool file. So a failed compaction spools nothing, and
+shrinking to half keeps the rewrite rare.
 
-Truncation only looks at the top level of the state directory, so it leaves the
-spool alone. Instead, block creation removes the temp files that compactions
-left in the spool by crashing before renaming them into place.
+Truncation only looks at the top level of the state directory. Block creation
+removes the temp files that crashed compactions leave in `spool/`.
 
 ### Locking
 
