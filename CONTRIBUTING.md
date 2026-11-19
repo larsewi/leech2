@@ -120,6 +120,14 @@ Each block stores the events supplied since the previous block as they are,
 including the first block of a chain: events are new data rather than a diff,
 and they never go into the STATE file.
 
+Events spooled with `lch_events_spool()` since the previous block go into the
+block before the events from the callbacks (see [Spool](#spool)). `commit()`
+adds them under the locks, so no event can be spooled between reading the spool
+and removing it. Batches spooled with other fields than the stream has now are
+dropped, and so are the spool files of streams that are no longer declared. The
+spool is removed after the block and STATE are stored, but before HEAD moves. A
+crash in between loses the spooled events instead of shipping them twice.
+
 Before computing deltas, the library detects field layout changes by comparing
 each table's stored fields in the STATE file against the current config's
 canonical field list (primary keys first, then subsidiaries; each group sorted
@@ -312,6 +320,26 @@ returns. It also deletes the per-file `.<name>.lock` and `.chain.lock` files
 left by older versions, and the `<hash>.tmp` files left by block writes that
 crashed before renaming them into place.
 
+### Spool
+
+Each event stream has a spool file in the `spool` subdirectory of the state
+directory, named by the SHA-1 hash of the stream name, since stream names may
+contain characters that file names cannot. The file holds length-delimited
+`event.Events` batches, one per `lch_events_spool()` call, oldest first.
+Spooling appends a batch at the end of the file without rewriting it, and
+without syncing it to disk.
+
+Before appending, `spool::append()` walks the length prefixes and cuts off a
+torn batch at the end, left by a crash or a failed write. Otherwise the new
+batch would follow it, and reading would drop both. If the new batch would make
+the file larger than `spool-max-size`, the file is compacted first: the newest
+events that fit in half of `spool-max-size` are written to a temporary file,
+which is renamed over the spool file. Compacting first means a failed
+compaction spools nothing. Shrinking to half keeps the rewrite rare.
+
+Truncation only looks at the top level of the state directory, so it leaves the
+spool alone.
+
 ### Locking
 
 Access to the state directory is serialized by a single advisory lock on its
@@ -327,6 +355,13 @@ block under an exclusive lock. Under that lock, it checks that `HEAD` is still
 the parent it built the block on. If another block was created in the meantime,
 the block is discarded and the call fails, so of two concurrent block creations
 only one succeeds.
+
+The spool has its own lock on `spool/.lock`, which is always exclusive.
+Spooling takes only the spool lock, so it never waits for patch creation, which
+holds the state directory lock for its whole duration. Block creation takes the
+spool lock while it holds the exclusive state directory lock, always in that
+order, so the two cannot deadlock. The callbacks run before either lock is
+taken.
 
 ### Recovery from missing files
 
@@ -375,6 +410,8 @@ src/
   state.rs      Snapshot of all tables, protobuf persistence
   event.rs      Event stream loading (callback path) and collecting events
                 for patches
+  spool.rs      Event spool: spooling, compaction, and reading for block
+                creation
   changelog.rs  Recording a table's changes as change log events
   cell.rs       Domain Cell type + conversions to/from proto::cell::Cell
   record.rs     Record type (Vec<Cell> key + value)
@@ -430,6 +467,7 @@ option):
 | `STATE`    | Protobuf-encoded snapshot of all tables, and the block it belongs to |
 | `PATCH`    | Last generated patch (CLI only)                                      |
 | `STATS`    | Cumulative JSON patch-creation stats (opt-in via `[stats]`)          |
+| `spool/`   | Spooled events: one file per event stream, plus the spool's `.lock`  |
 | `<sha1>`   | Protobuf-encoded block files, named by their hash                    |
 | `.lock`    | Lock file for inter-process synchronization (created automatically)  |
 | `*.tmp`    | Temporary files used during atomic writes (should not persist)       |
