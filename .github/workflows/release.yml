@@ -136,6 +136,10 @@ jobs:
           name: man-pages
           path: target/${{ matrix.target }}/release/man
 
+      - name: Generate pkg-config files
+        if: runner.os == 'Linux'
+        run: cargo xtask generate-pkg-config target/${{ matrix.target }}/release
+
       - name: Package .deb
         if: runner.os == 'Linux'
         run: |
