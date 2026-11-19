@@ -215,7 +215,7 @@ pub fn take(config: &Config) -> Result<HashMap<String, ProtoEvents>> {
 }
 
 /// Remove the spool files of all event streams, including the streams that
-/// are no longer declared.
+/// are no longer declared, and the temp files of crashed compactions.
 pub fn clear(config: &Config) -> Result<()> {
     let dir = config.spool_dir();
     let declared: HashSet<String> = config
@@ -230,6 +230,11 @@ pub fn clear(config: &Config) -> Result<()> {
         let Some(name) = name.to_str() else {
             continue;
         };
+        // Left by a compaction that crashed before renaming it into place
+        if name.strip_suffix(".tmp").is_some_and(is_hex_hash) {
+            storage::remove(&dir, name, config.dry_run)?;
+            continue;
+        }
         if !is_hex_hash(name) {
             // Not a spool file, e.g. the lock file
             continue;
