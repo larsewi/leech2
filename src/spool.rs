@@ -390,6 +390,28 @@ mod tests {
     }
 
     #[test]
+    fn test_append_cuts_off_a_torn_record() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = config(dir.path());
+        let _lock = lock(&config).unwrap();
+        append(&config, "alerts", &events(&["one"])).unwrap();
+        append(&config, "alerts", &events(&["two"])).unwrap();
+
+        // Cut off the last byte, like a crash during the second append
+        let path = config.spool_dir().join(file_name("alerts"));
+        let file = std::fs::OpenOptions::new().write(true).open(&path).unwrap();
+        let size = file.metadata().unwrap().len();
+        file.set_len(size - 1).unwrap();
+
+        append(&config, "alerts", &events(&["three"])).unwrap();
+
+        assert_eq!(
+            read(&config, "alerts").unwrap(),
+            vec![events(&["one"]), events(&["three"])]
+        );
+    }
+
+    #[test]
     fn test_compact_keeps_the_newest_events() {
         let dir = tempfile::tempdir().unwrap();
         let config = config(dir.path());
