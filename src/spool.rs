@@ -625,6 +625,24 @@ mod tests {
     }
 
     #[test]
+    fn test_block_creation_removes_temp_files_of_compactions() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = config(dir.path());
+        // Left by a compaction that crashed before renaming it into place
+        let temp_file = config
+            .spool_dir()
+            .join(format!("{}.tmp", file_name("alerts")));
+        {
+            let _lock = lock(&config).unwrap();
+            std::fs::write(&temp_file, b"partial").unwrap();
+        }
+
+        Block::create(&config, Some(&callbacks())).unwrap();
+
+        assert!(!temp_file.exists());
+    }
+
+    #[test]
     fn test_spool_display() {
         let spool = Spool(HashMap::new());
         assert_eq!(spool.to_string(), "Spool (0 streams)");
