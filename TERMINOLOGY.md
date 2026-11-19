@@ -100,6 +100,13 @@ One row of an event stream. Use **event** for event streams and **record** for
 tables: an event has no key, so it is identified by its block and position
 instead.
 
+### Batch
+
+The events of one event stream that were added together. In the **spool**, a
+batch is the events of one `lch_events_record()` call. In a patch, it is the
+events of the stream that one block stored. Use **batch** rather than record
+for a group of events: a **record** is a row of a table.
+
 ### Change log
 
 An event stream recording the changes to a table, declared under
@@ -173,10 +180,17 @@ The on-disk directory holding the config and CSV inputs. State may live here too
 ### State directory
 
 The on-disk directory holding `HEAD`, `STATE`, `REPORTED`, the `PATCH` file, the
-optional `STATS` file, and block files. Defaults to a `state` subdirectory of
-the **work directory**; set
+optional `STATS` file, block files, and the `spool` subdirectory. Defaults to a
+`state` subdirectory of the **work directory**; set
 the `state-dir` config option to relocate it. Use **state directory** for where
 state lives and **work directory** for where the config lives.
+
+### Spool
+
+The events recorded with `lch_events_record()` that wait for the next block, one
+file per event stream in the `spool` subdirectory of the **state directory**.
+Each file holds the **batches** recorded for its stream. Use **spool** for
+events waiting for a block.
 
 ### Fragment
 
