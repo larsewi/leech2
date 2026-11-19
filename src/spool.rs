@@ -618,4 +618,10 @@ mod tests {
 
         assert!(!config.spool_dir().join(file_name("logins")).exists());
     }
+
+    #[test]
+    fn test_spool_display() {
+        let spool = Spool(HashMap::new());
+        assert_eq!(spool.to_string(), "Spool (0 streams)");
+    }
 }
