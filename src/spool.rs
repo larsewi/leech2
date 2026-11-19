@@ -516,4 +516,22 @@ mod tests {
         let block = Block::load(&config.state_dir(), &hash).unwrap();
         assert_eq!(block.events["alerts"], events(&["disk full"]));
     }
+
+    #[test]
+    fn test_block_creation_removes_the_spool_of_an_undeclared_stream() {
+        let dir = tempfile::tempdir().unwrap();
+        // Spooled when the config still declared the stream
+        let mut old_config = config(dir.path());
+        let logins = old_config.events["alerts"].clone();
+        old_config.events.insert("logins".to_string(), logins);
+        {
+            let _lock = lock(&old_config).unwrap();
+            append(&old_config, "logins", &events(&["spooled"])).unwrap();
+        }
+
+        let config = config(dir.path());
+        Block::create(&config, Some(&callbacks())).unwrap();
+
+        assert!(!config.spool_dir().join(file_name("logins")).exists());
+    }
 }
