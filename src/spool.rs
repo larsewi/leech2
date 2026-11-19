@@ -624,4 +624,17 @@ mod tests {
         let spool = Spool(HashMap::new());
         assert_eq!(spool.to_string(), "Spool (0 streams)");
     }
+
+    #[test]
+    fn test_spool_display_with_events() {
+        let spool = Spool(HashMap::from([(
+            "alerts".to_string(),
+            events(&["disk full", "out of memory"]),
+        )]));
+        let expected = "Spool (1 streams):
+  'alerts' [message]
+    (\"disk full\")
+    (\"out of memory\")";
+        assert_eq!(spool.to_string(), expected);
+    }
 }
