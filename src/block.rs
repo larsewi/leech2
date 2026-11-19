@@ -211,7 +211,7 @@ fn commit(config: &Config, block: Block, current_state: state::State) -> Result<
         .store(&state_dir, &hash, file_mode, config.dry_run)
         .context("failed to store current state")?;
     head::store(&state_dir, &hash, file_mode, config.dry_run)
-        .context("failed to update head of state")?;
+        .context("failed to update head of chain")?;
 
     drop(lock);
     Ok(hash)
